@@ -54,15 +54,43 @@ CAT_BY_TYPE = {
     'ExtrudeFeature': 'solid', 'RevolveFeature': 'solid', 'SweepFeature': 'solid', 'LoftFeature': 'solid',
     'RibFeature': 'solid', 'WebFeature': 'solid', 'BoxFeature': 'solid', 'CylinderFeature': 'solid',
     'SphereFeature': 'solid', 'TorusFeature': 'solid', 'CoilFeature': 'solid', 'PipeFeature': 'solid',
-    'EmbossFeature': 'solid', 'BoundaryFillFeature': 'solid', 'PatchFeature': 'solid', 'ThickenFeature': 'solid',
+    'EmbossFeature': 'solid', 'BoundaryFillFeature': 'solid', 'PatchFeature': 'surface', 'ThickenFeature': 'solid',
     'ChamferFeature': 'finish', 'FilletFeature': 'finish', 'RuleFilletFeature': 'finish', 'FullRoundFilletFeature': 'finish',
-    'OffsetFacesFeature': 'offset', 'OffsetFeature': 'offset', 'ShellFeature': 'offset', 'DraftFeature': 'offset',
-    'DeleteFaceFeature': 'offset', 'ReplaceFaceFeature': 'offset', 'SplitFaceFeature': 'offset', 'ScaleFeature': 'offset',
+    'OffsetFacesFeature': 'offset', 'OffsetFeature': 'surface', 'ShellFeature': 'offset', 'DraftFeature': 'offset',
+    'DeleteFaceFeature': 'offset', 'ReplaceFaceFeature': 'offset', 'SplitFaceFeature': 'offset', 'ScaleFeature': 'body',
     'HoleFeature': 'hole', 'ThreadFeature': 'hole',
     'CombineFeature': 'body', 'MirrorFeature': 'body', 'MoveFeature': 'body', 'SplitBodyFeature': 'body',
     'RectangularPatternFeature': 'body', 'CircularPatternFeature': 'body', 'PathPatternFeature': 'body',
-    'CopyPasteBody': 'body', 'RemoveFeature': 'body', 'SilhouetteSplitFeature': 'body',
+    'CopyPasteBody': 'body', 'CutPasteBody': 'body', 'RemoveFeature': 'body', 'SilhouetteSplitFeature': 'body', 'BossFeature': 'solid',
+    # surfaces
+    'StitchFeature': 'surface', 'UnstitchFeature': 'surface', 'TrimFeature': 'surface', 'UntrimFeature': 'surface',
+    'ExtendFeature': 'surface', 'RuledSurfaceFeature': 'surface', 'ReverseNormalFeature': 'surface',
+    'SurfaceDeleteFaceFeature': 'surface',
+    # sheet metal
+    'FlangeFeature': 'sheet', 'HemFeature': 'sheet', 'RipFeature': 'sheet', 'CornerClosureFeature': 'sheet',
+    'FoldFeature': 'sheet', 'UnfoldFeature': 'sheet', 'RefoldFeature': 'sheet', 'JoinByBendFeature': 'sheet',
+    'LoftedFlangeFeature': 'sheet', 'SheetMetalChamferFeature': 'sheet', 'SheetMetalFilletFeature': 'sheet',
+    'FlatPattern': 'sheet',
+    # form (T-spline) and direct-edit bodies
+    'FormFeature': 'form', 'BaseFeature': 'form',
+    # mesh and volumetric
+    'MeshCombineFaceGroupsFeature': 'mesh', 'MeshCombineFeature': 'mesh', 'MeshConvertFeature': 'mesh',
+    'MeshGenerateFaceGroupsFeature': 'mesh', 'MeshPlaneCutFeature': 'mesh', 'MeshReduceFeature': 'mesh',
+    'MeshRemeshFeature': 'mesh', 'MeshRemoveFeature': 'mesh', 'MeshRepairFeature': 'mesh',
+    'MeshReverseNormalFeature': 'mesh', 'MeshSeparateFeature': 'mesh', 'MeshShellFeature': 'mesh',
+    'MeshSmoothFeature': 'mesh', 'MeshFeature': 'mesh', 'TessellateFeature': 'mesh',
+    'VolumetricModelFeature': 'mesh', 'VolumetricModelToMeshFeature': 'mesh', 'VolumetricCustomFeature': 'mesh',
+    # items that bring components in
+    'Occurrence': 'insert', 'DeriveFeature': 'insert',
+    # joints, motion and positions
+    'Joint': 'joint', 'AsBuiltJoint': 'joint', 'JointOrigin': 'joint', 'RigidGroup': 'joint', 'MotionLink': 'joint',
+    'ContactSet': 'joint', 'ArrangeFeature': 'joint', 'Snapshot': 'joint',
+    # reference images, decals and add-in features
+    'Canvas': 'other', 'Decal': 'other', 'CustomFeature': 'other',
 }
+# these make a surface instead of a solid when their isSolid is off
+SURFACE_WHEN_NOT_SOLID = ('ExtrudeFeature', 'RevolveFeature', 'SweepFeature', 'LoftFeature', 'PipeFeature', 'CoilFeature')
+JOINT_TYPES = ('Joint', 'AsBuiltJoint', 'JointOrigin', 'RigidGroup', 'MotionLink', 'ContactSet')
 
 OP_NAMES = {0: 'join', 1: 'cut', 2: 'intersect', 3: 'new body', 4: 'new component'}
 
@@ -74,6 +102,19 @@ FEATURE_INPUT_ATTRS = [
     'mirrorPlane', 'splitBodies', 'splittingTool', 'facesToSplit', 'sourceFaces', 'targetFaces',
     'deletedFaces', 'seedFaces', 'definition', 'occurrenceOne', 'occurrenceTwo', 'geometryOrOriginOne',
     'geometryOrOriginTwo', 'directionEntity', 'pathEntity', 'entities', 'plane', 'pullDirection',
+    # joints, joint origins, rigid groups, motion links, contact sets
+    'geometry', 'occurrences', 'jointOne', 'jointTwo', 'occurencesAndBodies', 'xAxisEntity', 'zAxisEntity',
+    # surfaces
+    'stitchSurfaces', 'trimTool', 'surfaces', 'tools', 'boundaryCurve', 'interiorRailsAndPoints',
+    'facesToUntrim', 'guideSurfaces', 'alternateFace',
+    # patterns, scale, remove, draft
+    'directionOneEntity', 'directionTwoEntity', 'startPoint', 'point', 'itemToRemove', 'partingLineCurves',
+    'movingPartingLineFixedEdges',
+    # threads and sheet metal
+    'hole', 'inputCylindricalFace', 'inputCylindricalFaces', 'unfoldFeature', 'stationaryFace', 'bendLines',
+    'bendFaces', 'edgeOne', 'edgeTwo', 'dominantEdge', 'submissiveEdge',
+    # mesh
+    'inputBodies', 'mesh',
 ]
 DEF_INPUT_ATTRS = [
     'entity', 'sketchPoint', 'sketchPoints', 'planarEntity', 'linearEntity', 'edge', 'edgeOne', 'edgeTwo',
@@ -100,27 +141,112 @@ class Collector:
         self.face_owner = {}         # face entityToken -> node id (latest creator)
         self.body_owner = {}         # body name -> node id (latest feature that changed it)
         self.body_creator = {}       # body name -> node id (feature that created it)
-        self.comp_owner = {}         # component name -> node id (occurrence/derive)
+        self.comp_owner = {}         # component name -> node id (occurrence/derive/new-component feature)
+        self.mesh_creator = {}       # mesh body name -> node id
+        self.comps = {}              # component key -> component node entry (see comp_entry)
+        self.doc = _safe(lambda: adsk.core.Application.get().activeDocument)
         self.cur = None
         self.warnings = []
         self._prev_sigs = set()      # face signatures of the state before the item being captured
 
     # ------------------------------------------------------------ edges ---
+    def keep_active(self):
+        """Fusion's timeline calls fail when another document tab becomes active during the run."""
+        doc = getattr(self, 'doc', None)
+        app = adsk.core.Application.get()
+        if doc is not None and _safe(lambda: app.activeDocument) != doc:
+            _safe(doc.activate)
+
     def add_edge(self, src, dst, kind):
         if src is None or dst is None or src == dst:
             return
         self.edges.setdefault((src, dst), set()).add(kind)
 
     def tl_node(self, obj):
-        idx = _safe(lambda: obj.timelineObject.index)
-        if idx is not None:
-            return self.tl2node.get(idx)
+        to = _safe(lambda: obj.timelineObject)
+        idx = _safe(lambda: to.index) if to is not None else None
+        if idx is None:
+            return None
+        # an object inside an inserted or nested component has a timeline of its own: the index only counts
+        # when it points at the same item in this design's timeline
+        mine = _safe(lambda: self.tl.item(idx))
+        if mine is None or _safe(lambda: mine.name) != _safe(lambda: to.name):
+            return None
+        return self.tl2node.get(idx)
+
+    def occ_node(self, occ):
+        """The timeline item that brought an occurrence (or anything inside it) into this design: its top-level
+        occurrence's insert/copy item, the Derive feature that made it, or the feature that made its component."""
+        top, guard = occ, 0
+        while top is not None and guard < 20:
+            up = _safe(lambda: top.assemblyContext)
+            if up is None:
+                break
+            top, guard = up, guard + 1
+        for o in ([occ, top] if top is not occ else [occ]):
+            df = _safe(lambda: o.deriveFeature)
+            if df is not None:
+                n = self.tl_node(df)
+                if n: return n
+        n = self.tl_node(top) if top is not None else None
+        if n: return n
+        cn = _safe(lambda: top.component.name) if top is not None else None
+        return self.comp_owner.get(cn) if cn else None
+
+    def external(self, obj):
+        """True when obj sits inside an inserted (referenced) or derived component."""
+        ctx = _safe(lambda: obj.assemblyContext)
+        guard = 0
+        while ctx is not None and guard < 20:
+            if _safe(lambda: ctx.isReferencedComponent) or _safe(lambda: ctx.isDerived):
+                return ctx
+            ctx, guard = _safe(lambda: ctx.assemblyContext), guard + 1
         return None
+
+    # Components are nodes of their own (see scan_components): a reference to a component, or to anything inside
+    # it, points at the component node, and the component node hangs under the item that brought it in.
+    def comp_key(self, c):
+        return _safe(lambda: c.entityToken) or _safe(lambda: c.name)
+
+    def comp_entry(self, c):
+        if c is None or c == self.root:
+            return None
+        k = self.comp_key(c)
+        if not k:
+            return None
+        if k not in self.comps:
+            self.comps[k] = {'c': c, 'id': 'c:%d' % len(self.comps), 'members': [], 'creator': None, 'occ': None}
+        return self.comps[k]
+
+    def comp_ref(self, occ):
+        """Component node for an occurrence or anything inside it. Inside an inserted or derived part the whole
+        part counts (its outermost inserted/derived occurrence): its own sub-components are not listed."""
+        top, o, guard = None, occ, 0
+        while o is not None and guard < 20:
+            if _safe(lambda: o.isReferencedComponent) or _safe(lambda: o.isDerived):
+                top = o
+            o, guard = _safe(lambda: o.assemblyContext), guard + 1
+        target = top or occ
+        ent = self.comp_entry(_safe(lambda: target.component))
+        if ent is None:
+            return None
+        if ent['occ'] is None:
+            ent['occ'] = target
+        return ent['id']
 
     def comp_node(self, obj):
         comp = _safe(lambda: obj.parentComponent) or _safe(lambda: obj.body.parentComponent)
+        ctx = _safe(lambda: obj.assemblyContext) or _safe(lambda: obj.body.assemblyContext)
+        if ctx is not None:
+            return self.comp_ref(ctx)
+        # a native object inside another component (e.g. a joint inside a derived part): where is it placed
         if comp and comp != self.root:
-            return self.comp_owner.get(comp.name)
+            occs = _safe(lambda: self.root.allOccurrencesByComponent(comp))
+            first = _safe(lambda: occs.item(0)) if occs is not None and (_safe(lambda: occs.count) or 0) else None
+            if first is not None:
+                return self.comp_ref(first)
+            ent = self.comp_entry(comp)
+            return ent['id'] if ent else None
         return None
 
     def resolve(self, obj, out, kind, depth=0):
@@ -157,6 +283,11 @@ class Collector:
             n = self.tl_node(native) or self.comp_node(obj)
             if n: out.append((n, 'plane'))
             return
+        ext = self.external(obj) if t in ('BRepFace', 'BRepEdge', 'BRepVertex', 'BRepBody') else None
+        if ext is not None:
+            n = self.comp_ref(ext)
+            if n: out.append((n, 'component'))
+            return
         if t == 'BRepFace':
             tok = _safe(lambda: obj.entityToken)
             n = self.face_owner.get(tok) if tok else None
@@ -189,17 +320,36 @@ class Collector:
             if last and last != n:
                 out.append((last, 'order'))
             return
-        if t in ('Occurrence', 'Component'):
-            n = self.tl_node(native)
-            if n is None:
-                n = self.comp_owner.get(_safe(lambda: obj.name) if t == 'Component' else _safe(lambda: obj.component.name))
+        if t == 'Occurrence':
+            n = self.comp_ref(obj)
             if n: out.append((n, 'component'))
+            return
+        if t == 'Component':
+            ent = self.comp_entry(obj)
+            if ent: out.append((ent['id'], 'component'))
             return
         if t in ('Path',):
             for pe in (_safe(lambda: list(obj)) or []):
                 self.resolve(_safe(lambda: pe.entity), out, 'sketch', depth + 1)
             return
-        if t.endswith('Feature') or t.endswith('Joint') or t in ('JointOrigin', 'RigidGroup'):
+        if t in JOINT_TYPES:
+            n = self.tl_node(native)
+            if n:
+                out.append((n, 'joint'))
+            else:
+                # a joint inside an inserted component (e.g. one a motion link drives): link that component
+                n = self.comp_node(obj)
+                if n: out.append((n, 'joint'))
+            return
+        if t == 'MeshBody':
+            n = self.tl_node(_safe(lambda: obj.baseOrFormFeature)) or self.mesh_creator.get(_safe(lambda: obj.name)) or self.comp_node(obj)
+            if n: out.append((n, 'body'))
+            return
+        if t == 'TSplineBody':
+            n = self.tl_node(_safe(lambda: obj.parentFormFeature))
+            if n: out.append((n, 'body'))
+            return
+        if t.endswith('Feature') or t.endswith('Joint'):
             n = self.tl_node(native)
             if n: out.append((n, 'feature'))
             return
@@ -291,7 +441,11 @@ class Collector:
             if op is not None and t in ('ExtrudeFeature', 'RevolveFeature', 'SweepFeature', 'LoftFeature', 'CombineFeature'):
                 info.append(OP_NAMES.get(op, str(op)))
             nid = 'n%d' % i
-            node = {'id': nid, 'name': it.name, 'type': t, 'cat': CAT_BY_TYPE.get(t, 'other'), 'tl': i, 'o': order,
+            cat = CAT_BY_TYPE.get(t, 'other')
+            if t in SURFACE_WHEN_NOT_SOLID and _safe(lambda: e.isSolid) is False:
+                cat = 'surface'
+                info.append('surface')
+            node = {'id': nid, 'name': it.name, 'type': t, 'cat': cat, 'tl': i, 'o': order,
                     'g': path, 'supp': bool(_safe(lambda: it.isSuppressed, False)),
                     'health': _safe(lambda: it.healthState, 0),
                     'msg': re.sub(r'<[^>]+>', ' ', _safe(lambda: it.errorOrWarningMessage, '') or '').strip()[:400],
@@ -320,6 +474,16 @@ class Collector:
         for f in (_safe(lambda: list(e.faces)) or []):
             tok = _safe(lambda: f.entityToken)
             if tok: self.face_owner[tok] = nid
+        # a feature that makes a new component (e.g. Extrude as new component) owns that component,
+        # so joints between components link back to it
+        for b in (_safe(lambda: list(e.bodies)) or []):
+            comp = _safe(lambda: b.parentComponent)
+            if comp is not None and comp != self.root:
+                cn = _safe(lambda: comp.name)
+                if cn: self.comp_owner.setdefault(cn, nid)
+        for mb in (_safe(lambda: list(e.meshBodies)) or []):
+            nm = _safe(lambda: mb.name)
+            if nm: self.mesh_creator.setdefault(nm, nid)
 
     def inputs_of(self, it):
         e = _safe(lambda: it.entity)
@@ -398,6 +562,7 @@ class Collector:
         if keep is None:
             return
         tokens = set(_safe(lambda: b.entityToken) for b in keep)
+        tokens |= set(_safe(lambda: b.nativeObject.entityToken) for b in keep if _safe(lambda: b.nativeObject) is not None)
         for b in keep:
             # the item's own body may be a hidden tool body - show it for the picture
             self._set(b, 'isLightBulbOn', True)
@@ -743,6 +908,7 @@ class Collector:
             if self.progress:
                 self.progress(it.name, i, n_items)
             _safe(lambda: it.rollTo(True))
+            self.keep_active()
             if prev is not None:
                 self.capture(*prev)
                 try:
@@ -763,8 +929,134 @@ class Collector:
             _safe(lambda: self.record_outputs(*prev))
         self.thumbs_end()
 
+    def scan_components(self):
+        """A node per component (except the root): its parent is the item that brought it in (insert, New
+        Component, a feature set to "new component", or a Derive feature), and it is the parent of the timeline
+        items built inside it. Components inside inserted or derived parts are not listed separately."""
+        byid = {n['id']: n for n in self.nodes}
+        comps = self.comps
+        comp_entry = self.comp_entry
+        ckey = self.comp_key
+
+        for i, nid in sorted(self.tl2node.items()):
+            e = _safe(lambda: self.tl.item(i).entity)
+            if e is None:
+                continue
+            if _t(e) == 'Occurrence':
+                own = comp_entry(_safe(lambda: e.component))
+                if own is not None:
+                    own['creator'] = own['creator'] or nid
+                    own['occ'] = own['occ'] or e
+                cont = _safe(lambda: e.sourceComponent)
+                if cont is None:
+                    ctx = _safe(lambda: e.assemblyContext)
+                    cont = _safe(lambda: ctx.component) if ctx is not None else None
+            else:
+                cont = _safe(lambda: e.parentComponent)
+            ent = comp_entry(cont)
+            if ent is not None:
+                ent['members'].append(nid)
+        # components placed in the design that no timeline item is built in (inserted parts, derived parts)
+        for occ in (_safe(lambda: list(self.root.allOccurrences)) or []):
+            if self.external(occ) is not None:
+                continue          # inside an inserted/derived part
+            ent = comp_entry(_safe(lambda: occ.component))
+            if ent is not None and ent['occ'] is None:
+                ent['occ'] = occ
+        for k, ent in comps.items():
+            c = ent['c']
+            occ = ent['occ']
+            if occ is None:
+                occs = _safe(lambda: self.root.allOccurrencesByComponent(c))
+                occ = _safe(lambda: occs.item(0)) if occs is not None and (_safe(lambda: occs.count) or 0) else None
+                ent['occ'] = occ
+            if ent['creator'] is None:
+                ent['creator'] = self.comp_owner.get(_safe(lambda: c.name)) or (self.occ_node(occ) if occ is not None else None)
+            ctx = _safe(lambda: occ.assemblyContext) if occ is not None else None
+            ent['parent'] = comps.get(ckey(_safe(lambda: ctx.component))) if ctx is not None else None
+        for k, ent in comps.items():
+            c = ent['c']
+            cr = byid.get(ent['creator']) if ent['creator'] else None
+            mem = [byid[m]['o'] for m in ent['members'] if m in byid]
+            o = (cr['o'] + 0.0004) if cr else ((min(mem) - 0.5) if mem else -1.5)
+            occ = ent['occ']
+            info = ['%d item%s' % (len(ent['members']), '' if len(ent['members']) == 1 else 's')]
+            if occ is not None and _safe(lambda: occ.isReferencedComponent):
+                info.append('inserted')
+            if occ is not None and _safe(lambda: occ.isDerived):
+                info.append('derived')
+            n_occ = _safe(lambda: self.root.allOccurrencesByComponent(c).count)
+            if n_occ and n_occ > 1:
+                info.append('%d instances' % n_occ)
+            self.nodes.append({'id': ent['id'], 'name': _safe(lambda: c.name, 'Component'), 'type': 'Component', 'cat': 'component',
+                               'tl': None, 'o': o, 'g': [], 'supp': False, 'health': 0, 'msg': '', 'info': ' · '.join(info)})
+            if ent['creator']:
+                self.add_edge(ent['creator'], ent['id'], 'component')
+            elif ent.get('parent'):
+                self.add_edge(ent['parent']['id'], ent['id'], 'incomp')
+            for m in ent['members']:
+                self.add_edge(ent['id'], m, 'incomp')
+        self.capture_components()
+
+    def _occ_bodies(self, occ, depth=0):
+        """Bodies of an occurrence and its sub-occurrences, in assembly space."""
+        out = list(_safe(lambda: list(occ.bRepBodies)) or [])
+        if depth < 8:
+            for ch in (_safe(lambda: list(occ.childOccurrences)) or []):
+                out += self._occ_bodies(ch, depth + 1)
+        return out
+
+    def capture_components(self):
+        """One picture per component: only its bodies, three-quarter view, taken at the end of the timeline.
+        The item that brought a part in (Derive, component insert) shows the same picture."""
+        if not self.want_thumbs or not self.comps:
+            return
+        self.thumbs_begin()
+        app = adsk.core.Application.get()
+        try:
+            iso = self._vec(-1, -1, 1)
+            iso.normalize()
+            done_creators = set()
+            for k, ent in self.comps.items():
+                occ = ent.get('occ')
+                if occ is None:
+                    continue
+                if self.progress:
+                    self.progress('Picture of ' + (_safe(lambda: ent['c'].name) or 'component'), 0, 1)
+                try:
+                    self._set(occ, 'isLightBulbOn', True)
+                    bodies = [b for b in self._occ_bodies(occ) if _safe(lambda: b.isValid, True)]
+                    pts = self._corners(self._union(_safe(lambda: b.boundingBox) for b in bodies))
+                    if not bodies or not pts:
+                        continue
+                    cam, iw, ih = self._camera_for(iso, [], pts, False)
+                    self._isolate(bodies)
+                    _safe(lambda: app.userInterface.activeSelections.clear())
+                    self._vp.camera = cam
+                    adsk.doEvents()
+                    ok = _safe(lambda: self._vp.saveAsImageFile(self._thumb_file, iw, ih), False)
+                    if ok and os.path.exists(self._thumb_file):
+                        with open(self._thumb_file, 'rb') as f:
+                            data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode('ascii')
+                        self.thumbs[ent['id']] = data
+                        cr = ent.get('creator')
+                        crn = next((n for n in self.nodes if n['id'] == cr), None) if cr else None
+                        if crn and crn['type'] in ('DeriveFeature', 'Occurrence') and cr not in done_creators:
+                            self.thumbs[cr] = data
+                            done_creators.add(cr)
+                except Exception as ex:
+                    if len(self.warnings) < 50:
+                        self.warnings.append('No picture for component %s: %s' % (_safe(lambda: ent['c'].name, '?'), ex))
+                finally:
+                    self._show_bodies()
+                    self._restore_visible()
+        finally:
+            self.thumbs_end()
+
     def scan_parameters(self):
         pnodes = {}
+        for p in (_safe(lambda: list(self.des.userParameters)) or []):
+            self.param_owner(p, pnodes)
         for p in (_safe(lambda: list(self.des.allParameters)) or []):
             owner = self.param_owner(p, pnodes)
             if owner is None:
@@ -772,12 +1064,12 @@ class Collector:
             for q in (_safe(lambda: list(p.dependencyParameters)) or []):
                 src = self.param_owner(q, pnodes)
                 self.add_edge(src, owner, 'param')
-        # keep only user-parameter nodes that ended up linked
+        # keep every user parameter, and derived parameters that ended up linked
         used = set()
         for (s, t) in self.edges:
             used.add(s); used.add(t)
         for nid, node in pnodes.items():
-            if nid in used:
+            if nid in used or nid.startswith('p:'):
                 self.nodes.append(node)
 
     def param_owner(self, p, pnodes):
@@ -1132,6 +1424,7 @@ def generate(mode='both', thumbs=True):
             set_step(0)
             col.build_nodes()
             col.scan()
+            _safe(col.scan_components)
             col.scan_parameters()
             k = 1
             if groups_test:
@@ -1457,6 +1750,8 @@ TEMPLATE = r'''<!DOCTYPE html>
   --c-body:#993556;--c-body-bg:#fbeaf0;--c-param:#3b6d11;--c-param-bg:#eaf3de;
   --c-other:#444441;--c-other-bg:#ecebe6;--c-group:#444441;--c-group-bg:#e4e2da;
   --supp:#8a8a86;--supp-bg:#dcdcd8;
+  --c-joint:#c2410c;--c-joint-bg:#fdebe0;--c-insert:#be185d;--c-insert-bg:#fce6f0;--c-surface:#0e7490;--c-surface-bg:#dff3f7;
+  --c-sheet:#475569;--c-sheet-bg:#e6eaef;--c-component:#9a6700;--c-component-bg:#fdf3d7;--c-form:#a21caf;--c-form-bg:#f8e5fa;--c-mesh:#65730f;--c-mesh-bg:#eff3d8;
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#1b1b1a;--panel:#242422;--panel2:#2d2d2a;--text:#ecebe6;--muted:#a3a19a;--border:#3d3c38;--accent:#85b7eb;
@@ -1467,6 +1762,8 @@ TEMPLATE = r'''<!DOCTYPE html>
   --c-body:#f4c0d1;--c-body-bg:#4b1528;--c-param:#c0dd97;--c-param-bg:#173404;
   --c-other:#d3d1c7;--c-other-bg:#2c2c2a;--c-group:#ecebe6;--c-group-bg:#3a3935;
   --supp:#7c7b77;--supp-bg:#3a3a38;
+  --c-joint:#fdba8c;--c-joint-bg:#4a1c06;--c-insert:#f9a8d4;--c-insert-bg:#4a0a2a;--c-surface:#86d8ea;--c-surface-bg:#07313b;
+  --c-sheet:#cbd5e1;--c-sheet-bg:#27303d;--c-component:#f5c94c;--c-component-bg:#382800;--c-form:#f0abfc;--c-form-bg:#3b0a42;--c-mesh:#d6e48c;--c-mesh-bg:#283005;
 }}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -1486,6 +1783,9 @@ header .hl{max-width:300px}header .hl .meta{font-size:11px;line-height:1.3}
 .pop.open .popbox{display:block}.pop.open>button{border-color:var(--accent)}
 .popbox .ph{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px}
 .popbox label.chk{display:flex;padding:3px 0;font-size:13px;color:var(--text)}
+#cats label.chk{align-items:center;gap:6px;white-space:nowrap}#cats .pill{font-size:12px}#cats .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}
+.fbtns{display:flex;gap:6px;margin:8px 0 4px}.fbtns button{padding:2px 10px;font-size:12px}.fnote{font-size:11px;max-width:240px;margin-top:4px}
+svg .edge.bridge{stroke-dasharray:1.5 4}
 #kinds{display:flex;flex-direction:column}
 .gtools .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
 header .meta{color:var(--muted);font-size:12px}
@@ -1514,6 +1814,19 @@ body.nosel #details{display:none}
 .gprow.dim .gn{opacity:.5;text-decoration:line-through}
 #info{position:fixed;left:12px;right:12px;bottom:12px;z-index:15;max-height:38vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 44px 12px 16px;display:none}
 body.infoopen #info{display:block}
+#legend{position:fixed;right:12px;top:64px;bottom:12px;width:min(560px,calc(100vw - 24px));z-index:16;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.22);padding:12px 16px 20px;display:none}
+body.legendopen #legend{display:block}
+#legend .x{position:absolute;top:8px;right:8px;width:28px;height:28px;padding:0;font-size:16px;line-height:1}
+#legend h2{font-size:16px;margin:0 0 4px}#legend h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:18px 0 6px;border-bottom:1px solid var(--border);padding-bottom:4px}
+#legend .lgintro{margin-bottom:6px}
+.lgrow{display:flex;gap:12px;align-items:center;padding:5px 0}.lgrow .lgsw{flex:none;width:118px;display:flex;align-items:center;gap:6px;white-space:nowrap;flex-wrap:wrap}
+.lgrow b{font-size:13px}.lgrow .kv{font-size:12px;color:var(--muted)}
+.pill.lgk{background:var(--panel2);color:var(--text)}
+.lgbtn{display:inline-flex;align-items:center;gap:5px;font-weight:600;border-radius:14px;padding:2px 8px;font-size:12px;pointer-events:none}
+.lgbtn.hb{color:var(--err);border-color:var(--err)}.lgbtn.hw{color:var(--warn);border-color:var(--warn)}
+.lgbtn .ic{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;border-radius:50%;background:var(--err);color:#fff;font-size:10px;font-weight:800}
+.lgbtn.hw .ic{background:none;border-radius:0;width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid var(--warn)}
+.lgbtn small{font-weight:400;color:var(--muted)}
 #info .x{position:absolute;top:8px;right:8px;width:28px;height:28px;padding:0;font-size:16px;line-height:1}
 #info h2{font-size:14px;margin:0 0 4px}
 #info .cols{display:flex;gap:24px;flex-wrap:wrap}#info .cols>div{flex:1 1 320px;min-width:0}
@@ -1574,7 +1887,8 @@ svg .edge.up{stroke:var(--up);stroke-width:1.8}
 svg .edge.down{stroke:var(--down);stroke-width:1.8}
 svg .dim{opacity:.18}
 svg .edge.up:not(.ind),svg .edge.down:not(.ind){stroke-width:2.3}
-svg .edge.ind{stroke-opacity:.5}
+svg .edge.insel{stroke:var(--sel);stroke-width:2.3}
+svg .edge.ind{stroke-opacity:.3}   /* further ancestors and descendants (not direct) */
 svg .ehit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
 svg .ehit.off{pointer-events:none}   /* links greyed out by the selection do not react */
 svg .edge.hov{stroke-width:3.4!important;stroke-opacity:1!important;opacity:1!important}
@@ -1597,6 +1911,8 @@ svg .ctogt{font-size:12px;font-weight:700;fill:var(--muted);pointer-events:none}
 svg .ctogc.col+.ctogt{fill:var(--panel)}
 svg .ctogn{font-size:11px;fill:var(--accent);pointer-events:none}
 svg .gtoggle{font-weight:700}
+.ico{vertical-align:-2px;flex:none}.pill .ico{margin-right:4px;vertical-align:-2px}.icw{display:inline-flex;margin-right:7px;vertical-align:-3px}svg .nico{pointer-events:none}
+#legend .icgrid{display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;margin-top:6px}#legend .icgrid div{display:flex;gap:8px;align-items:center;font-size:12px;min-width:0}#legend .icgrid span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #health{display:flex;gap:6px;align-items:center}
 #health button{display:inline-flex;align-items:center;gap:6px;font-weight:600;border-radius:14px;padding:3px 10px}
 #health .hb{color:var(--err);border-color:var(--err)}#health .hw{color:var(--warn);border-color:var(--warn)}
@@ -1636,8 +1952,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
   <div class="hl"><h1 id="title">Dependencies graph</h1><div class="meta" id="meta"></div></div>
   <div class="seg"><button id="hBack" title="Back (Alt+←)">‹</button><button id="hNext" title="Forward (Alt+→)">›</button></div>
   <div class="seg"><span class="cap">View</span><button id="vGraph">Graph</button><button id="vTree" class="on">Tree</button></div>
-  <div class="seg" title="Single timeline items, or whole timeline groups as one entry"><span class="cap">Show</span><button id="lvItems" class="on">Items</button><button id="lvGroups" title="Whole timeline groups as single boxes. With a Whole groups suppression test, the links between groups come from that test (what suppressing a group really suppresses).">Groups</button></div>
-  <div class="seg" id="layoutSeg"><span class="cap">Layout</span><button id="layDeps" class="on" title="Boxes arranged by dependency depth">Depth</button><button id="laneBtn" title="Boxes arranged by timeline group: one block per group, in a grid">Groups</button></div>
+  <div class="seg" id="layoutSeg"><span class="cap">Layout</span><button id="layDeps" title="Boxes arranged by dependency depth">Depth</button><button id="laneBtn" class="on" title="Boxes arranged by timeline group: one block per group, in a grid">Groups</button><button id="compBtn" title="Boxes arranged by component: one block per component, in a grid">Components</button></div>
   <div class="seg" id="treeCtrl"><span class="cap">Tree</span>
     <select id="treeMode">
       <option value="timeline">By timeline group</option>
@@ -1648,11 +1963,12 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
   <div class="srch"><input type="search" id="search" placeholder="Search features…"><span id="sNav" style="display:none;gap:4px;align-items:center"><span id="sCount" class="cnt"></span><button id="sPrev" title="Previous match (Shift+Enter)">‹</button><button id="sNext" title="Next match (Enter)">›</button></span></div>
   <div id="health" style="display:none"></div>
   <div class="tools">
-    <div class="pop"><button id="linksBtn" title="Which kinds of links to show">Links ▾</button>
-      <div class="popbox" id="linksBox"><div class="ph">Link types</div><div id="kinds"></div><div class="ph">Items</div><label class="chk"><input type="checkbox" id="showParams"> Parameters (user and derived)</label></div></div>
+    <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
+      <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
-      <div class="popbox" id="dispBox"><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label></div></div>
-    <button id="infoBtn" title="Legend, how to use, warnings">Info</button>
+      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label></div></div>
+    <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
+    <button id="infoBtn" title="How to use, warnings">Info</button>
   </div>
 </header>
 <div id="simBar"></div>
@@ -1673,13 +1989,130 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
   <aside id="details"></aside>
 </main>
 <div id="info"><button class="x" id="infoClose" title="Close">×</button><div id="infoBody"></div></div>
+<div id="legend"><button class="x" id="legendClose" title="Close (Esc)">×</button><h2>Legend</h2><div id="legendBody"></div></div>
 <script>
 const D = /*__DATA__*/null;
 (function(){
 if(!D){document.body.innerHTML='<p style="padding:20px">No data embedded.</p>';return;}
-const CAT={sketch:'Sketch',construct:'Construction',solid:'Solid feature',finish:'Chamfer / fillet',offset:'Offset / face',hole:'Hole / thread',body:'Body operation',param:'Parameter',other:'Other'};
-const KIND={sketch:'Sketch',profile:'Profile',plane:'Plane / axis / point',geometry:'Faces / edges',body:'Body',feature:'Feature',param:'Parameter',component:'Component',suppress:'Suppression test',order:'Same body, later'};
+const CAT={sketch:'Sketch',construct:'Construction',solid:'Solid feature',finish:'Chamfer / fillet',offset:'Offset / face',hole:'Hole / thread',body:'Body operation',param:'Parameter',component:'Component',surface:'Surface',sheet:'Sheet metal',form:'Form / base',mesh:'Mesh / volumetric',insert:'Insert / derive',joint:'Joint / motion',other:'Other'};
+// ---------- icons: one small line icon per kind of item (original drawings, 16x16, current colour) ----------
+const ICONS={
+  sketch:'<rect x="2" y="3" width="10" height="10" rx="1" stroke-dasharray="2 1.5"/><path d="M8.5 10.5l5.5-5.5-1.5-1.5-5.5 5.5-.5 2z"/>',
+  plane:'<path d="M1.5 11.5l3.5-7h9.5l-3.5 7z"/>',
+  axis:'<path d="M2 14L14 2"/><path d="M11 2h3v3"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/>',
+  point:'<circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/>',
+  extrude:'<path d="M2.5 11.5l3-2h8l-3 2z"/><path d="M8 9V2.5M5.5 5L8 2.5 10.5 5"/>',
+  revolve:'<path d="M8 1.5v13" stroke-dasharray="1.5 1.5"/><path d="M12.5 6.5A5 2.5 0 1 1 5 5.3"/><path d="M5 3.3l.3 2.1-2 .5"/>',
+  sweep:'<path d="M2 13c3 0 3-9 8-9h4"/><rect x="1" y="10.5" width="3" height="3" fill="currentColor" stroke="none"/>',
+  loft:'<rect x="2" y="10" width="5" height="4"/><circle cx="11.5" cy="4" r="2.5"/><path d="M7 10l2.8-4.3M2 10l7.7-6.8"/>',
+  rib:'<path d="M2 13h12M2 13V4M2 4l10 9"/><path d="M4.5 13l5.5-5" stroke-width="2.4" stroke-opacity=".5"/>',
+  box:'<path d="M2.5 5.5l5.5-3 5.5 3v6l-5.5 3-5.5-3z"/><path d="M2.5 5.5l5.5 3 5.5-3M8 8.5v6"/>',
+  cylinder:'<ellipse cx="8" cy="4" rx="5" ry="2"/><path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4"/>',
+  sphere:'<circle cx="8" cy="8" r="6"/><ellipse cx="8" cy="8" rx="6" ry="2.2"/>',
+  torus:'<ellipse cx="8" cy="8" rx="6.5" ry="4"/><ellipse cx="8" cy="7.5" rx="2.5" ry="1.2"/>',
+  coil:'<path d="M3 3h10M3 3c0 1.5 10 1.5 10 3S3 7.5 3 9s10 1.5 10 3S3 13.5 3 13"/>',
+  pipe:'<path d="M2 12c0-5 3-8 9-8"/><path d="M2 12c0-5 3-8 9-8" stroke-width="4" stroke-opacity=".3"/><circle cx="12.5" cy="4" r="2"/>',
+  emboss:'<path d="M1.5 13.5h13"/><path d="M4.5 12L8 3l3.5 9M6 9h4"/>',
+  thicken:'<path d="M2 6c3-3 9-3 12 0"/><path d="M2 10c3-3 9-3 12 0"/><path d="M8 4.2v4" stroke-dasharray="1 1"/>',
+  fill:'<path d="M2 3h12v10H2z" stroke-dasharray="2 1.5"/><path d="M4 5h8v6H4z" fill="currentColor" fill-opacity=".35"/>',
+  fillet:'<path d="M2 14V7a5 5 0 0 1 5-5h7"/><path d="M2 14h12V2" stroke-opacity=".45"/>',
+  chamfer:'<path d="M2 14V6l4-4h8"/><path d="M2 14h12V2" stroke-opacity=".45"/>',
+  offsetface:'<path d="M2 12h12" /><path d="M2 8h12" stroke-dasharray="2 1.5"/><path d="M8 11.5V4.5M6 6.5L8 4.5l2 2"/>',
+  shell:'<rect x="2" y="3" width="12" height="10" rx="1"/><rect x="4.5" y="3" width="7" height="7.5" rx=".5"/>',
+  draft:'<path d="M3 14l2-11h6l2 11z"/><path d="M8 1.5v13" stroke-dasharray="1.5 1.5" stroke-opacity=".6"/>',
+  deleteface:'<rect x="2" y="4" width="9" height="9" rx="1"/><path d="M10 2l4 4M14 2l-4 4"/>',
+  replaceface:'<rect x="2" y="6" width="9" height="8" rx="1"/><path d="M5 3.5c2-2 6-2 8 1M13 1.5v3h-3"/>',
+  splitface:'<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M5 3l6 10" stroke-dasharray="2 1.2"/>',
+  scale:'<rect x="2" y="7" width="7" height="7"/><path d="M8 8l6-6M10 2h4v4"/>',
+  hole:'<rect x="2" y="2" width="12" height="12" rx="1.5"/><circle cx="8" cy="8" r="3"/><path d="M8 3.5v1.5M8 11v1.5M3.5 8H5M11 8h1.5" stroke-opacity=".5"/>',
+  thread:'<path d="M4.5 2v12M11.5 2v12"/><path d="M4.5 4l7 2M4.5 7l7 2M4.5 10l7 2"/>',
+  combine:'<rect x="1.5" y="4.5" width="8" height="8" rx="1"/><rect x="6.5" y="1.5" width="8" height="8" rx="1" fill="currentColor" fill-opacity=".3"/>',
+  mirror:'<path d="M8 1.5v13" stroke-dasharray="1.5 1.5"/><path d="M6 4L2 12h4z"/><path d="M10 4l4 8h-4z" fill="currentColor" fill-opacity=".35"/>',
+  rectpattern:'<rect x="2" y="2" width="4" height="4"/><rect x="10" y="2" width="4" height="4"/><rect x="2" y="10" width="4" height="4"/><rect x="10" y="10" width="4" height="4"/>',
+  circpattern:'<circle cx="8" cy="8" r="1"/><circle cx="8" cy="2.8" r="1.6"/><circle cx="13" cy="9.5" r="1.6"/><circle cx="3" cy="9.5" r="1.6"/><circle cx="8" cy="13.4" r="1.2" stroke-opacity=".5"/>',
+  pathpattern:'<path d="M1.5 13c4-1 5-9 13-10" stroke-dasharray="1.5 1.5"/><rect x="1" y="10.5" width="3" height="3"/><rect x="6.5" y="5.5" width="3" height="3"/><rect x="12" y="1.5" width="3" height="3"/>',
+  move:'<path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2"/>',
+  splitbody:'<path d="M2 4h5.5v9H2zM9.5 3h4.5v9H9.5z"/><path d="M8.5 1.5v13" stroke-dasharray="1.5 1.2"/>',
+  copy:'<rect x="1.5" y="4.5" width="8" height="10" rx="1"/><rect x="5.5" y="1.5" width="8" height="10" rx="1" fill="currentColor" fill-opacity=".15"/>',
+  remove:'<rect x="2.5" y="3.5" width="11" height="11" rx="1" stroke-dasharray="2 1.5"/><path d="M5.5 6.5l5 5M10.5 6.5l-5 5"/>',
+  param:'<path d="M5.5 13.5c1.2 0 1.5-1 1.8-3l1-6.5c.3-2 .8-2.5 2.2-2.5M4.5 6.5h5.5"/><path d="M10.5 9l3.5 4.5M14 9l-3.5 4.5"/>',
+  dparam:'<path d="M4.5 13.5c1 0 1.3-1 1.5-3l.8-6c.3-2 .7-2.5 2-2.5M3.5 6.5h5"/><path d="M10 10.5a2 2 0 0 1 2-2h1a2 2 0 0 1 0 4M12 14.5h-1a2 2 0 0 1 0-4"/>',
+  params:'<path d="M2 3.5h2M2 8h2M2 12.5h2M6 3.5h8M6 8h8M6 12.5h8"/>',
+  component:'<path d="M2.5 5l5.5-3 5.5 3v6.5l-5.5 3-5.5-3z"/><path d="M2.5 5l5.5 3 5.5-3M8 8v6.5"/><path d="M5.2 3.5l5.5 3" stroke-opacity=".5"/>',
+  insert:'<path d="M5 6l3.5-2 5 2.8v5.7l-5 2.5-3.5-2"/><path d="M1 9.5h6.5M5 7l2.5 2.5L5 12"/>',
+  derive:'<path d="M2.5 5.5l4-2.2 4 2.2v4.7l-4 2.3-4-2.3z"/><path d="M10 11.5a2 2 0 0 1 2-2h1a2 2 0 0 1 0 4M12 15.5h-1a2 2 0 0 1 0-4" transform="translate(0 -1)"/>',
+  joint:'<circle cx="4.5" cy="11.5" r="2.5"/><circle cx="11.5" cy="4.5" r="2.5"/><path d="M6.3 9.7l3.4-3.4"/><circle cx="8" cy="8" r=".9" fill="currentColor"/>',
+  jointorigin:'<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="2"/><path d="M8 1v3M8 12v3M1 8h3M12 8h3"/>',
+  rigid:'<rect x="3" y="7" width="10" height="7" rx="1"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/>',
+  motion:'<circle cx="5" cy="9.5" r="3.5"/><circle cx="11.5" cy="5" r="2.5"/><path d="M5 6v-1M5 14v-1M1.5 9.5h-1M9.5 9.5h-1M11.5 2.5v-1M11.5 8.5v-1"/>',
+  contact:'<circle cx="5.5" cy="8" r="4"/><circle cx="11.5" cy="8" r="3"/><path d="M9.5 5.5v5" stroke-opacity=".6"/>',
+  snapshot:'<rect x="1.5" y="4.5" width="13" height="9" rx="1.5"/><circle cx="8" cy="9" r="2.5"/><path d="M5.5 4.5l1-2h3l1 2"/>',
+  arrange:'<rect x="1.5" y="1.5" width="5.5" height="5.5"/><rect x="9" y="1.5" width="5.5" height="5.5"/><rect x="1.5" y="9" width="5.5" height="5.5"/><rect x="9" y="9" width="5.5" height="5.5" stroke-dasharray="1.5 1.2"/>',
+  surface:'<path d="M1.5 11c2-4 4.5 1 6.5-3s4.5 1 6.5-3"/><path d="M1.5 11l1.5 3M14.5 5L13 8" stroke-opacity=".5"/>',
+  patch:'<path d="M2 5c3-2 9-2 12 0v7c-3-2-9-2-12 0z" stroke-dasharray="2 1.5"/><path d="M4 6.5c2.5-1 5.5-1 8 0v4c-2.5-1-5.5-1-8 0z" fill="currentColor" fill-opacity=".3" stroke="none"/>',
+  stitch:'<path d="M2 3h5v10H2zM9 3h5v10H9z"/><path d="M6 5.5h4M6 8h4M6 10.5h4"/>',
+  trim:'<path d="M2 12c3-5 9-5 12 0"/><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="9" r="1.8" stroke-opacity="0"/><path d="M5.3 5.3L14 2M5.5 3.2L14 6"/>',
+  extend:'<path d="M2 10c2-3 5-3 7-1"/><path d="M9 9c2 2 4 1 5-1" stroke-dasharray="1.5 1.5"/><path d="M11.5 5.5l2.5 2.5-3 1"/>',
+  sheet:'<path d="M2 4.5h7.5a2 2 0 0 1 2 2v8"/><path d="M2 2.5h7.5a4 4 0 0 1 4 4v8"/>',
+  flat:'<rect x="2" y="4" width="12" height="8"/><path d="M6 4v8M10 4v8" stroke-dasharray="1.5 1.2"/>',
+  form:'<path d="M3 11c-1-4 2-8 6-8s5 3 4 6-3 5-6 4-3-1-4-2z"/><circle cx="6" cy="6" r=".8" fill="currentColor"/><circle cx="10.5" cy="5.5" r=".8" fill="currentColor"/><circle cx="9" cy="10.5" r=".8" fill="currentColor"/>',
+  base:'<path d="M2.5 5l5.5-3 5.5 3v6.5l-5.5 3-5.5-3z" stroke-dasharray="2 1.3"/><path d="M8 5.5v6M5 8.5h6"/>',
+  mesh:'<path d="M2 13L8 2l6 11z"/><path d="M5 7.5h6M8 13L5 7.5M8 13l3-5.5"/>',
+  group:'<path d="M1.5 4a1 1 0 0 1 1-1h3.5l1.5 1.5h6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-11a1 1 0 0 1-1-1z"/>',
+  canvas:'<rect x="2" y="3" width="12" height="10" rx="1"/><path d="M3.5 11.5l3-4 2.5 3 1.5-1.5 2 2.5"/><circle cx="11" cy="6" r="1"/>',
+  custom:'<path d="M8 1.5l1.6 3.3 3.6.5-2.6 2.5.6 3.6L8 9.7l-3.2 1.7.6-3.6-2.6-2.5 3.6-.5z"/>',
+  other:'<circle cx="8" cy="8" r="5.5" stroke-dasharray="2 1.5"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/>',
+};
+const ICON_BY_TYPE={Sketch:'sketch',ConstructionPlane:'plane',ConstructionAxis:'axis',ConstructionPoint:'point',
+  ExtrudeFeature:'extrude',RevolveFeature:'revolve',SweepFeature:'sweep',LoftFeature:'loft',RibFeature:'rib',WebFeature:'rib',
+  BoxFeature:'box',CylinderFeature:'cylinder',SphereFeature:'sphere',TorusFeature:'torus',CoilFeature:'coil',PipeFeature:'pipe',
+  EmbossFeature:'emboss',BoundaryFillFeature:'fill',ThickenFeature:'thicken',BossFeature:'cylinder',
+  FilletFeature:'fillet',RuleFilletFeature:'fillet',FullRoundFilletFeature:'fillet',ChamferFeature:'chamfer',
+  OffsetFacesFeature:'offsetface',ShellFeature:'shell',DraftFeature:'draft',DeleteFaceFeature:'deleteface',ReplaceFaceFeature:'replaceface',
+  SplitFaceFeature:'splitface',ScaleFeature:'scale',HoleFeature:'hole',ThreadFeature:'thread',
+  CombineFeature:'combine',MirrorFeature:'mirror',RectangularPatternFeature:'rectpattern',CircularPatternFeature:'circpattern',
+  PathPatternFeature:'pathpattern',MoveFeature:'move',SplitBodyFeature:'splitbody',SilhouetteSplitFeature:'splitbody',
+  CopyPasteBody:'copy',CutPasteBody:'copy',RemoveFeature:'remove',
+  UserParameter:'param',DerivedParameter:'dparam',UserParameters:'params',Component:'component',
+  Occurrence:'insert',DeriveFeature:'derive',Joint:'joint',AsBuiltJoint:'joint',JointOrigin:'jointorigin',RigidGroup:'rigid',
+  MotionLink:'motion',ContactSet:'contact',Snapshot:'snapshot',ArrangeFeature:'arrange',
+  PatchFeature:'patch',StitchFeature:'stitch',UnstitchFeature:'stitch',TrimFeature:'trim',UntrimFeature:'trim',ExtendFeature:'extend',
+  OffsetFeature:'surface',RuledSurfaceFeature:'surface',ReverseNormalFeature:'surface',SurfaceDeleteFaceFeature:'deleteface',
+  FlangeFeature:'sheet',HemFeature:'sheet',RipFeature:'sheet',CornerClosureFeature:'sheet',FoldFeature:'sheet',UnfoldFeature:'flat',
+  RefoldFeature:'sheet',JoinByBendFeature:'sheet',LoftedFlangeFeature:'sheet',SheetMetalChamferFeature:'chamfer',SheetMetalFilletFeature:'fillet',
+  FlatPattern:'flat',FormFeature:'form',BaseFeature:'base',Canvas:'canvas',Decal:'canvas',CustomFeature:'custom'};
+const ICON_BY_CAT={sketch:'sketch',construct:'plane',solid:'extrude',finish:'fillet',offset:'offsetface',hole:'hole',body:'combine',
+  param:'param',surface:'surface',sheet:'sheet',form:'form',mesh:'mesh',component:'component',insert:'insert',joint:'joint',group:'group',other:'other'};
+const ICON_CATS={construct:'plane axis point',solid:'extrude revolve sweep loft rib box cylinder sphere torus coil pipe emboss thicken fill',finish:'fillet chamfer',
+      offset:'offsetface shell draft deleteface replaceface splitface',hole:'hole thread',body:'scale combine mirror rectpattern circpattern pathpattern move splitbody copy remove',
+      param:'param dparam params',component:'component',insert:'insert derive',joint:'joint jointorigin rigid motion contact snapshot arrange',surface:'patch stitch trim extend surface',
+      sheet:'sheet flat',form:'form base',mesh:'mesh',sketch:'sketch'};
+function catOfIcon(k){return Object.keys(ICON_CATS).find(c=>ICON_CATS[c].split(' ').includes(k))||'other';}
+function iconName(n){if(!n)return 'other';if(ICON_BY_TYPE[n.type])return ICON_BY_TYPE[n.type];if(/^Mesh|Tessellate|Volumetric/.test(n.type))return 'mesh';return ICON_BY_CAT[n.cat]||'other';}
+// one hidden sprite with every icon; everything else refers to it with <use>
+(function(){const NS='http://www.w3.org/2000/svg';const sp=document.createElementNS(NS,'svg');sp.setAttribute('width','0');sp.setAttribute('height','0');sp.style.position='absolute';
+  sp.innerHTML='<defs>'+Object.keys(ICONS).map(k=>'<symbol id="ic-'+k+'" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">'+ICONS[k]+'</g></symbol>').join('')+'</defs>';
+  document.body.insertBefore(sp,document.body.firstChild);})();
+function iconHTML(name,cat,size){size=size||14;return '<svg class="ico" width="'+size+'" height="'+size+'" style="color:var(--c-'+(cat||'other')+')" aria-hidden="true"><use href="#ic-'+name+'"/></svg>';}
+function iconEl(n,size){const s=document.createElement('span');s.className='icw';s.innerHTML=iconHTML(iconName(n),n?n.cat:'other',size);return s;}
+function iconUse(name,x,y,size,color){const NS='http://www.w3.org/2000/svg';const u=document.createElementNS(NS,'use');u.setAttribute('href','#ic-'+name);u.setAttribute('x',x);u.setAttribute('y',y);u.setAttribute('width',size);u.setAttribute('height',size);u.setAttribute('class','nico');u.style.color=color;return u;}
+const KIND={sketch:'Sketch',profile:'Profile',plane:'Plane / axis / point',geometry:'Faces / edges',body:'Body',feature:'Feature',param:'Parameter',component:'Component',incomp:'In component',joint:'Joint / motion',suppress:'Suppression test',order:'Same body, later'};
 const nodes=D.nodes, byId={}; nodes.forEach(n=>byId[n.id]=n);
+// graphs made before the split had one "assembly" category
+nodes.forEach(n=>{if(n.cat==='assembly'||(n.cat==='other'&&ICON_BY_TYPE[n.type]&&catOfIcon(ICON_BY_TYPE[n.type])!=='other'))n.cat=catOfIcon(ICON_BY_TYPE[n.type]||'other')==='other'?((n.type==='Occurrence'||n.type==='DeriveFeature')?'insert':'joint'):catOfIcon(ICON_BY_TYPE[n.type]);});
+// one common parent for all user parameters (derived parameters stay under their Derive feature)
+{const ups=nodes.filter(n=>n.type==='UserParameter');
+  if(ups.length&&!byId['up:all']){const r={id:'up:all',name:'User Parameters',type:'UserParameters',cat:'param',tl:null,o:-2,g:[],supp:false,health:0,msg:'',info:ups.length+' parameter'+(ups.length===1?'':'s')};
+    nodes.push(r);byId[r.id]=r;// only parameters with no other parent (not driven by another parameter) hang directly under it
+    // a parameter driven by other parameters sits below them: order user parameters by their depth in the
+    // parameter chain (all still before the first timeline item)
+    // a parameter driven by anything else (another parameter, a sketch dimension...) is placed right after
+    // its latest parent, so it sits below it; free parameters come first, before the first timeline item
+    const uid=new Set(ups.map(n=>n.id)),oo={};const pin={};D.edges.forEach(e=>{if(uid.has(e.t)&&byId[e.s])(pin[e.t]=pin[e.t]||[]).push(e.s);});
+    const ord=(id,seen)=>{if(!uid.has(id))return byId[id].o;if(oo[id]!=null)return oo[id];if(seen.has(id))return -1;seen.add(id);
+      const ps=pin[id]||[];return oo[id]=ps.length?Math.max(...ps.map(s=>ord(s,seen)))+0.0005:-1;};
+    ups.forEach(n=>{n.o=ord(n.id,new Set());});
+    const hasParent=new Set(D.edges.map(e=>e.t));ups.forEach(n=>{if(!hasParent.has(n.id))D.edges.push({s:r.id,t:n.id,k:['param'],syn:1});});}}
 const TH=D.thumbs||{};const hasThumbs=Object.keys(TH).length>0;
 // ---------- suppression simulator ----------
 // Uses the recorded suppression tests: a group's own cascade (Whole groups test) or an item's
@@ -1735,7 +2168,7 @@ function simToggleItem(id){if(!canItems)return;const n=byId[id];if(n.supp){sim.u
 function simToggleGroup(g){sim.groups.has(g)?sim.groups.delete(g):sim.groups.add(g);simUpdate();}
 function simReset(){sim.items.clear();sim.groups.clear();sim.un.clear();simUpdate();}
 function simButton(on,title,fn){const b=document.createElement('button');b.className='simtog'+(on?' off':'');b.textContent=on?'off':'on';b.title=title;b.onclick=e=>{e.stopPropagation();fn();};return b;}
-function simUpdate(){setTimeout(pushHist,0);simCompute();paintTree();renderDetails();if(view==='graph')renderGraph(false);renderSimBar();renderGroupPanel();}
+function simUpdate(){saveView();setTimeout(pushHist,0);simCompute();paintTree();renderDetails();if(view==='graph')renderGraph(false);renderSimBar();renderGroupPanel();}
 // one colour per top-level timeline group (timeline order)
 const GCOL=['#4e79a7','#f28e2b','#59a14f','#e15759','#76b7b2','#edc948','#b07aa1','#ff9da7','#9c755f','#8cd17d','#86bcb6','#f1ce63','#d37295','#a0cbe8','#ffbe7d','#499894','#b6992d','#79706e','#d4a6c8','#fabfd2'];
 const gColor={};D.groups.filter(g=>!g.parent).sort((a,b)=>a.first-b.first).forEach((g,i)=>gColor[g.id]=GCOL[i%GCOL.length]);
@@ -1788,28 +2221,52 @@ function peekHide(){document.getElementById('peek').style.display='none';}
 function thumbImg(id){const src=TH[id];if(!src)return null;const im=document.createElement('img');im.className='thumb';im.loading='lazy';im.src=src;im.alt='';
   im.onmouseenter=e=>peekShow(id,e);im.onmousemove=peekMove;im.onmouseleave=peekHide;im.onclick=()=>select(id);return im;}
 const groups={}; (D.groups||[]).forEach(g=>groups[g.id]=g);
+// items outside any timeline group and the user parameters can be folded like groups too
+const isUserParam=n=>n.type==='UserParameter'||n.type==='UserParameters';
+function pseudoOf(n){if(!n||(n.g&&n.g.length))return null;return isUserParam(n)?'_params':'_none';}
+[['_none','Not in a group'],['_params','User parameters']].forEach(([id,name])=>{const mem=nodes.filter(n=>pseudoOf(n)===id);
+  if(mem.length)groups[id]={id,name,parent:null,pseudo:true,first:Math.min(...mem.map(n=>n.tl!=null?n.tl:1e6))};});
 const kindsPresent=[...new Set(D.edges.flatMap(e=>e.k))].filter(k=>KIND[k]);
-const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // ordering links are off by default
+const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // every kind is always on; only "Same body, later" can be switched (Display menu)
 // links found by the suppression test are real dependencies: always shown, no toggle
-let showThumbs=true, showParams=false, view='tree', selected=null, selGroup=null, focus=false, search='';
+let showThumbs=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=false, search='';
 const expanded=new Set(Object.keys(groups)); // graph starts with every group expanded
 const $=id=>document.getElementById(id);
 
 $('title').textContent='Dependencies graph: '+D.meta.doc;document.title='Dependencies graph: '+D.meta.doc;
-$('meta').textContent=nodes.filter(n=>n.cat!=='param').length+' items · '+D.edges.length+' links · '+('references'+(D.meta.gtest?' + group suppression test':'')+(D.meta.exact?' + item suppression test':''))+' · '+D.meta.date;
+$('meta').textContent=nodes.filter(n=>n.cat!=='param'&&n.cat!=='component').length+' items · '+D.edges.filter(e=>!e.syn).length+' links · '+('references'+(D.meta.gtest?' + group suppression test':'')+(D.meta.exact?' + item suppression test':''))+' · '+D.meta.date;
 
-const kd=$('kinds');
-kindsPresent.filter(k=>k!=='suppress').forEach(k=>{const l=document.createElement('label');l.className='chk';if(k==='order')l.title='Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this.';l.innerHTML='<input type="checkbox"'+(kindOn[k]?' checked':'')+'> '+KIND[k];l.firstChild.onchange=e=>{kindOn[k]=e.target.checked;updateLinksBtn();refresh();};kd.appendChild(l);});
+// Filter menu: one checkbox per kind of item present in the design
+function renderCatFilter(){const cd=$('cats');cd.innerHTML='';const cnt={};nodes.forEach(n=>{cnt[n.cat]=(cnt[n.cat]||0)+1;});
+  Object.keys(CAT).filter(c=>cnt[c]).forEach(c=>{const l=document.createElement('label');l.className='chk';
+    l.innerHTML='<input type="checkbox"'+(catOn[c]?' checked':'')+'> <span class="pill" style="color:var(--c-'+c+');background:var(--c-'+c+'-bg)">'+iconHTML(ICON_BY_CAT[c]||'other',c,12)+CAT[c]+'</span><span class="cn">'+cnt[c]+'</span>';
+    l.firstChild.onchange=e=>{catOn[c]=e.target.checked;filterChanged();};cd.appendChild(l);});}
+function filterChanged(){updateFilterBtn();if(selected&&byId[selected]&&!visibleNode(byId[selected]))selected=null;
+  if(view==='graph'&&Object.keys(pos).length){if(PB)stopPlay();animatedRerender(()=>{buildAdj();renderDetails();},{dur:480});}else refresh();}
 
-function visibleNode(n){return showParams||n.cat!=='param';}
-function edgeOn(e){if(!e.k.some(k=>kindOn[k]))return false;return visibleNode(byId[e.s])&&visibleNode(byId[e.t]);}
+function visibleNode(n){return !!n&&catOn[n.cat]!==false;}
+// Links between the items on show. A hidden item does not break a chain: its parents are joined straight to its
+// children (through any number of hidden items). Such joined links are marked via (drawn dotted).
+let EFF=[];
+function computeEff(){const adj={},out=new Map();
+  D.edges.forEach(e=>{if(!byId[e.s]||!byId[e.t])return;const ks=e.k.filter(k=>kindOn[k]!==false);if(!ks.length)return;(adj[e.s]=adj[e.s]||[]).push({t:e.t,k:ks});});
+  const add=(s,t,ks,via)=>{if(s===t)return;const key=s+'>'+t;let x=out.get(key);if(!x){x={s,t,k:[],via:true};out.set(key,x);}ks.forEach(k=>{if(!x.k.includes(k))x.k.push(k);});if(!via)x.via=false;};
+  nodes.forEach(n=>{if(!visibleNode(n))return;const st=(adj[n.id]||[]).map(a=>({t:a.t,k:a.k,via:false}));const seen=new Set();
+    while(st.length){const a=st.pop();if(visibleNode(byId[a.t])){add(n.id,a.t,a.k,a.via);continue;}if(seen.has(a.t))continue;seen.add(a.t);
+      (adj[a.t]||[]).forEach(b=>st.push({t:b.t,k:[...new Set([...a.k,...b.k])],via:true}));}});
+  EFF=[...out.values()];
+  // a suppression-test link that another chain of links already implies (e.g. Derive -> component -> joint) adds nothing
+  const adj2={};EFF.forEach(e=>{(adj2[e.s]=adj2[e.s]||[]).push(e);});
+  EFF=EFF.filter(e=>{if(!(e.k.length===1&&e.k[0]==='suppress'))return true;const seen=new Set([e.s]),st=[e.s];
+    while(st.length){const x=st.pop();for(const f of adj2[x]||[]){if(f===e)continue;if(f.t===e.t)return false;if(!seen.has(f.t)){seen.add(f.t);st.push(f.t);}}}return true;});}
+function edgeOn(e){return true;}
 let preds={},succs={};
-function buildAdj(){preds={};succs={};nodes.forEach(n=>{preds[n.id]=[];succs[n.id]=[];});
-  D.edges.forEach(e=>{if(!edgeOn(e))return;preds[e.t].push(e);succs[e.s].push(e);});
+function buildAdj(){computeEff();preds={};succs={};nodes.forEach(n=>{preds[n.id]=[];succs[n.id]=[];});
+  EFF.forEach(e=>{preds[e.t].push(e);succs[e.s].push(e);});
   for(const id in preds){preds[id].sort((a,b)=>byId[a.s].o-byId[b.s].o);succs[id].sort((a,b)=>byId[a.t].o-byId[b.t].o);}}
 function closure(id,dir){const seen=new Set(),st=[id];while(st.length){const x=st.pop();for(const e of (dir==='up'?preds[x]:succs[x])){const y=dir==='up'?e.s:e.t;if(!seen.has(y)){seen.add(y);st.push(y);}}}return seen;}
 
-function pill(n){const s=document.createElement('span');s.className='pill';s.textContent=n.type.replace(/Feature$/,'');s.style.color='var(--c-'+n.cat+')';s.style.background='var(--c-'+n.cat+'-bg)';return s;}
+function pill(n){const s=document.createElement('span');s.className='pill';s.innerHTML=iconHTML(iconName(n),n.cat,12);s.appendChild(document.createTextNode(n.type.replace(/Feature$/,'')));s.style.color='var(--c-'+n.cat+')';s.style.background='var(--c-'+n.cat+'-bg)';return s;}
 function stateCls(n){if(simState){if(isBroken(n))return 'st-err'+(brokenKind(n)==='est'?' st-est':'');if(isSupp(n))return 'st-sup'+(simState.est.has(n.id)?' st-est':'');return n.health===2?'st-err':(n.health===1?'st-warn':'');}return n.supp?'st-sup':(n.health===2?'st-err':(n.health===1?'st-warn':''));}
 function hl(text){if(!search)return document.createTextNode(text);const i=text.toLowerCase().indexOf(search);if(i<0)return document.createTextNode(text);
   const f=document.createDocumentFragment();f.append(text.slice(0,i));const m=document.createElement('span');m.className='hit';m.textContent=text.slice(i,i+search.length);f.append(m,text.slice(i+search.length));return f;}
@@ -1861,11 +2318,11 @@ function testUnitLinks(){const L=new Map();
     g.dsupp.forEach(i=>{const n=byId[i];if(!n||!visibleNode(n))return;const b=unitOf(n);if(b===a)return;if(!L.has(a))L.set(a,new Map());L.get(a).set(b,(L.get(a).get(b)||0)+1);});});
   const red=new Map();L.forEach((m,a)=>{const keep=new Map();m.forEach((c,b)=>{let via=false;m.forEach((c2,x)=>{if(x!==b&&L.has(x)&&L.get(x).has(b))via=true;});if(!via)keep.set(b,c);});red.set(a,keep);});
   return red;}
-const useTestLinks=()=>level==='groups'&&!!D.meta.gtest;
+const useTestLinks=()=>false;   // links between group boxes are the links of their items
 function unitAdj(){if(useTestLinks()){const up={},dn={};nodes.filter(visibleNode).forEach(n=>{const u=unitOf(n);up[u]=up[u]||new Map();dn[u]=dn[u]||new Map();});
     testUnitLinks().forEach((m,a)=>m.forEach((c,b)=>{if(!dn[a]||!up[b])return;dn[a].set(b,c);up[b].set(a,c);}));return {up,dn};}
 const up={},dn={};const vis=nodes.filter(visibleNode);vis.forEach(n=>{const u=unitOf(n);up[u]=up[u]||new Map();dn[u]=dn[u]||new Map();});
-  D.edges.forEach(e=>{if(!edgeOn(e))return;const a=byId[e.s],b=byId[e.t];if(!a||!b||!visibleNode(a)||!visibleNode(b))return;const ua=unitOf(a),ub=unitOf(b);if(ua===ub)return;
+  EFF.forEach(e=>{const a=byId[e.s],b=byId[e.t];if(!a||!b||!visibleNode(a)||!visibleNode(b))return;const ua=unitOf(a),ub=unitOf(b);if(ua===ub)return;
     dn[ua].set(ub,(dn[ua].get(ub)||0)+1);up[ub].set(ua,(up[ub].get(ua)||0)+1);});return {up,dn};}
 function unitOrder(u){return u[0]==='g'&&groups[u.slice(1)]?Math.min(...groupMembers(u.slice(1)).map(n=>n.o).concat([1e9])):(byId[u]?byId[u].o:1e9);}
 function unitMatches(u){if(!search)return true;if(u[0]==='g'&&groups[u.slice(1)]){const g=groups[u.slice(1)];return g.name.toLowerCase().includes(search)||groupMembers(g.id).some(matches);}return byId[u]?matches(byId[u]):false;}
@@ -1922,21 +2379,29 @@ function renderTree(){
 // ---------- back / forward: selection and suppression-preview history ----------
 const hist=[];let hIdx=-1,hMute=false;
 function snap(){return {sel:selected,grp:selGroup,items:[...sim.items].sort(),groups:[...sim.groups].sort(),un:[...sim.un].sort()};}
-function pushHist(){if(hMute)return;const st=snap();if(hIdx>=0&&JSON.stringify(hist[hIdx])===JSON.stringify(st))return;
+// each history step also remembers the graph's zoom and position while it was the current one
+const histKey=o=>JSON.stringify({sel:o.sel,grp:o.grp,items:o.items,groups:o.groups,un:o.un});
+function saveView(){if(hMute||hIdx<0||!hist[hIdx]||view!=='graph'||!Object.keys(pos).length)return;hist[hIdx].view={x:T.x,y:T.y,k:T.k,layout:layoutMode};}
+function pushHist(){if(hMute)return;const st=snap();if(hIdx>=0&&histKey(hist[hIdx])===histKey(st))return;
   hist.splice(hIdx+1);hist.push(st);if(hist.length>300)hist.shift();hIdx=hist.length-1;updHistBtns();}
+function viewTo(v,dur){if(!v)return;if(anim)cancelAnimationFrame(anim);const s0={x:T.x,y:T.y,k:T.k},t0=performance.now();dur=dur||450;
+  const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;T.k=s0.k+(v.k-s0.k)*e;T.x=s0.x+(v.x-s0.x)*e;T.y=s0.y+(v.y-s0.y)*e;applyT();if(a<1)anim=requestAnimationFrame(step);else anim=null;};
+  anim=requestAnimationFrame(step);}
 function updHistBtns(){const b=$('hBack'),n=$('hNext');if(b)b.disabled=hIdx<=0;if(n)n.disabled=hIdx>=hist.length-1;}
-function goHist(d){const j=hIdx+d;if(j<0||j>=hist.length)return;hIdx=j;const st=hist[j];hMute=true;
+function goHist(d){const j=hIdx+d;if(j<0||j>=hist.length)return;saveView();hIdx=j;const st=hist[j];hMute=true;
   try{sim.items=new Set(st.items);sim.groups=new Set(st.groups);sim.un=new Set(st.un);simCompute();renderSimBar();paintTree();renderGroupPanel();
     if(st.sel&&byId[st.sel])select(st.sel);else if(st.grp&&groups[st.grp])selectGroup(st.grp);else clearSel();}
-  finally{hMute=false;}updHistBtns();}
-function select(id){setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn([rep(byId[id])]));}}
-function selectGroup(gid){setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&r.dataset.gid===gid));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn([...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
-function clearSel(){setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
+  finally{hMute=false;}updHistBtns();
+  // back where we were: the zoom and position from then (after the selection's own zoom has started)
+  const v=st.view;if(v&&view==='graph'&&v.layout===layoutMode)requestAnimationFrame(()=>requestAnimationFrame(()=>viewTo(v,480)));}
+function select(id){saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn([rep(byId[id])]));}}
+function selectGroup(gid){saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&r.dataset.gid===gid));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn([...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
+function clearSel(){saveView();setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
 function groupUpIds(gid){const mem=groupMembers(gid);const mset=new Set(mem.map(n=>n.id));
   const links=mem.flatMap(n=>[...closure(n.id,'up')]);
   const test=D.meta.gtest?D.groups.filter(o=>o.id!==gid&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).flatMap(o=>groupMembers(o.id).map(n=>n.id)):[];
   return [...new Set([...links,...test])].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));}
-function groupMembers(gid){return nodes.filter(n=>(n.g||[]).includes(gid));}
+function groupMembers(gid){if(groups[gid]&&groups[gid].pseudo)return nodes.filter(n=>pseudoOf(n)===gid);return nodes.filter(n=>(n.g||[]).includes(gid));}
 function groupPath(gid){const out=[];let g=groups[gid];let guard=0;while(g&&guard++<20){out.unshift(g.name);g=groups[g.parent];}return out;}
 function groupsSuppressing(id){return D.groups.filter(g=>g.dsupp&&g.dsupp.includes(id));}
 function itemList(ids){const ul=document.createElement('ul');if(!ids.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
@@ -1946,7 +2411,7 @@ function groupLinks(list){const ul=document.createElement('ul');if(!list.length)
   list.forEach(([gid,cnt])=>{const g=groups[gid];const li=document.createElement('li');const a=document.createElement('span');{const gm=g?groupMembers(gid):[];a.className='name grp'+(gm.length&&gm.every(isSupp)?' st-sup':'');}a.textContent=g?g.name:gid;a.onclick=()=>selectGroup(gid);li.appendChild(a);if(cnt!=null){const k=document.createElement('span');k.className='k';k.textContent=cnt+' item'+(cnt===1?'':'s');li.appendChild(k);}ul.appendChild(li);});return ul;}
 function renderGroupDetails(d){
   const g=groups[selGroup];const mem=groupMembers(selGroup);const mset=new Set(mem.map(n=>n.id));
-  const h=document.createElement('h2');h.textContent=g.name;d.appendChild(h);
+  const h=document.createElement('h2');h.textContent=g.name;h.insertAdjacentHTML('afterbegin','<span class="icw">'+iconHTML('group','group',18)+'</span>');d.appendChild(h);
   {const last=[...mem].sort((a,b)=>b.o-a.o).find(n=>TH[n.id]);if(last&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[last.id];im.alt='Model after '+last.name;im.title='Model after the last item in the group: '+last.name;d.appendChild(im);}}
   if(simOn){const b=document.createElement('button');const on=sim.groups.has(selGroup);b.textContent=on?'Switch group back on (simulation)':'Suppress group (simulation)';b.style.margin='6px 0';b.onclick=()=>simToggleGroup(selGroup);d.appendChild(b);}
   const kv=document.createElement('div');kv.className='kv';
@@ -1964,10 +2429,11 @@ function renderGroupDetails(d){
     const x=document.createElement('div');x.className='kv';x.append('Fusion refuses to suppress this group through the API because this feature then fails to compute. The preview can still suppress it: that feature is marked broken, the rest is estimated from the links. ');
     if(g.fail.node&&byId[g.fail.node]){const a=document.createElement('span');a.className='name st-err';a.textContent=byId[g.fail.node].name;a.onclick=()=>select(g.fail.node);x.appendChild(a);}else x.append(g.fail.name||'unknown feature');
     d.appendChild(x);if(g.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=g.fail.msg;d.appendChild(m);}
+  }else if(g.pseudo){const x=document.createElement('div');x.className='hint';x.textContent=g.id==='_params'?'All user parameters, shown as one box. Expand it (+) to see them one by one.':'Items that are not in any timeline group, shown as one box. Expand it (+) to see them one by one.';d.appendChild(x);
   }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Deep analysis on to see what suppressing this group does.');d.appendChild(x);}
   // reference links crossing the group boundary, counted per other group
   const out={},inn={};
-  D.edges.forEach(e=>{if(!edgeOn(e))return;const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
+  EFF.forEach(e=>{const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
   const toList=m=>Object.entries(m).filter(([k])=>k!=='-').sort((x,y)=>y[1]-x[1]);
   const h4=document.createElement('h3');h4.textContent='References into other groups';d.append(h4,groupLinks(toList(out)));
   const h5=document.createElement('h3');h5.textContent='Referenced from other groups';d.append(h5,groupLinks(toList(inn)));
@@ -1980,7 +2446,7 @@ function renderGroupDetails(d){
 }
 function linkList(list,dir){const ul=document.createElement('ul');if(!list.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
   list.forEach(e=>{const n=byId[dir==='up'?e.s:e.t];const li=document.createElement('li');li.appendChild(pill(n));const a=document.createElement('span');a.className='name '+stateCls(n);a.textContent=n.name;a.onclick=()=>select(n.id);li.appendChild(a);const k=document.createElement('span');k.className='k';k.textContent=e.k.map(x=>KIND[x]||x).join(', ');li.appendChild(k);li.addEventListener('mouseenter',()=>panelLinkHover(e.s,e.t,true));li.addEventListener('mouseleave',()=>panelLinkHover(e.s,e.t,false));ul.appendChild(li);});return ul;}
-function setInfo(open){document.body.classList.toggle('infoopen',!!open);$('infoBtn').classList.toggle('on',!!open);}
+function setInfo(open){if(open&&document.body.classList.contains('legendopen'))setLegend(false);document.body.classList.toggle('infoopen',!!open);$('infoBtn').classList.toggle('on',!!open);}
 function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.createElement('div');cols.className='cols';
   const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details. Click empty space in the graph to deselect.</div>';
   const lg=document.createElement('div');lg.className='legend';Object.keys(CAT).forEach(c=>{if(!nodes.some(n=>n.cat===c))return;const s=document.createElement('span');s.className='pill';s.textContent=CAT[c];s.style.color='var(--c-'+c+')';s.style.background='var(--c-'+c+'-bg)';lg.appendChild(s);});c1.appendChild(lg);
@@ -1998,7 +2464,7 @@ function renderDetails(){
   if(!selected){renderInfo();return;}
   setInfo(false);
   const n=byId[selected];
-  const h=document.createElement('h2');h.textContent=n.name;h.className=stateCls(n);d.appendChild(h);
+  const h=document.createElement('h2');h.textContent=n.name;h.className=stateCls(n);h.prepend(iconEl(n,18));d.appendChild(h);
   if(TH[n.id]&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[n.id];im.alt='Model after '+n.name;d.appendChild(im);}
   const kv=document.createElement('div');kv.className='kv';
   [n.type+(n.info?' · '+n.info:''),n.tl!=null?'Timeline position '+(n.tl+1):'',isSupp(n)?'Suppressed':(isBroken(n)?brokenText(n):warnKind(n)?warnText(n):'OK')].filter(Boolean).forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});
@@ -2084,6 +2550,7 @@ function edgeSamples(a,b,o1,o2,bow,n){const sg=edgeSegs(a,b,o1,o2,bow),out=[],pe
 // opts.keepOld/keepNew: keep that box fixed on screen;  opts.fit: refit the view (animated) instead.
 function animatedRerender(change,opts){opts=opts||{};
   const prev={};Object.keys(pos).forEach(id=>prev[id]={x:pos[id].x,y:pos[id].y});const T0={x:T.x,y:T.y,k:T.k};
+  const oldEdges=edgeEls.map(x=>({k:x.s+'>'+x.t,el:x.el}));const prevEK=new Set(oldEdges.map(x=>x.k));const oldLanes=lanes.length?vp.firstChild:null;
   const oldEls=nodeEls;const prevRep={};nodes.forEach(n=>{prevRep[n.id]=rep(n);});
   const o=opts.keepOld?pos[opts.keepOld]:null;
   change();renderGraph(false);
@@ -2111,23 +2578,42 @@ function animatedRerender(change,opts){opts=opts||{};
     if(!tgt&&opts.keepNew&&pos[opts.keepNew])tgt=opts.keepNew;
     const el=oldEls[id];el.style.pointerEvents='none';gl.appendChild(el);
     ghosts.push({el,from:animT?prev[id]:toNew(prev[id]),to:tgt?pos[tgt]:(animT?prev[id]:toNew(prev[id]))});});
-  if(graphAnim)cancelAnimationFrame(graphAnim);const t0=performance.now(),dur=opts.fit?420:320;
+  // links that went away fade out where they were; new links fade in
+  const newEK=new Set(edgeEls.map(x=>x.s+'>'+x.t));const gEdges=oldEdges.filter(x=>!newEK.has(x.k));
+  gEdges.forEach(x=>{x.el.style.pointerEvents='none';gl.insertBefore(x.el,gl.firstChild);});
+  const freshE=new Set(edgeEls.filter(x=>!prevEK.has(x.s+'>'+x.t)));
+  // block backgrounds (Groups / Components layouts): old ones fade out, new ones fade in
+  const newLanes=lanes.length?vp.firstChild:null;if(oldLanes&&oldLanes!==newLanes){oldLanes.style.pointerEvents='none';vp.insertBefore(oldLanes,vp.firstChild);}
+  if(graphAnim)cancelAnimationFrame(graphAnim);const t0=performance.now(),dur=opts.dur||(opts.fit?420:320);
   const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;const cur={};
     if(animT){T.x=TA.x+(T1.x-TA.x)*e;T.y=TA.y+(T1.y-TA.y)*e;T.k=TA.k+(T1.k-TA.k)*e;applyT();}
     Object.keys(pos).forEach(id=>{const s0=start[id],t1=pos[id];const c={x:s0.x+(t1.x-s0.x)*e,y:s0.y+(t1.y-s0.y)*e};cur[id]=c;const el=nodeEls[id];
       if(el){el.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))el.style.opacity=a<1?String(e):'';}});
-    edgeEls.forEach(x=>{if(cur[x.s]&&cur[x.t]){{const dd=edgeD(cur[x.s],cur[x.t],x.o1,x.o2,x.bow);x.el.setAttribute('d',dd);if(x.hit)x.hit.setAttribute('d',dd);}if(fresh.has(x.s)||fresh.has(x.t))x.el.style.opacity=a<1?String(e):'';}});
+    edgeEls.forEach(x=>{if(cur[x.s]&&cur[x.t]){{const dd=edgeD(cur[x.s],cur[x.t],x.o1,x.o2,x.bow);x.el.setAttribute('d',dd);if(x.hit)x.hit.setAttribute('d',dd);}if(fresh.has(x.s)||fresh.has(x.t)||freshE.has(x))x.el.style.opacity=a<1?String(e):'';}});
+    gEdges.forEach(x=>{x.el.style.opacity=String(1-e);});
+    if(newLanes)newLanes.style.opacity=a<1?String(e):'';if(oldLanes&&oldLanes!==newLanes){oldLanes.style.opacity=String(1-e);if(a>=1)oldLanes.remove();}
     ghosts.forEach(g=>{const c={x:g.from.x+(g.to.x-g.from.x)*e,y:g.from.y+(g.to.y-g.from.y)*e};g.el.setAttribute('transform','translate('+c.x+','+c.y+')');g.el.style.opacity=String(1-e);});
     if(a<1)graphAnim=requestAnimationFrame(step);else{graphAnim=null;gl.remove();}};
   graphAnim=requestAnimationFrame(step);}
-let searchOpen=new Set();let layoutMode='deps',lanes=[];const collapsedNodes=new Set();
-function rep(n){const gp=n.g||[];for(const g of gp){if(!expanded.has(g)&&!searchOpen.has(g))return 'g'+g;}return n.id;}
+let searchOpen=new Set();let layoutMode='lanes',lanes=[];const collapsedNodes=new Set();let collapseEverything=false;
+// block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
+const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
+const compOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component')compOf[e.t]=e.s;});
+nodes.forEach(n=>{if(n.cat==='component')compOf[n.id]=n.id;});
+const cColor={};nodes.filter(n=>n.cat==='component').sort((a,b)=>a.o-b.o).forEach((n,i)=>cColor[n.id]=GCOL[(i+3)%GCOL.length]);
+// user parameters get a block of their own; a derived parameter stays with its Derive feature
+const dparamOf={};D.edges.forEach(e=>{if(byId[e.t]&&byId[e.t].type==='DerivedParameter'&&byId[e.s]&&byId[e.s].tl!=null)dparamOf[e.t]=e.s;});
+function laneKey(n){if(!n)return null;if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
+  if(n.type==='DerivedParameter'&&dparamOf[n.id])return laneKey(byId[dparamOf[n.id]]);
+  if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
+function rep(n){const gp=n.g||[];for(const g of gp){if(!expanded.has(g)&&!searchOpen.has(g))return 'g'+g;}
+  const ps=pseudoOf(n);if(ps&&groups[ps]&&!expanded.has(ps)&&!searchOpen.has(ps))return 'g'+ps;return n.id;}
 let NW=210,NH=26;const XG=18,YG=64;// top-down: XG = gap between boxes in a row, YG = gap between rows
 function renderGraph(fitAfter,centerId){
   if(PB)stopPlay();   // a re-render replaces the boxes the playback is animating
   const gth=hasThumbs&&showThumbs;NW=gth?240:210;NH=gth?50:26;
   searchOpen=new Set();let hitReps=null;
-  if(search){nodes.filter(n=>visibleNode(n)&&matches(n)).forEach(n=>(n.g||[]).forEach(g=>searchOpen.add(g)));}
+  if(search){nodes.filter(n=>visibleNode(n)&&matches(n)).forEach(n=>{(n.g||[]).forEach(g=>searchOpen.add(g));const ps=pseudoOf(n);if(ps)searchOpen.add(ps);});}
   const vis=nodes.filter(visibleNode);
   let keep=null;
   if(focus&&selected){keep=new Set([selected,...closure(selected,'up'),...closure(selected,'down')]);}
@@ -2139,20 +2625,21 @@ function renderGraph(fitAfter,centerId){
   if(search){hitReps=new Set(reps.filter(r=>r.members.some(matches)).map(r=>r.id));}
   graphHits=hitReps?reps.filter(r=>hitReps.has(r.id)).map(r=>r.id):[];
   const ek={};let redges=[];
-  D.edges.forEach(e=>{if(!edgeOn(e))return;if(keep&&(!keep.has(e.s)||!keep.has(e.t)))return;const a=rep(byId[e.s]),b=rep(byId[e.t]);if(a===b||!R[a]||!R[b])return;const k=a+'>'+b;if(!ek[k]){ek[k]={s:a,t:b,n:0,src:[]};redges.push(ek[k]);}ek[k].n++;ek[k].src.push(e);});
+  EFF.forEach(e=>{if(keep&&(!keep.has(e.s)||!keep.has(e.t)))return;const a=rep(byId[e.s]),b=rep(byId[e.t]);if(a===b||!R[a]||!R[b])return;const k=a+'>'+b;if(!ek[k]){ek[k]={s:a,t:b,n:0,src:[]};redges.push(ek[k]);}ek[k].n++;ek[k].src.push(e);});
   if(useTestLinks()){redges=redges.filter(e=>{const gg=R[e.s].isGroup&&R[e.t].isGroup;if(gg)delete ek[e.s+'>'+e.t];return !gg;});
     testUnitLinks().forEach((m,a)=>{if(!R[a]||!R[a].isGroup)return;m.forEach((c,b)=>{if(!R[b])return;const k=a+'>'+b;if(ek[k]){ek[k].src.push({s:a,t:b,k:['suppress']});return;}const x={s:a,t:b,n:c,src:[{s:a,t:b,k:['suppress']}]};ek[k]=x;redges.push(x);});});}
   // collapsed boxes hide everything that depends on them (their whole downstream)
   const kids={};redges.forEach(e=>{(kids[e.s]=kids[e.s]||[]).push(e.t);});
   // the collapse button only appears where collapsing would hide something: in the Groups layout that means
   // something depending on the box inside its own timeline group (a collapsed box always keeps its button)
-  const laneOfR=id=>R[id]?(topGroup(R[id].members[0])||'_none'):null;
-  const canCollapse=id=>{if(!kids[id]||!kids[id].length)return false;if(layoutMode!=='lanes'||collapsedNodes.has(id))return true;
+  const laneOfR=id=>R[id]?laneKey(R[id].members[0]):null;
+  const canCollapse=id=>{if(!kids[id]||!kids[id].length)return false;if(!isLanes()||collapsedNodes.has(id))return true;
     const l=laneOfR(id),st=[...kids[id]],seen=new Set();while(st.length){const x=st.pop();if(seen.has(x)||x===id)continue;seen.add(x);if(laneOfR(x)===l)return true;(kids[x]||[]).forEach(y=>st.push(y));}return false;};
+  if(collapseEverything){collapseEverything=false;reps.forEach(r=>{if(canCollapse(r.id))collapsedNodes.add(r.id);});}
   const hiddenBy={};collapsedNodes.forEach(c=>{if(!R[c])return;const st=[...(kids[c]||[])];const seen=new Set();while(st.length){const x=st.pop();if(seen.has(x)||x===c)continue;seen.add(x);(kids[x]||[]).forEach(y=>st.push(y));}
     // in Lanes view a collapsed box only hides what depends on it inside its own timeline group
-    const lane=id=>R[id]?(topGroup(R[id].members[0])||'_none'):null;const cl=lane(c);
-    seen.forEach(x=>{if(layoutMode==='lanes'&&lane(x)!==cl)return;(hiddenBy[x]=hiddenBy[x]||[]).push(c);});});
+    const lane=id=>R[id]?laneKey(R[id].members[0]):null;const cl=lane(c);
+    seen.forEach(x=>{if(isLanes()&&lane(x)!==cl)return;(hiddenBy[x]=hiddenBy[x]||[]).push(c);});});
   const hiddenCount={};collapsedNodes.forEach(c=>{hiddenCount[c]=0;});Object.keys(hiddenBy).forEach(x=>hiddenBy[x].forEach(c=>hiddenCount[c]++));
   Object.keys(hiddenBy).forEach(x=>{if(collapsedNodes.has(x)&&hiddenBy[x].every(c=>c===x))delete hiddenBy[x];});
   reps=reps.filter(r=>!hiddenBy[r.id]);
@@ -2161,7 +2648,7 @@ function renderGraph(fitAfter,centerId){
   {const vis=x=>{if(!hiddenBy[x])return x;const c=hiddenBy[x].find(c=>!hiddenBy[c]);return c||null;};const m={};const out=[];
     redges.forEach(e=>{const a=vis(e.s),b=vis(e.t);if(!a||!b||a===b)return;const k=a+'>'+b;
       if(a===e.s&&b===e.t&&!m[k]){m[k]=e;out.push(e);return;}
-      if(m[k]){m[k].n+=e.n;m[k].src.push(...e.src);return;}
+      if(m[k]){m[k].n+=e.n;m[k].src.push(...e.src);if(a===e.s&&b===e.t)m[k].via=false;return;}
       const x={s:a,t:b,n:e.n,src:[...e.src],via:true};m[k]=x;out.push(x);});
     redges=out;}
   const pr={};reps.forEach(r=>pr[r.id]=[]);redges.forEach(e=>{pr[e.t].push(e.s);});
@@ -2169,7 +2656,7 @@ function renderGraph(fitAfter,centerId){
   // expanded timeline groups keep a header box above their items, linked to the group's first items
   const headers=[];const openG=g=>expanded.has(g)||searchOpen.has(g);
   // group boxes for expanded groups only in Groups mode; Items mode is a pure item graph
-  if(layoutMode!=='lanes'&&level==='groups'){const repSet=new Set(reps.map(r=>r.id));
+  if(!isLanes()){const repSet=new Set(reps.map(r=>r.id));   // Depth layout: every open timeline group has a header box above its items
     D.groups.forEach(g=>{if(!openG(g.id))return;let p=g.parent,ok=true,guard=0;while(p&&guard++<20){if(!openG(p)){ok=false;break;}p=groups[p]?groups[p].parent:null;}if(!ok)return;
       const ch=new Set(),mem=[];groupMembers(g.id).forEach(n=>{const r=rep(n);if(!repSet.has(r))return;mem.push(n);const path=n.g||[];const nx=path[path.indexOf(g.id)+1];ch.add(nx&&openG(nx)?'h'+nx:r);});
       if(mem.length)headers.push({id:'h'+g.id,gid:g.id,depth:groupPath(g.id).length,ch:[...ch],mem});});
@@ -2181,25 +2668,29 @@ function renderGraph(fitAfter,centerId){
       layer[h.id]=Math.min(...h.targets.map(t=>layer[t]!=null?layer[t]:0))-1;});}
   const cols={};reps.forEach(r=>{(cols[layer[r.id]]=cols[layer[r.id]]||[]).push(r);});
   pos={};lanes=[];const Ls=Object.keys(cols).map(Number).sort((a,b)=>a-b);
-  if(layoutMode==='lanes'){
+  const laneLevels=[];
+  if(isLanes()){
     // one column per top-level timeline group, in timeline order; rows inside a lane follow the
     // dependencies between that lane's own boxes, so each lane starts at the top
-    const laneOf=r=>topGroup(r.members[0])||'_none';const LN={};
+    const laneOf=r=>laneKey(r.members[0]);const LN={};
     reps.forEach(r=>{const k=laneOf(r);(LN[k]=LN[k]||{id:k,o:1e9,items:[]});LN[k].o=Math.min(LN[k].o,r.o);LN[k].items.push(r);});
     const order=Object.values(LN).sort((a,b)=>a.o-b.o);const LG=46,TOP=44,SUBG=YG*0.45;
     // 1) each lane on its own: rows by dependency depth, long rows wrap into a small grid
     const built=order.map(l=>{const inL=new Set(l.items.map(r=>r.id));const ll={};l.items.sort((a,b)=>a.o-b.o).forEach(r=>{let d=0;pr[r.id].forEach(s=>{if(inL.has(s)&&ll[s]!=null&&R[s].o<r.o)d=Math.max(d,ll[s]+1);});ll[r.id]=d;});
       const rows={};l.items.forEach(r=>{(rows[ll[r.id]]=rows[ll[r.id]]||[]).push(r);});
       const maxc=Math.max(2,Math.min(5,Math.ceil(Math.sqrt(l.items.length))));
-      const loc={};let y=TOP,w=1;
-      Object.keys(rows).map(Number).sort((a,b)=>a-b).forEach((L,li)=>{const a=rows[L];if(li)y+=YG;
-        for(let i=0;i<a.length;i+=maxc){if(i)y+=SUBG;const ch=a.slice(i,i+maxc);ch.forEach((r,k)=>{loc[r.id]={x:k*(NW+XG),y:y};});w=Math.max(w,ch.length);y+=NH;}});
-      return {l,loc,w:w*(NW+XG)-XG,h:y+18};});
+      const loc={};let y=TOP,w=1;const levels=[];
+      Object.keys(rows).map(Number).sort((a,b)=>a-b).forEach((L,li)=>{const a=rows[L];if(li)y+=YG;const lv={ids:a.map(r=>r.id),ys:[],home:{}};levels.push(lv);
+        for(let i=0;i<a.length;i+=maxc){if(i)y+=SUBG;const ch=a.slice(i,i+maxc);lv.ys.push(y);ch.forEach((r,k)=>{loc[r.id]={x:k*(NW+XG),y:y};lv.home[r.id]=(lv.ys.length-1)*1000+k;});w=Math.max(w,ch.length);y+=NH;}});
+      // the places a row may use when the selection pulls boxes together: every column of the block, on the row's own lines
+      levels.forEach(lv=>{lv.slots=[];lv.ys.forEach((yy,ri)=>{for(let k=0;k<w;k++)lv.slots.push({x:k*(NW+XG),y:yy,key:ri*1000+k});});});
+      return {l,loc,levels,w:w*(NW+XG)-XG,h:y+18};});
     // 2) lanes packed left to right into rows of lanes, aiming at a roughly 16:10 overall shape
     const area=built.reduce((a,b)=>a+(b.w+LG)*(b.h+LG),0);const target=Math.max(Math.max(...built.map(b=>b.w)),Math.sqrt(area*1.6));
     let lx=0,ly=0,rowH=0;
     built.forEach(b=>{if(lx>0&&lx+b.w>target){lx=0;ly+=rowH+LG;rowH=0;}
       Object.keys(b.loc).forEach(id=>{pos[id]={x:lx+b.loc[id].x,y:ly+b.loc[id].y};});
+      b.levels.forEach(lv=>laneLevels.push({ids:lv.ids,home:lv.home,slots:lv.slots.map(q=>({x:lx+q.x,y:ly+q.y,key:q.key}))}));
       lanes.push({id:b.l.id,x:lx-14,w:b.w+28,y0:ly,y1:ly+b.h});lx+=b.w+LG;rowH=Math.max(rowH,b.h);});
   }else
   Ls.forEach(L=>{const c=cols[L];c.forEach(r=>{const xs=pr[r.id].map(s=>pos[s]?pos[s].x+NW/2:null).filter(v=>v!=null);r.bc=xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;});
@@ -2227,7 +2718,19 @@ function renderGraph(fitAfter,centerId){
   if(selSet)selRelated=[...new Set([...selSet,...(up||[]),...(down||[])])].filter(r=>r!=='__group__');
   // selection: pull the related boxes together in each row, centred under the selection;
   // unrelated boxes in those rows move aside (rows themselves stay where they are)
-  if(selSet&&layoutMode!=='lanes'&&!focus){const rel=new Set([...selSet,...(up||[]),...(down||[])]);
+  // Groups / Components layouts: boxes stay inside their block, but within each block the related boxes take the
+  // places nearest to the selection (each dependency level of a block keeps its own places)
+  if(selSet&&isLanes()&&!focus){const rel=new Set([...selSet,...(up||[]),...(down||[])]);const sx=[...selSet].map(i=>pos[i]).filter(Boolean);
+    if(sx.length&&rel.size>1){const cx=sx.reduce((a,p)=>a+p.x+NW/2,0)/sx.length,cy=sx.reduce((a,p)=>a+p.y+NH/2,0)/sx.length;
+      const dist=q=>Math.abs(q.x+NW/2-cx)+0.6*Math.abs(q.y+NH/2-cy);
+      laneLevels.forEach(L=>{const ids=L.ids.filter(i=>pos[i]);const inR=ids.filter(i=>rel.has(i));if(!inR.length||inR.length===ids.length)return;
+        const slots=L.slots.map((q,i)=>({q,i}));const near=slots.slice().sort((a,b)=>dist(a.q)-dist(b.q)||a.i-b.i);
+        const taken=new Set();inR.forEach((id,k)=>{const sl=near[k];taken.add(sl.i);pos[id]={x:sl.q.x,y:sl.q.y};});
+        // the others keep their own place when it is still free, otherwise take the first free one
+        const others=ids.filter(i=>!rel.has(i));const byKey={};slots.forEach(sl=>{byKey[sl.q.key]=sl;});const wait=[];
+        others.forEach(id=>{const sl=byKey[L.home[id]];if(sl&&!taken.has(sl.i)){taken.add(sl.i);pos[id]={x:sl.q.x,y:sl.q.y};}else wait.push(id);});
+        const free=slots.filter(sl=>!taken.has(sl.i));wait.forEach((id,k)=>{const sl=free[k];if(sl){pos[id]={x:sl.q.x,y:sl.q.y};}});});}}
+  if(selSet&&!isLanes()&&!focus){const rel=new Set([...selSet,...(up||[]),...(down||[])]);
     const hdrOf={};Object.keys(pos).forEach(id=>{if(id[0]==='h'&&R[id]&&R[id].members.some(m=>rel.has(rep(m))))rel.add(id);});
     const sx=[...selSet].map(i=>pos[i]).filter(Boolean);
     if(sx.length&&rel.size>1){const cx=sx.reduce((a,p)=>a+p.x+NW/2,0)/sx.length;const rows={};
@@ -2241,10 +2744,20 @@ function renderGraph(fitAfter,centerId){
   const hdrRelated=r=>!!selSet&&r.members.some(m=>{const x=rep(m);return selSet.has(x)||(up&&up.has(x))||(down&&down.has(x))||m.id===selected;});
   const NS='http://www.w3.org/2000/svg';hovState=null;hovPin=null;vp.innerHTML='';
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
-    lanes.forEach(l=>{const col=l.id==='_none'?'var(--muted)':(gColor[l.id]||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
+    const CM=layoutMode==='comps';const noLane=id=>id==='_none'||id==='_root'||(id==='_params'&&!byId['up:all']);
+    lanes.forEach(l=>{const col=l.id==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.07;stroke:'+col+';stroke-opacity:.45;stroke-width:1.5');
-      const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const full=l.id==='_none'?'Not in a group':(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=l.id==='_none'?'default':'pointer';lg.append(bg,tx);if(l.id!=='_none')lg.addEventListener('click',ev=>{ev.stopPropagation();if(!moved)selectGroup(l.id);});gl.appendChild(lg);});}
+      const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const full=l.id==='_params'?'User parameters':l.id==='_none'?'Not in a group':l.id==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
+      // fold button on the block title: a whole timeline group (Groups layout) or a whole component (Components layout)
+      {const gidL=CM?null:l.id,cidL=CM&&byId[l.id]?l.id:null,psL=(l.id==='_params'||(l.id==='_none'&&!CM))?l.id:null;const gk=psL||gidL;
+        const can=(gk&&groups[gk])||(cidL&&canCollapse(cidL))||(cidL&&collapsedNodes.has(cidL));
+        if(can){const open=cidL?!collapsedNodes.has(cidL):(expanded.has(gk)||searchOpen.has(gk));const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(l.x+l.w/2)+','+(l.y1+1)+')');   // bottom centre, like the boxes' buttons
+          const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?8:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
+          const tt=document.createElementNS(NS,'title');tt.textContent=open?(cidL?'Fold this component into its box':'Fold this whole group into one box'):(cidL?'Show what is in this component':'Show the items of this group');bt.append(c,t,tt);
+          bt.addEventListener('mousedown',ev=>ev.stopPropagation());
+          bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
+          l.btn=bt;}}
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);if(l.btn)lg.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')select('up:all');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
@@ -2275,7 +2788,7 @@ function renderGraph(fitAfter,centerId){
   if(!routeHit){const down=redges.filter(e=>!e.contain&&pos[e.s]&&pos[e.t]&&pos[e.t].y>pos[e.s].y);const byNode={};
     down.forEach(e=>{(byNode[e.s]=byNode[e.s]||[]).push(e);(byNode[e.t]=byNode[e.t]||[]).push(e);});
     const cands=[0.3,0.45,0.6,0.8].flatMap(f=>[-f*NW,f*NW]).map(v=>Math.round(v));
-    for(let pass=0;pass<2;pass++)[...bowOf.keys()].forEach(e=>{const rel=[...new Set([...(byNode[e.s]||[]),...(byNode[e.t]||[])])].filter(f=>f!==e);
+    for(let pass=0;pass<2;pass++)[...bowOf.keys()].forEach(e=>{const rel=[...new Set([...(byNode[e.s]||[]),...(byNode[e.t]||[])])].filter(f=>f!==e).slice(0,40);
       let best=null;cands.forEach(b=>{const P=pts(e,0,0,b);let sc=0;rel.forEach(f=>{const Q=pts(f,0,0,bowOf.get(f)||0);if(cross(P,Q))sc+=10;else if(near(P,Q))sc+=3;});
         sc+=Math.abs(b)/NW;if(!best||sc<best.sc)best={b,sc};});bowOf.set(e,best.b);});}
   // spread the ends of the links along the bottom/top of each box, ordered by the side each link
@@ -2291,11 +2804,13 @@ function renderGraph(fitAfter,centerId){
     // they do not cross; if both (or neither) work, the link that is further out one gap away goes outside.
     const xAt=(e,atY)=>{const P=pts(e,0,0,bw(e));for(let k=1;k<P.length;k++){const a=P[k-1],b=P[k];if((a[1]-atY)*(b[1]-atY)<=0){const t=(atY-a[1])/((b[1]-a[1])||1);return a[0]+(b[0]-a[0])*t;}}return P[P.length-1][0];};
     const order=(list,end)=>{const n=list.length;if(n<2)return list;const step=Math.min(12,NW*0.5/(n-1)),h=step/2;
+      const many=n>12;   // many links at one box: order them by direction only (comparing every pair of curves is too slow)
       const key=new Map(list.map(e=>[e,end==='in'?xAt(e,pos[e.t].y-Math.min(YG*0.9,(pos[e.t].y-pos[e.s].y-NH)*0.5)):xAt(e,pos[e.s].y+NH+Math.min(YG*0.9,(pos[e.t].y-pos[e.s].y-NH)*0.5))]));
       const P=(e,o)=>end==='in'?pts(e,0,o,bw(e)):pts(e,o,0,bw(e));const memo=new Map();
       const cmp=(e,f)=>{const k=e.s+'>'+e.t+'|'+f.s+'>'+f.t;if(memo.has(k))return memo.get(k);
         const ef=cross(P(e,-h),P(f,h)),fe=cross(P(f,-h),P(e,h));const r=ef&&!fe?1:(!ef&&fe?-1:(key.get(e)-key.get(f)));memo.set(k,r);return r;};
       // insertion sort: stable with a comparator that may not be perfectly transitive
+      if(many)return list.slice().sort((e,f)=>key.get(e)-key.get(f));
       const out=[];list.slice().sort((e,f)=>key.get(e)-key.get(f)).forEach(e=>{let i=out.length;while(i>0&&cmp(out[i-1],e)>0)i--;out.splice(i,0,e);});return out;};
     Object.values(outs).forEach(l=>spread(order(l,'out'),'o1'));
     Object.values(ins).forEach(l=>spread(order(l,'in'),'o2'));
@@ -2308,8 +2823,8 @@ function renderGraph(fitAfter,centerId){
     // only e and f change when their ends swap, so only their crossings need counting
     const count2=(e,f,list)=>{const A=P2(e),B=P2(f);let c=cross(A,B)?1:0;list.forEach(g=>{if(g===e||g===f)return;const G=P2(g);if(cross(A,G))c++;if(cross(B,G))c++;});return c;};
     const swapEnd=(e,f,side)=>{const a=port.get(e)||{},b=port.get(f)||{};const t=a[side];a[side]=b[side];b[side]=t;port.set(e,a);port.set(f,b);};
-    for(let pass=0;pass<3;pass++){let changed=false;
-      [[ins,'o2'],[outs,'o1']].forEach(([grp,side])=>Object.values(grp).forEach(l=>{
+    for(let pass=0;pass<(redges.length>1500?0:3);pass++){let changed=false;
+      [[ins,'o2'],[outs,'o1']].forEach(([grp,side])=>Object.values(grp).forEach(l=>{if(l.length>12)return;
         for(let i=0;i<l.length;i++)for(let j=i+1;j<l.length;j++){const e=l[i],f=l[j];if(!cross(P2(e),P2(f)))continue;
           const ar=around(e,f);const before=count2(e,f,ar);swapEnd(e,f,side);if(count2(e,f,ar)<before)changed=true;else swapEnd(e,f,side);}}));
       if(!changed)break;}}
@@ -2318,14 +2833,15 @@ function renderGraph(fitAfter,centerId){
   redges.forEach(e=>{const a=pos[e.s],b=pos[e.t];if(!a||!b)return;const p=document.createElementNS(NS,'path');
     const pm=port.get(e)||{};const bow=bowOf.get(e)||0;
     const d=edgeD(a,b,pm.o1,pm.o2,bow);edgeEls.push({el:p,s:e.s,t:e.t,o1:pm.o1,o2:pm.o2,bow});
-    p.setAttribute('d',d);let cls=e.contain?'edge contain':'edge'+(e.src.every(x=>x.k.every(k=>k==='order'||(k!=='suppress'&&!kindOn[k])))?' order':'');
+    p.setAttribute('d',d);let cls=e.contain?'edge contain':'edge'+(e.src.every(x=>x.k.every(k=>k==='order'||(k!=='suppress'&&!kindOn[k])))?' order':'')+(!e.contain&&(e.via||e.src.length&&e.src.every(x=>x.via))?' bridge':'');
     if(e.contain){const gc=colorOfGroup(e.s.slice(1));if(gc)p.setAttribute('style','stroke:'+gc);}
     if(selRep&&e.contain){if(!(selSet.has(e.s)||selSet.has(e.t)||up.has(e.t)||down.has(e.t)))cls+=' dim';}
     else if(selRep){
-      if(selSet.has(e.t)&&up.has(e.s))cls+=' up';else if(selSet.has(e.s)&&down.has(e.t))cls+=' down ind';else if(up.has(e.s)&&up.has(e.t))cls+=' up ind';else if(down.has(e.s)&&down.has(e.t))cls+=' down ind';else cls+=' dim';}
+      if(selSet.has(e.s)&&selSet.has(e.t))cls+=' insel';   // a link inside the selection (between items of a selected group)
+      else if(selSet.has(e.t)&&up.has(e.s))cls+=' up';else if(selSet.has(e.s)&&down.has(e.t))cls+=' down';else if(up.has(e.s)&&up.has(e.t))cls+=' up ind';else if(down.has(e.s)&&down.has(e.t))cls+=' down ind';else cls+=' dim';}
     if(!selSet&&hitReps&&!hitReps.has(e.s)&&!hitReps.has(e.t))cls+=' dim';
-    p.setAttribute('class',cls);const lift=/ (up|down)\b/.test(cls);
-    const t=document.createElementNS(NS,'title');t.textContent=e.contain?'Part of timeline group '+(groups[e.s.slice(1)]?groups[e.s.slice(1)].name:''):[...new Set(e.src.flatMap(x=>x.k))].map(x=>KIND[x]||x).join(', ')+(e.n>1?' ('+e.n+' links)':'');p.appendChild(t);const layer=lift?geHi:ge;layer.appendChild(p);
+    p.setAttribute('class',cls);const lift=/ (up|down|insel)\b/.test(cls);
+    const t=document.createElementNS(NS,'title');t.textContent=e.contain?'Part of timeline group '+(groups[e.s.slice(1)]?groups[e.s.slice(1)].name:''):[...new Set(e.src.flatMap(x=>x.k))].map(x=>KIND[x]||x).join(', ')+(e.n>1?' ('+e.n+' links)':'');if(!e.contain&&e.via)t.textContent+=' (through collapsed items)';else if(!e.contain&&/ bridge/.test(cls))t.textContent+=' (through hidden items)';p.appendChild(t);const layer=lift?geHi:ge;layer.appendChild(p);
     // wide invisible twin that catches the mouse; hovering shows the link bold and rings both ends
     const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
     edgeEls[edgeEls.length-1].hit=h;const es=e.s,et=e.t;
@@ -2361,10 +2877,11 @@ function renderGraph(fitAfter,centerId){
     const lastM=r.isGroup?[...r.members].sort((a,b)=>b.o-a.o).find(m=>TH[m.id]):r.members[0];const nth=(gth&&lastM)?TH[lastM.id]:null;const tx0=nth?66:8;
     // action buttons on the right edge of the box (for now: suppress in the preview)
     const acts=[];const gidA=r.isGroup?r.id.slice(1):null;
-    if(simOn&&r.isGroup&&canGroups&&groups[gidA])acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
+    if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
     else if(simOn&&!r.isGroup&&canItems&&r.members[0].tl!=null){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · breaks '+(it.fail.name||'a later feature')+', estimated':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
-    const maxc=(nth?24:(gth?34:30))-acts.length*(r.isGroup?5:3);
-    const tx=document.createElementNS(NS,'text');tx.setAttribute('x',tx0);tx.setAttribute('y',NH/2+4);tx.setAttribute('style','fill:'+(gsupp?'var(--supp);text-decoration:line-through':'var(--c-'+cat+')')+(r.isGroup?';font-weight:600':''));
+    const maxc=(nth?22:(gth?32:28))-acts.length*(r.isGroup?5:3);
+    const icoN=r.isGroup?'group':iconName(r.members[0]);const icoS=gth?18:15;
+    const tx=document.createElementNS(NS,'text');tx.setAttribute('x',tx0+icoS+5);tx.setAttribute('y',NH/2+4);tx.setAttribute('style','fill:'+(gsupp?'var(--supp);text-decoration:line-through':'var(--c-'+cat+')')+(r.isGroup?';font-weight:600':''));
     tx.textContent=label.length>maxc?label.slice(0,maxc-1)+'…':label;
     const ti=document.createElementNS(NS,'title');ti.textContent=r.isGroup?(label+'\n'+r.members.slice(0,25).map(m=>'• '+m.name).join('\n')+(r.members.length>25?'\n…':'')+'\nClick to expand'):(r.members[0].name+'\n'+r.members[0].type);
     g.append(rect);
@@ -2375,6 +2892,7 @@ function renderGraph(fitAfter,centerId){
       const mid=lastM.id;const hot=document.createElementNS(NS,'rect');hot.setAttribute('x',4);hot.setAttribute('y',4);hot.setAttribute('width',56);hot.setAttribute('height',NH-8);hot.setAttribute('fill','transparent');hot.style.cursor='zoom-in';
       hot.addEventListener('mouseenter',ev=>{if(!drag)peekShow(mid,ev);});hot.addEventListener('mousemove',peekMove);hot.addEventListener('mouseleave',peekHide);
       g.append(bg,im,hot);}
+    g.append(iconUse(icoN,tx0,(NH-icoS)/2,icoS,gsupp?'var(--supp)':'var(--c-'+cat+')'));
     g.append(tx);if(!nth)g.append(ti);
     brkBadges.filter(x=>x[0]===g).forEach(x=>g.appendChild(x[1]));
     acts.forEach((a,i)=>{const bs=gth?24:18;const bx=NW-6-bs-i*(bs+4),by=(NH-bs)/2;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','act'+(a.on?' on':''));bt.setAttribute('transform','translate('+bx+','+by+')');
@@ -2385,7 +2903,7 @@ function renderGraph(fitAfter,centerId){
       const tt=document.createElementNS(NS,'title');tt.textContent=a.title;bt.append(bg,arc,ln,tt);
       ['mousedown','dblclick'].forEach(ev=>bt.addEventListener(ev,e=>e.stopPropagation()));
       bt.addEventListener('click',e=>{e.stopPropagation();peekHide();a.fn();});g.appendChild(bt);});
-    if(r.isGroup&&layoutMode!=='lanes'){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
+    if(r.isGroup){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?7:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
       const tt=document.createElementNS(NS,'title');tt.textContent=open?'Collapse this timeline group into one box':'Expand this timeline group to show its items';bt.append(c,t,tt);
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
@@ -2394,7 +2912,7 @@ function renderGraph(fitAfter,centerId){
     else if(canCollapse(r.id)){const col=collapsedNodes.has(r.id);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',col?9:7);c.setAttribute('class','ctogc'+(col?' col':''));
       const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=col?'+':'−';
-      const tt=document.createElementNS(NS,'title');tt.textContent=col?('Expand: show the '+(hiddenCount[r.id]||0)+' hidden items that depend on this'):(layoutMode==='lanes'?'Collapse: hide what depends on this in the same timeline group':'Collapse: hide everything that depends on this');bt.append(c,t,tt);
+      const tt=document.createElementNS(NS,'title');tt.textContent=col?('Expand: show the '+(hiddenCount[r.id]||0)+' hidden items that depend on this'):(isLanes()?'Collapse: hide what depends on this in the same timeline group':'Collapse: hide everything that depends on this');bt.append(c,t,tt);
       if(col&&hiddenCount[r.id]){const cn=document.createElementNS(NS,'text');cn.setAttribute('x',13);cn.setAttribute('y',4);cn.setAttribute('class','ctogn');cn.textContent=hiddenCount[r.id]+' hidden';bt.appendChild(cn);}
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
       bt.addEventListener('click',ev=>{ev.stopPropagation();const rid=r.id;animatedRerender(()=>{if(col)collapsedNodes.delete(rid);else collapsedNodes.add(rid);},{keepOld:rid,keepNew:rid});});g.appendChild(bt);}
@@ -2529,12 +3047,12 @@ function pbCardShow(r){const c=$('pbCard');if(!c)return;const key=r||'';if(c.dat
   const im=c.querySelector('img'),cap=c.querySelector('.cap');if(!r){im.style.display='none';cap.innerHTML='<small>Starting…</small>';return;}
   const tid=pbThumbOf(r);im.style.display=tid?'':'none';if(tid)im.src=TH[tid];
   const n=byId[r];const cat=n?n.cat:'group';const lab=n?(CAT[n.cat]||n.cat):'Timeline group';
-  cap.innerHTML='<span class="pill" style="color:var(--c-'+cat+');background:var(--c-'+cat+'-bg)">'+esc(lab)+'</span> '+(n?'<span class="ty">'+esc(n.type.replace(/Feature$/,''))+'</span>':'')+'<div class="nm">'+esc(pbName(r))+'</div><small>'+(n&&n.tl!=null?'Timeline position '+(n.tl+1):'')+(tid?'':(n&&n.tl!=null?' · ':'')+'no thumbnail')+'</small>';
+  cap.innerHTML='<span class="pill" style="color:var(--c-'+cat+');background:var(--c-'+cat+'-bg)">'+iconHTML(n?iconName(n):'group',cat,12)+esc(lab)+'</span> '+(n?'<span class="ty">'+esc(n.type.replace(/Feature$/,''))+'</span>':'')+'<div class="nm">'+esc(pbName(r))+'</div><small>'+(n&&n.tl!=null?'Timeline position '+(n.tl+1):'')+(tid?'':(n&&n.tl!=null?' · ':'')+'no thumbnail')+'</small>';
   c.classList.remove('swap');void c.offsetWidth;c.classList.add('swap');}
 function pbName(r){if(byId[r])return byId[r].name;const g=groups[r.slice(1)];return g?g.name+' (group)':r;}
 function pbSetPhase(ph,dur){PB.phase=ph;PB.ph0=PB.vt;PB.dur=dur;}
 function pbStep(k){PB.k=k;PB.userCam=false;pbDropDots();if(PB.steps[k])PB.steps[k].pulsed=false;
-  if(k>=PB.order.length){pbSetPhase('done',1e9);pbUI();return;}
+  if(k>=PB.order.length){pbSetPhase('done',1600);pbUI();return;}   // shows the whole result briefly, then closes
   const st=PB.steps[k];
   if(st.inc.length){let mx=0;st.inc.forEach(x=>{const pp=pbPath(x);mx=Math.max(mx,pp.len);
       const NS2='http://www.w3.org/2000/svg';const d0=edgeCurve(pos[x.s],pos[x.t],x.o1,x.o2,x.bow);
@@ -2543,12 +3061,15 @@ function pbStep(k){PB.k=k;PB.userCam=false;pbDropDots();if(PB.steps[k])PB.steps[
       const g=document.createElementNS('http://www.w3.org/2000/svg','g');g.setAttribute('class','pbdot');
       const h=document.createElementNS('http://www.w3.org/2000/svg','circle');h.setAttribute('class','pbhalo');
       const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('class','pbcore');g.append(h,c);PB.ov.appendChild(g);
-      PB.dots.push({x,pp,el:g,h,c,lit,lb,lg,lt,ll});});
+      PB.dots.push({x,pp,el:g,h,c,lit,lb,lg,lt,ll,dotted:x.el.classList.contains('bridge')});});
     pbSetPhase('fly',Math.max(1400,Math.min(3400,1100+mx*1.0)));}
   else pbSetPhase('fade',k===0?1400:1100);
   pbUI();}
 // dots are removed at once; their lit links stay fully drawn and fade out
-function pbDropDots(){PB.dots.forEach(d=>{d.el.remove();const L=d.ll;d.lt.setAttribute('stroke-dasharray',(L+10)+' 0');d.lg.setAttribute('stroke-dasharray',(L+10)+' 0');PB.fading.push({el:d.lit,t0:PB.vt});});PB.dots=[];}
+// the lit part of a link, from its start up to `on`: a solid line, or a dotted one for a dotted (indirect) link
+function pbDash(d,on,w){const L=d.ll;if(!d.dotted)return on+' '+(L+10);const step=w*2.4;const n=Math.floor(on/step);
+  let a=[];for(let i=0;i<n;i++)a.push('0.01',String(step-0.01));const r=on-n*step;if(r>0)a.push('0.01',String(r));a.push('0',String(L+10));return a.join(' ');}
+function pbDropDots(){PB.dots.forEach(d=>{d.el.remove();const L=d.ll,w=4.5/T.k;d.lt.setAttribute('stroke-dasharray',pbDash(d,L,w));d.lg.setAttribute('stroke-dasharray',pbDash(d,L,w));PB.fading.push({el:d.lit,t0:PB.vt});});PB.dots=[];}
 function pbPulse(id){const p=pos[id];if(!p)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',9);PB.ov.appendChild(r);PB.pulses.push({el:r,id,t0:PB.vt});}
 // finish the running step at once (Next)
 function pbSkip(){if(!PB||PB.phase==='done')return;
@@ -2571,14 +3092,15 @@ function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=no
       d.h.setAttribute('cx',q[0]);d.h.setAttribute('cy',q[1]);d.h.setAttribute('r',rad*(2.1+0.35*Math.sin(PB.vt/140)));
       ea.set(d.x,PB_A.edgePre+(1-PB_A.edgePre)*f);
       const px=1/T.k;d.lb.setAttribute('stroke-width',3*px);d.lg.setAttribute('stroke-width',13*px);d.lt.setAttribute('stroke-width',4.5*px);
-      const L=d.ll,on=f*L;d.lt.setAttribute('stroke-dasharray',on+' '+(L+10));d.lg.setAttribute('stroke-dasharray',on+' '+(L+10));
+      const L=d.ll,on=f*L;d.lt.setAttribute('stroke-dasharray',pbDash(d,on,4.5*px));d.lg.setAttribute('stroke-dasharray',pbDash(d,on,4.5*px));
+      if(d.dotted)d.lb.setAttribute('stroke-dasharray',pbDash(d,L,4.5*px));
       d.lb.style.opacity=String(Math.min(1,p*4));});
     camIds=[st.id];if(p>=1){pbDropDots();pbPulse(st.id);pbSetPhase('fade',1000);}}
   else if(PB.phase==='fade'){const st=PB.steps[PB.k];na[st.id]=PB_A.pre+(1-PB_A.pre)*e;st.inc.forEach(x=>ea.set(x,1));
     camIds=[st.id];kmax=1.3;if(!st.inc.length&&!st.pulsed&&p>0.15){st.pulsed=true;pbPulse(st.id);}
     if(p>=1){PB.shown.add(st.id);pbSetPhase('hold',st.inc.length?500:650);}}
   else if(PB.phase==='hold'){camIds=[PB.order[PB.k]];kmax=1.3;if(p>=1)pbStep(PB.k+1);}
-  else if(PB.phase==='done'){camIds=PB.order;kmin=0.02;kmax=1.1;pad=60;}
+  else if(PB.phase==='done'){camIds=PB.order;kmin=0.02;kmax=1.1;pad=60;if(p>=1){stopPlay();return;}}
   // apply opacities
   Object.keys(nodeEls).forEach(id=>{const g=nodeEls[id];const v=na[id];if(PB.alpha[id]!==v){PB.alpha[id]=v;g.style.opacity=String(v);}});
   edgeEls.forEach(x=>{const v=ea.get(x);if(PB.ealpha.get(x)!==v){PB.ealpha.set(x,v);x.el.style.opacity=String(v);}});
@@ -2602,21 +3124,112 @@ window.addEventListener('keydown',e=>{if(e.target&&(e.target.tagName==='INPUT'||
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();stopPlay();}
   else if(e.key===' '){e.preventDefault();$('pbPlay').onclick();}
   else if(e.key==='ArrowRight'&&!e.altKey){e.preventDefault();$('pbNext').onclick();}},true);
+// ---------- legend: what the colours, outlines, markers and lines mean ----------
+const CAT_DESC={sketch:'Sketches.',construct:'Construction planes, axes and points.',
+  solid:'Features that create or add solid material: extrude, revolve, sweep, loft, rib, web, emboss, coil, pipe, boss, primitives, thicken, boundary fill.',
+  finish:'Fillets and chamfers.',offset:'Features that edit faces: offset face, shell, draft, delete face, replace face, split face.',
+  hole:'Holes and threads.',body:'Body operations: combine, split body, move, mirror, patterns, scale, copy/paste, remove.',
+  param:'User parameters (under "User Parameters", or under what drives them) and derived parameters (under their Derive feature).',
+  surface:'Surface features: patch, stitch, unstitch, trim, untrim, extend, offset, ruled surface, reverse normal, and extrude/revolve/sweep/loft set to make a surface.',
+  sheet:'Sheet metal: flange, hem, rip, corner closure, fold, unfold/refold, join by bend, lofted flange, flat pattern.',
+  form:'T-spline form features and base (direct edit) features.',mesh:'Mesh and volumetric features.',
+  component:'A component of the design. Its parent is the item that brought it in (insert, New Component, a feature set to new component, or a Derive feature); its children are the items built inside it.',
+  insert:'Items that bring a component into the design: component inserts, New Component, copy/paste of components, Derive features.',
+  joint:'Joints, as-built joints, joint origins, rigid groups, motion links, contact sets, Arrange and captured positions (snapshots).',
+  other:'Anything else (canvases, decals, add-in features, items the Fusion API does not describe).'};
+const KIND_DESC={sketch:'uses a sketch (or geometry projected/included into it)',profile:'uses a sketch profile',plane:'built on or references a construction plane, axis or point',
+  geometry:'references faces, edges or vertices made by that item',body:'works on a body that item created',feature:'references that feature directly',
+  param:'a parameter drives it (expression or dimension)',component:'references a component, or something inside a component, that item brought in',
+  incomp:'is built inside that component (sketches, features, joints and sub-components of a component)',
+  joint:'references a joint, joint origin or rigid group',suppress:'suppression test: suppressing the upper item suppresses the lower one too, even without a reference Fusion reports',
+  order:'works on the same body after that item changed it; only timeline order, not a real reference'};
+function renderLegend(){const b=$('legendBody');if(!b)return;
+  const sv=(inner,w)=>'<svg width="'+(w||70)+'" height="30" viewBox="0 0 '+(w||70)+' 30" aria-hidden="true">'+inner+'</svg>';
+  const box=(fill,stroke,o)=>{o=o||{};return sv('<rect x="3" y="4" width="64" height="22" rx="5" fill="'+fill+'" stroke="'+stroke+'" stroke-width="'+(o.w||1)+'"'+(o.dash?' stroke-dasharray="'+o.dash+'"':'')+(o.op?' opacity="'+o.op+'"':'')+'/>'+(o.extra||''));};
+  const line=cls=>sv('<path class="edge '+cls+'" d="M4,15 L60,15 M53,10 L60,15 L53,20"/>');
+  const row=(sw,t,d)=>'<div class="lgrow"><div class="lgsw">'+sw+'</div><div><b>'+t+'</b><div class="kv">'+d+'</div></div></div>';
+  const sec=(t,rows,intro)=>'<h3>'+t+'</h3>'+(intro?'<div class="kv lgintro">'+intro+'</div>':'')+rows.join('');
+  let h='';
+  h+=sec('Box colours: what kind of item',Object.keys(CAT).map(c=>row(box('var(--c-'+c+'-bg)','var(--c-'+c+')',{extra:'<use href="#ic-'+(ICON_BY_CAT[c]||'other')+'" x="9" y="7" width="16" height="16" style="color:var(--c-'+c+')"/><rect x="30" y="13" width="28" height="4" rx="2" style="fill:var(--c-'+c+');opacity:.5"/>'}),CAT[c],CAT_DESC[c]||'')),
+    'The fill and text colour of a box show its category. Hover a box for its full name and Fusion type.');
+  const G=GCOL[0];
+  {const by={};Object.keys(ICON_BY_TYPE).forEach(t=>{const k=ICON_BY_TYPE[t];(by[k]=by[k]||[]).push(t==='Occurrence'?'Component insert / new component':t.replace(/Feature$/,'').replace(/([a-z])([A-Z])/g,'$1 $2'));});
+
+    h+='<h3>Icons: what type of item</h3><div class="kv lgintro">Shown on the boxes, in the tree, in the details and in the lists. Types without their own icon use their category\'s icon.</div><div class="icgrid">'+
+      Object.keys(by).map(k=>'<div>'+iconHTML(k,catOfIcon(k),18)+'<span title="'+by[k].join(', ')+'">'+by[k].join(', ')+'</span></div>').join('')+'<div>'+iconHTML('group','group',18)+'<span>Timeline group</span></div></div>';}
+  h+=sec('Box parts and outlines',[
+    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="3" y="4" width="5" height="22" rx="2" fill="'+G+'"/>'}),'Coloured strip on the left','The top-level timeline group the item belongs to. Each group has its own colour (also used in the groups panel and in the Groups layout).'),
+    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="9" y="7" width="18" height="16" rx="2" fill="var(--panel2)"/><rect x="13" y="11" width="10" height="8" fill="var(--c-body)"/>'}),'Thumbnail','The model right after this item, framed on the item. Hover it for a bigger picture.'),
+    row(box('var(--c-group-bg)','var(--c-group)',{dash:'4 3',extra:'<text x="9" y="19" style="font-size:10px;font-weight:600">▸ (12)</text>'}),'Group box (collapsed)','A whole timeline group (or "Not in a group" / "User parameters") folded into one box, with its number of items. Click it to select the group, use + to open it. In the Groups and Components layouts the −/+ at the bottom of a block folds the whole group or component.'),
+    row(box('var(--c-group-bg)','var(--c-group)',{dash:'4 3',extra:'<text x="9" y="19" style="font-size:10px;font-weight:600">▾ Group</text>'}),'Group header (expanded)','Depth layout: sits above the items of an open timeline group, as their parent. Thick coloured lines join it to the group\'s first items; its − folds the group into one box.'),
+    row(sv('<rect x="3" y="3" width="64" height="24" rx="7" style="fill:'+G+';fill-opacity:.07;stroke:'+G+';stroke-opacity:.45;stroke-width:1.5"/><text x="9" y="15" style="font-size:9px;font-weight:700;fill:'+G+'">Name</text>'),'Coloured block','Groups layout: one block per top-level timeline group. Components layout: one block per component (items outside components sit in "Root component"). In both, user parameters have a block of their own. Click the block title to select the group, component or User Parameters.'),
+    row(sv('<circle cx="22" cy="15" r="8" class="ctogc col"/><text x="22" y="19" text-anchor="middle" class="ctogt">+</text><circle cx="48" cy="15" r="7" class="ctogc"/><text x="48" y="19" text-anchor="middle" class="ctogt">−</text>'),'+ / − under a box','Expand a group, or collapse/expand everything that depends on this box. A collapsed box shows how many items it hides.'),
+    row(box('var(--c-solid-bg)','var(--sel)',{w:3,extra:'<rect x="-1" y="0" width="72" height="30" rx="8" class="selglow" style="stroke-width:2"/>'}),'Selected','Purple outline with a glow. With a timeline group selected, all its boxes get the purple outline.'),
+    row(box('var(--c-solid-bg)','var(--up)',{w:2}),'What the selected group depends on','Blue outline (when a whole group is selected).'),
+    row(box('var(--c-solid-bg)','var(--down)',{w:2.5}),'What depends on the selected group','Green outline (when a whole group is selected).'),
+    row(box('var(--c-solid-bg)','var(--c-solid)',{op:.25}),'Faded box','Not related to the selection (or not a search match). During playback: not built yet (a little faded) or not part of the history being played (very faded).'),
+    row(box('var(--c-solid-bg)','var(--sel)',{w:3}),'Search match','Matches the search text. The current match (Enter / ›) has a thick green outline.'),
+    row(box('var(--supp-bg)','var(--supp)',{dash:'5 3',extra:'<text x="10" y="19" style="font-size:10px;fill:var(--supp);text-decoration:line-through">Aa</text>'}),'Suppressed','Grey, dashed, crossed out: suppressed in the design, or in the suppression preview. In italics when the preview only estimates it.'),
+    row(box('var(--c-solid-bg)','var(--err)',{w:3,extra:'<g class="brk" transform="translate(64,6)"><circle r="7"/><text text-anchor="middle" y="4" style="font-size:10px">!</text></g>'}),'Fails to compute','Red outline and a red ! : an error in the design, or it would fail in the suppression preview (Fusion reported it in the test).'),
+    row(box('var(--c-solid-bg)','var(--err)',{w:3,dash:'6 4',extra:'<g class="brk est" transform="translate(64,6)"><circle r="7"/><text text-anchor="middle" y="4" style="font-size:10px">!</text></g>'}),'May fail (estimated)','Dashed red: in the preview it depends on a feature that fails, so it probably fails too. Not tested.'),
+    row(box('var(--c-solid-bg)','var(--warn)',{w:2.5,extra:'<g class="wrn" transform="translate(64,7)"><path d="M0,-7 L7,6 L-7,6 Z"/><text text-anchor="middle" y="5" style="font-size:9px">!</text></g>'}),'Warning','Orange outline and triangle: a warning in the design, or one it would get in the suppression preview.'),
+    row(sv('<g class="act"><rect x="22" y="4" width="22" height="22" rx="5"/><path d="M28.5,11.5 A5.5,5.5 0 1 0 37.5,11.5"/><path d="M33,8.5 L33,14.5"/></g>'),'Power button','Suppress / switch back on in the suppression preview (never changes the design). Red when switched off.'),
+  ]);
+  h+=sec('Lines (links)',[
+    row(line(''),'Grey line','A link: the lower item uses the upper one. Arrows point from what is used to what uses it.'),
+    row(line('up'),'Blue, thick','A direct parent of the selection: the selected item uses it directly.'),
+    row(line('up ind'),'Blue, faint','A further ancestor: a link between two items the selection depends on.'),
+    row(line('down'),'Green, thick','A direct child: it uses the selected item directly.'),
+    row(line('down ind'),'Green, faint','A further descendant: a link between two items that depend on the selection.'),
+    row(line('insel'),'Purple','A link inside the selection (between items of the selected timeline group).'),
+    row(line('dim'),'Very faint','Not related to the selection.'),
+    row(line('hov'),'Gold, thick','The link under the mouse, or the one you clicked (stays until the mouse moves). Both its ends get a gold ring.'),
+    row(line('order'),'Dashed','"Same body, later": only timeline order on the same body, not a real reference. Off by default (Display menu).'),
+    row(sv('<path d="M4,15 L60,15" fill="none" stroke="'+G+'" stroke-width="2.4" stroke-opacity=".85" stroke-linecap="round"/>'),'Thick coloured line','Joins a group header to the group\'s items (Depth layout).'),
+    row(line('bridge'),'Dotted','Not a direct link: it goes through items that are hidden by the Filter menu or folded into a collapsed box ("N hidden"). The chain continues through them.'),
+    row(sv('<path class="edge" d="M4,24 C22,24 20,6 38,6 S60,6 64,6"/>'),'Curves and bends','Only routing: long links bend sideways so they do not lie on top of each other. The shape means nothing.'),
+  ],'Each line may stand for several references between the same two items; hover it to see which kinds.');
+  h+=sec('Link kinds',Object.keys(KIND).filter(k=>KIND_DESC[k]).map(k=>row('<span class="pill lgk">'+KIND[k]+'</span>',KIND[k],KIND_DESC[k])),
+    'Why the lower item uses the upper one. All kinds are always shown, except "Same body, later" (Display menu).');
+  h+=sec('History playback',[
+    row(sv('<path class="pblit base" d="M4,15 L60,15" style="stroke-width:3"/><path class="pblit trail" d="M4,15 L36,15" style="stroke-width:4.5"/><circle cx="36" cy="15" r="9" class="pbhalo"/><circle cx="36" cy="15" r="5" class="pbcore"/>'),'Blue dot and gold line','Travels from items already built to the next one; the link it follows lights up in gold.'),
+    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="0" y="1" width="70" height="28" rx="8" class="pbpulse" style="stroke-width:2.5"/>'}),'Blue ring','An item appears (fades in to full colour).'),
+    row(sv('<rect x="10" y="2" width="50" height="26" rx="4" fill="var(--panel)" stroke="var(--border)"/><rect x="14" y="5" width="42" height="14" rx="2" fill="var(--panel2)"/><rect x="14" y="21" width="16" height="5" rx="2" fill="var(--c-solid-bg)"/>'),'Card (bottom right)','Thumbnail, type and name of the item being built.'),
+  ],'▶ Play (or P) with an item selected plays how it was built; with a group selected, how the group was built; with nothing selected, the whole history. Space pauses, → skips, Esc stops.');
+  h+=sec('Header, panels and tree',[
+    row('<button class="lgbtn hb"><span class="ic">!</span>2 broken</button>','Broken chip','Items that fail to compute now (in the design, or in the suppression preview), plus how many may fail (estimated). Click to step through them.'),
+    row('<button class="lgbtn hw"><span class="ic"></span>1 warning</button>','Warning chip','Items with warnings. Click to step through them.'),
+    row('<span class="kv">+12 outside</span>','"+N outside" (groups panel)','Suppressing the group also suppresses N items outside it (group test).'),
+    row('<span class="kv" style="color:var(--c-sketch)">independent</span>','"independent"','The group can be suppressed on its own.'),
+    row('<span class="st-err" style="font-size:12px">breaks X</span>','"breaks X"','Fusion refuses to suppress it because X then fails; the preview can still suppress it (estimated).'),
+    row('<span class="kv">3/5 off</span>','"N/M off"','In the suppression preview, N of the group\'s M items are off.'),
+    row('<span class="simb b">● fails</span><span class="simb w">▲ warning</span>','Tree markers','Same meaning as the red and orange markers on the boxes.'),
+  ]);
+  b.innerHTML=h;}
+function setLegend(open){document.body.classList.toggle('legendopen',!!open);$('legendBtn').classList.toggle('on',!!open);if(open){setInfo(false);renderLegend();}}
+$('legendBtn').onclick=()=>setLegend(!document.body.classList.contains('legendopen'));
+$('legendClose').onclick=()=>setLegend(false);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('legendopen')){e.stopImmediatePropagation();setLegend(false);}},true);
 function setView(v){view=v;$('vTree').classList.toggle('on',v==='tree');$('vGraph').classList.toggle('on',v==='graph');$('tree').style.display=v==='tree'?'':'none';$('graphwrap').style.display=v==='graph'?'block':'none';$('treeCtrl').style.display=v==='tree'?'':'none';$('layoutSeg').style.display=v==='graph'?'':'none';renderDetails();if(v==='tree')renderTree();setTimeout(updateSearchNav,0);}
 function refresh(){buildAdj();renderDetails();if(view==='tree')renderTree();else renderGraph(false);}
 $('vTree').onclick=()=>setView('tree');
 $('vGraph').onclick=()=>{setView('graph');renderGraph(true);};
 $('treeMode').onchange=renderTree;
-$('showParams').onchange=e=>{showParams=e.target.checked;updateLinksBtn();refresh();};
+renderCatFilter();
+$('catAll').onclick=()=>{Object.keys(catOn).forEach(c=>catOn[c]=true);renderCatFilter();filterChanged();};
+$('catNone').onclick=()=>{Object.keys(catOn).forEach(c=>catOn[c]=false);renderCatFilter();filterChanged();};
+$('showOrder').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{kindOn.order=v;buildAdj();renderDetails();},{dur:420});else{kindOn.order=v;refresh();}};
+if(!kindsPresent.includes('order')){const l=$('showOrder').parentNode;l.style.display='none';if(l.previousElementSibling)l.previousElementSibling.style.display='none';}
 if(hasThumbs)$('thumbCtrl').style.display='';
 $('infoBtn').onclick=()=>{const open=!document.body.classList.contains('infoopen');if(open){renderInfo();}setInfo(open);};
 $('infoClose').onclick=()=>setInfo(false);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.classList.contains('infoopen'))setInfo(false);else if(selected||selGroup)clearSel();}});
 $('gpToggle').onclick=()=>{const m=$('gpanel').classList.toggle('min');$('gpToggle').textContent=m?'+':'–';};
-$('showThumbs').onchange=e=>{showThumbs=e.target.checked;document.body.classList.toggle('nothumbs',!showThumbs);peekHide();renderDetails();if(view==='graph')renderGraph(true);};
+$('showThumbs').onchange=e=>{const v=e.target.checked;const ch=()=>{showThumbs=v;document.body.classList.toggle('nothumbs',!showThumbs);peekHide();renderDetails();};
+  if(view==='graph'&&Object.keys(pos).length)animatedRerender(ch,{fit:'fit',dur:480});else{ch();if(view==='graph')renderGraph(true);}};
 $('focus').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{focus=v;},{fit:'fit'});else{focus=v;renderGraph(true,selected);}};
 $('expAll').onclick=()=>{setLevel('items');};
-$('colAll').onclick=()=>{setLevel('groups');};
+$('colAll').onclick=()=>{collapseEverything=true;setLevel('groups');};
 $('fit').onclick=()=>{const r=(selected||selGroup)?selRelated:null;fitAnimated(()=>fit(null,r));};
 
 $('hBack').onclick=()=>goHist(-1);$('hNext').onclick=()=>goHist(1);
@@ -2625,14 +3238,15 @@ window.addEventListener('mouseup',e=>{if(e.button===3){e.preventDefault();goHist
 document.querySelectorAll('.pop>button').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=b.parentElement;const o=!p.classList.contains('open');document.querySelectorAll('.pop.open').forEach(x=>x.classList.remove('open'));if(o)p.classList.add('open');});
 document.querySelectorAll('.popbox').forEach(x=>x.addEventListener('click',e=>e.stopPropagation()));
 document.addEventListener('mousedown',e=>{if(!e.target.closest||!e.target.closest('.pop'))document.querySelectorAll('.pop.open').forEach(x=>x.classList.remove('open'));},true);
-function updateLinksBtn(){const ks=Object.keys(kindOn).filter(k=>k!=='suppress');const on=ks.filter(k=>kindOn[k]).length;$('linksBtn').textContent='Links '+(on<ks.length||showParams?'('+on+'/'+ks.length+(showParams?' + params':'')+') ':'')+'▾';}
-function setLayout(m){layoutMode=m;$('laneBtn').classList.toggle('on',m==='lanes');$('layDeps').classList.toggle('on',m!=='lanes');renderGraph(false);fitInitial();}
+function updateFilterBtn(){const cs=Object.keys(catOn);const off=cs.filter(c=>!catOn[c]);const def=!off.length;$('filterBtn').textContent='Filter '+(def?'':'('+(cs.length-off.length)+'/'+cs.length+') ')+'▾';}
+function updateLinksBtn(){updateFilterBtn();}
+function setLayout(m){layoutMode=m;$('laneBtn').classList.toggle('on',m==='lanes');$('compBtn').classList.toggle('on',m==='comps');$('layDeps').classList.toggle('on',m==='deps');renderGraph(false);fitInitial();}
 $('layDeps').onclick=()=>setLayout('deps');
 $('laneBtn').onclick=()=>{setLayout('lanes');};
-function setLevel(l){$('lvItems').classList.toggle('on',l==='items');$('lvGroups').classList.toggle('on',l==='groups');
-  const apply=()=>{level=l;collapsedNodes.clear();if(l==='groups')expanded.clear();else Object.keys(groups).forEach(g=>expanded.add(g));};
+$('compBtn').onclick=()=>{if(catOn.component===false){catOn.component=true;renderCatFilter();updateFilterBtn();buildAdj();}setLayout('comps');};
+function setLevel(l){
+  const apply=()=>{collapsedNodes.clear();if(l==='groups')expanded.clear();else Object.keys(groups).forEach(g=>expanded.add(g));};
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(apply,{fit:'initial'});else{apply();if(view==='graph')renderGraph(true);else renderTree();}}
-$('lvItems').onclick=()=>setLevel('items');$('lvGroups').onclick=()=>setLevel('groups');
 let graphHits=[],hitIdx=0;
 function updateSearchNav(){const nav=$('sNav');const n=view==='graph'?graphHits.length:nodes.filter(x=>visibleNode(x)&&matches(x)).length;
   nav.style.display=search?'inline-flex':'none';$('sCount').textContent=search?(n?(view==='graph'&&n?(hitIdx+1)+'/'+n:n+' match'+(n===1?'':'es')):'no matches'):'';

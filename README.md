@@ -1,42 +1,63 @@
 # Fusion Dependencies Analysis
 
 **Dependencies Graph** is an Autodesk Fusion add-in that exports the timeline of a parametric design
-as an interactive HTML page: a dependency tree and graph of every timeline item, with thumbnails,
-timeline groups and suppression tests.
+as an interactive HTML page: a dependency graph and tree of every timeline item, with thumbnails,
+timeline groups, components, parameters and optional suppression tests.
 
 ## Features
 
-- **Graph and tree views** of what each feature depends on and what depends on it
-  (sketches, profiles, planes, faces/edges, bodies, features, parameters, components).
-- **Thumbnails** of the model after each timeline step.
-- **Timeline groups**: show single items or whole groups, a Depth layout or a Groups layout.
-- **Suppression tests** (optional, run in Fusion): the *Whole groups* test and the *Every item* test
-  record what really gets suppressed or breaks when a group or item is switched off, and the page
-  can preview suppressing things without touching the design.
-- **History playback**: select an item and press **▶ Play** (or `P`) to animate how it was built
-  from its dependencies, step by step in timeline order. `Space` pauses, `→` skips to the next step,
-  `Esc` stops; speed 0.5Ã / 1Ã / 2Ã / 4Ã. With nothing selected it plays the whole history; with a timeline
-  group selected it plays everything the group depends on, then the group itself.
-- **Parameters**: user parameters and parameters brought in by Derive features (shown as children of
-  their Derive feature), linked to the features that use them.
-- **Broken features and warnings**: features that fail to compute or have warnings are marked in the
-  graph, with counts in the header. The suppression preview can also suppress groups and items that
-  Fusion refuses to suppress, and shows which features would then fail (estimated where not tested).
+### What is shown
+- **Every timeline item** with its category colour and icon: sketches, construction geometry, solid,
+  surface, sheet metal, form, mesh and body features, fillets and chamfers, face edits, holes and threads,
+  component inserts and Derive features, joints and motion links.
+- **Components** as boxes of their own: each hangs under the item that brought it in (insert, New
+  Component, a feature set to new component, or a Derive feature) and is the parent of what is built in
+  it; joints and motion links hang under the components they connect.
+- **Parameters**: user parameters under a common *User Parameters* box (or under the parameter or
+  sketch that drives them), and derived parameters under their Derive feature.
+- **Thumbnails** of the model after each timeline step, and one picture per component.
+- **Links** for every kind of reference (sketch, profile, plane, faces/edges, body, feature, parameter,
+  component, joint, suppression test). *Same body, later* (timeline order only) can be switched on in
+  the Display menu.
+
+### Layouts and navigation
+- **Depth**, **Groups** (one block per timeline group) and **Components** (one block per component)
+  layouts. User parameters have a block of their own.
+- **Folding**: timeline groups, components, *Not in a group* and *User parameters* fold into one box;
+  any box can fold what depends on it. *Collapse all* / *Expand all*.
+- **Filter menu**: show or hide any kind of item. Hidden items are skipped, not cut out: their links are
+  joined through to the items they connect (dotted lines).
+- **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
+  pulls related boxes closer together (inside their block in the Groups / Components layouts).
+- **Back / forward** through selections, restoring the zoom and position you had.
+- **Legend** explaining every colour, icon, outline, marker and line.
+
+### History playback
+Select an item (or a group, or nothing for the whole design) and press **Play** (or `P`) to animate how
+it was built: a dot travels along the links to each next item, which fades in, while the view follows.
+`Space` pauses, the right arrow skips to the next step, `Esc` stops; speed 0.5x / 1x / 2x / 4x.
+
+### Suppression tests and health
+- Optional tests run in Fusion: *Whole groups* and *Every item* record what really gets suppressed or
+  breaks when a group or item is switched off. The page can preview suppressing things without
+  touching the design, including groups and items Fusion refuses to suppress (estimated).
+- Features that fail to compute or have warnings are marked, with counts in the header.
 
 ## Install
 
 1. Copy the `DependenciesGraph` folder into Fusion's add-ins folder:
    - macOS: `~/Library/Application Support/Autodesk/Autodesk Fusion 360/API/AddIns/`
    - Windows: `%APPDATA%\Autodesk\Autodesk Fusion 360\API\AddIns\`
-2. In Fusion open **Utilities → Add-Ins → Scripts and Add-Ins**, select *DependenciesGraph* and run it
+2. In Fusion open **Utilities > Add-Ins > Scripts and Add-Ins**, select *DependenciesGraph* and run it
    (it is set to run on startup).
 3. The **Dependencies Graph** command appears in the Design workspace (Manage tab).
 
 ## Use
 
 Open a parametric design and run **Dependencies Graph**. Choose whether to run the suppression tests
-and capture thumbnails. The design is restored afterwards (the tests suppress and unsuppress items,
-so save your work first). The result opens in your browser as a self-contained HTML file.
+and capture thumbnails. The design is restored afterwards (the tests suppress and unsuppress items and
+the pictures change visibility, so save your work first). The result opens in your browser as a
+self-contained HTML file.
 
 ## Layout
 
@@ -44,5 +65,5 @@ so save your work first). The result opens in your browser as a self-contained H
 DependenciesGraph/
   DependenciesGraph.py        add-in: data collection in Fusion + the HTML/JS page template
   DependenciesGraph.manifest
-  resources/DependenciesGraph/ icons
+  resources/DependenciesGraph/ toolbar icons
 ```
