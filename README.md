@@ -15,7 +15,13 @@ timeline groups and suppression tests.
   can preview suppressing things without touching the design.
 - **History playback**: select an item and press **▶ Play** (or `P`) to animate how it was built
   from its dependencies, step by step in timeline order. `Space` pauses, `→` skips to the next step,
-  `Esc` stops; speed 1× / 2× / 4×.
+  `Esc` stops; speed 0.5Ã / 1Ã / 2Ã / 4Ã. With nothing selected it plays the whole history; with a timeline
+  group selected it plays everything the group depends on, then the group itself.
+- **Parameters**: user parameters and parameters brought in by Derive features (shown as children of
+  their Derive feature), linked to the features that use them.
+- **Broken features and warnings**: features that fail to compute or have warnings are marked in the
+  graph, with counts in the header. The suppression preview can also suppress groups and items that
+  Fusion refuses to suppress, and shows which features would then fail (estimated where not tested).
 
 ## Install
 
