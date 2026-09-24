@@ -781,6 +781,23 @@ class Collector:
                 self.nodes.append(node)
 
     def param_owner(self, p, pnodes):
+        if _t(p) == 'DerivedParameter':
+            # a parameter brought in by a Derive feature: its own node, a child of that Derive feature
+            name = _safe(lambda: p.name, '') or ''
+            nid = 'd:' + name
+            if nid not in pnodes:
+                df = _safe(lambda: p.deriveFeature)
+                src = self.tl_node(df) if df else None
+                srcn = next((n for n in self.nodes if n['id'] == src), None) if src else None
+                k = sum(1 for x in pnodes if x.startswith('d:'))
+                src_name = _safe(lambda: df.timelineObject.name, '') if df else ''
+                pnodes[nid] = {'id': nid, 'name': name, 'type': 'DerivedParameter', 'cat': 'param', 'tl': None,
+                               # ordered right after its Derive feature, so it sits below it in the graph
+                               'o': (srcn['o'] + 0.001 * (k + 1)) if srcn else -1, 'g': [], 'supp': False, 'health': 0,
+                               'msg': '', 'info': '= ' + (_safe(lambda: p.expression, '') or '') + (' · from ' + src_name if src_name else '')}
+                if src:
+                    self.add_edge(src, nid, 'param')
+            return nid
         if _t(p) == 'UserParameter':
             nid = 'p:' + p.name
             if nid not in pnodes:
@@ -806,7 +823,10 @@ class Collector:
         brk = {}
         fails = {}
         ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
+        WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
         err0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == ERR)
+        warn0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == WARN)
+        wrn = {}
         items = [i for i in orig if not orig[i]]
         for k, i in enumerate(items):
             if cancelled():
@@ -830,9 +850,12 @@ class Collector:
             casc = [j for j in orig if j != i and not orig[j] and _safe(lambda: tl.item(j).isSuppressed, False)]
             broke = [j for j in orig if j != i and not orig[j] and j not in err0 and j not in casc
                      and _safe(lambda: tl.item(j).healthState, 0) == ERR]
+            warned = [j for j in orig if j != i and not orig[j] and j not in warn0 and j not in casc
+                      and _safe(lambda: tl.item(j).healthState, 0) == WARN]
             if nid:
                 desc[nid] = [self.tl2node[j] for j in casc if j in self.tl2node]
                 brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
+                wrn[nid] = [self.tl2node[j] for j in warned if j in self.tl2node]
             name = _safe(lambda: it.name, '')
             self._restore_checked(orig, err0, i, name)
             tl = self.tl
@@ -854,6 +877,9 @@ class Collector:
         for nid_, b in brk.items():
             if nid_ in byid:
                 byid[nid_]['dbreak'] = b
+        for nid_, w in wrn.items():
+            if nid_ in byid and w:
+                byid[nid_]['dwarn'] = w
         for nid_, f in fails.items():
             if nid_ in byid:
                 byid[nid_]['fail'] = f
@@ -943,6 +969,8 @@ class Collector:
         vol0 = self.body_signature()
         byg = {g['id']: g for g in self.groups}
         err0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState)
+        WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
+        warn0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == WARN)
         for j in range(len(tgroups)):
             g = tgroups[j]      # re-read: the list is replaced if the design had to be reopened
             gid = 'G%d' % j
@@ -989,6 +1017,11 @@ class Collector:
             if gid in byg:
                 byg[gid]['dsupp'] = [self.tl2node[i] for i in casc if i in self.tl2node]
                 byg[gid]['dbreak'] = [self.tl2node[i] for i in broke if i in self.tl2node]
+                warned = [i for i in orig if i not in inside and not orig[i] and i not in warn0
+                          and not _safe(lambda: tl.item(i).isSuppressed, True)
+                          and _safe(lambda: tl.item(i).healthState, 0) == WARN]
+                if warned:
+                    byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
             _safe(lambda: setattr(g, 'isSuppressed', False))
             self._restore_checked(orig, err0, None, gname)
@@ -1564,8 +1597,28 @@ svg .ctogt{font-size:12px;font-weight:700;fill:var(--muted);pointer-events:none}
 svg .ctogc.col+.ctogt{fill:var(--panel)}
 svg .ctogn{font-size:11px;fill:var(--accent);pointer-events:none}
 svg .gtoggle{font-weight:700}
+#health{display:flex;gap:6px;align-items:center}
+#health button{display:inline-flex;align-items:center;gap:6px;font-weight:600;border-radius:14px;padding:3px 10px}
+#health .hb{color:var(--err);border-color:var(--err)}#health .hw{color:var(--warn);border-color:var(--warn)}
+#health .ic{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:var(--err);color:#fff;font-size:11px;font-weight:800}
+#health .hw .ic{background:none;border-radius:0;width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid var(--warn);position:relative}
+#health .hw .ic::after{content:'!';position:absolute;left:-2px;top:2px;color:#fff;font-size:10px;font-weight:800}
+#health small{font-weight:400;color:var(--muted)}
+svg .brk circle{fill:var(--err);stroke:var(--panel);stroke-width:2}svg .brk text{fill:#fff;font-size:13px;font-weight:800}svg .brk.est circle{fill:var(--panel);stroke:var(--err);stroke-dasharray:3 2}svg .brk.est text{fill:var(--err)}
+svg .wrn path{fill:var(--warn);stroke:var(--panel);stroke-width:2;stroke-linejoin:round}svg .wrn text{fill:#fff;font-size:12px;font-weight:800}.simb.w{color:var(--warn)}
 /* history playback */
 svg.playing .nd,svg.playing .edge{transition:none!important}
+svg.playing #vp *{pointer-events:none!important}   /* no hover highlights or clicks on boxes/links while playing */
+#pbCard{position:absolute;right:14px;bottom:18px;z-index:11;width:230px;display:none;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:6px;pointer-events:none}
+body.pbon.pbthumbs #pbCard{display:block}
+#pbCard img{display:block;width:100%;height:160px;object-fit:contain;border-radius:6px;background:var(--panel2)}
+#pbCard .cap{font-size:12px;margin-top:6px}#pbCard .cap .ty{font-size:11px;color:var(--muted)}#pbCard .cap .nm{font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#pbCard .cap small{color:var(--muted);display:block;font-size:11px}
+#pbCard.swap img,#pbCard.swap .cap{animation:pbswap .45s ease}
+@keyframes pbswap{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
+svg .pblit{fill:none;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+svg .pblit.glow{stroke:var(--hov);stroke-opacity:.28}
+svg .pblit.base{stroke:var(--hov);stroke-opacity:.35}
+svg .pblit.trail{stroke:var(--hov)}
 svg .pbhalo{fill:var(--up);fill-opacity:.22;pointer-events:none}
 svg .pbcore{fill:var(--up);stroke:var(--panel);stroke-width:2;pointer-events:none;vector-effect:non-scaling-stroke}
 svg .pbpulse{fill:none;stroke:var(--up);stroke-width:4;pointer-events:none;vector-effect:non-scaling-stroke}
@@ -1593,9 +1646,10 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     </select>
   </div>
   <div class="srch"><input type="search" id="search" placeholder="Search features…"><span id="sNav" style="display:none;gap:4px;align-items:center"><span id="sCount" class="cnt"></span><button id="sPrev" title="Previous match (Shift+Enter)">‹</button><button id="sNext" title="Next match (Enter)">›</button></span></div>
+  <div id="health" style="display:none"></div>
   <div class="tools">
     <div class="pop"><button id="linksBtn" title="Which kinds of links to show">Links ▾</button>
-      <div class="popbox" id="linksBox"><div class="ph">Link types</div><div id="kinds"></div><div class="ph">Items</div><label class="chk"><input type="checkbox" id="showParams"> User parameters</label></div></div>
+      <div class="popbox" id="linksBox"><div class="ph">Link types</div><div id="kinds"></div><div class="ph">Items</div><label class="chk"><input type="checkbox" id="showParams"> Parameters (user and derived)</label></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
       <div class="popbox" id="dispBox"><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label></div></div>
     <button id="infoBtn" title="Legend, how to use, warnings">Info</button>
@@ -1613,7 +1667,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
       <div class="gtools">
         <button id="expAll" title="Expand all timeline groups">Expand all</button><button id="colAll" title="Collapse all timeline groups">Collapse all</button><span class="sep"></span><button id="pbStart" title="Play the whole history of the design (P)">▶ Play</button><span class="sep"></span><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it">Fit</button>
       </div>
-      <div id="pbBar"><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Skip to the next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
+      <div id="pbCard"><img alt=""><div class="cap"></div></div><div id="pbBar"><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Skip to the next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
     </div>
   </div>
   <aside id="details"></aside>
@@ -1623,7 +1677,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
 const D = /*__DATA__*/null;
 (function(){
 if(!D){document.body.innerHTML='<p style="padding:20px">No data embedded.</p>';return;}
-const CAT={sketch:'Sketch',construct:'Construction',solid:'Solid feature',finish:'Chamfer / fillet',offset:'Offset / face',hole:'Hole / thread',body:'Body operation',param:'User parameter',other:'Other'};
+const CAT={sketch:'Sketch',construct:'Construction',solid:'Solid feature',finish:'Chamfer / fillet',offset:'Offset / face',hole:'Hole / thread',body:'Body operation',param:'Parameter',other:'Other'};
 const KIND={sketch:'Sketch',profile:'Profile',plane:'Plane / axis / point',geometry:'Faces / edges',body:'Body',feature:'Feature',param:'Parameter',component:'Component',suppress:'Suppression test',order:'Same body, later'};
 const nodes=D.nodes, byId={}; nodes.forEach(n=>byId[n.id]=n);
 const TH=D.thumbs||{};const hasThumbs=Object.keys(TH).length>0;
@@ -1635,26 +1689,44 @@ let simOn=false,simState=null;const sim={items:new Set(),groups:new Set(),un:new
 const canItems=!!D.meta.exact, canGroups=!!(D.meta.gtest||D.meta.exact);
 function simCompute(){
   if(!simOn){simState=null;return;}
-  const why={},est=new Set(),broken={},refused=[];
+  const why={},est=new Set(),broken={},bEst=new Set(),warned={},refused=[];
   const add=(id,src)=>{if(!byId[id])return;if(!why[id])why[id]=src;};
+  // Fusion refuses to suppress this on its own because a later feature (fail.node) then fails to compute.
+  // The preview still suppresses it: the named feature is shown broken (Fusion reported it), what depends
+  // on that feature may fail too (estimated), and the rest of the cascade is estimated from the links.
+  const forced=(ids,fail,src)=>{const fn=fail&&fail.node&&byId[fail.node]?fail.node:null;
+    const bad=new Set(fn?[fn,...closure(fn,'down')]:[]);
+    if(fn&&!broken[fn]){broken[fn]=src;bEst.delete(fn);}
+    bad.forEach(i=>{if(i!==fn&&!broken[i]){broken[i]=src;bEst.add(i);}});
+    ids.forEach(id=>{const n=byId[id];
+      if(canItems&&itemTested(n)){n.dsupp.forEach(i=>{if(!bad.has(i))add(i,src);});(n.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]=src;});}
+      else closure(id,'down').forEach(i=>{if(!bad.has(i)&&!why[i]&&!ids.includes(i)){add(i,src);est.add(i);}});});};
   sim.groups.forEach(g=>{const G=groups[g];if(!G)return;const mem=groupMembers(g);
-    if(G.fail){refused.push(g);return;}              // Fusion undoes this suppression: nothing changes
     mem.forEach(n=>add(n.id,{g}));
+    if(G.fail){refused.push(g);forced(mem.map(n=>n.id),G.fail,{g});return;}
     if(G.dsupp)G.dsupp.forEach(i=>add(i,{g}));
     else if(canItems)mem.forEach(n=>(n.dsupp||[]).forEach(i=>add(i,{g})));
-    (G.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]={g};});});
+    (G.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]={g};});(G.dwarn||[]).forEach(i=>{if(!warned[i])warned[i]={g};});});
   if(canItems)sim.items.forEach(id=>{const n=byId[id];if(!n)return;
-    if(n.fail){refused.push('i:'+id);return;}
     add(id,{i:id});
-    if(itemTested(n)){n.dsupp.forEach(i=>add(i,{i:id}));(n.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]={i:id};});}
+    if(n.fail){refused.push('i:'+id);forced([id],n.fail,{i:id});return;}
+    if(itemTested(n)){n.dsupp.forEach(i=>add(i,{i:id}));(n.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]={i:id};});(n.dwarn||[]).forEach(i=>{if(!warned[i])warned[i]={i:id};});}
     else closure(id,'down').forEach(i=>{if(!why[i]){add(i,{i:id});est.add(i);}});});
   nodes.forEach(n=>{if(n.supp&&!(canItems&&sim.un.has(n.id)))add(n.id,{d:1});});
-  Object.keys(broken).forEach(i=>{if(why[i])delete broken[i];});
-  simState={why,est,broken,refused};
+  Object.keys(broken).forEach(i=>{if(why[i]){delete broken[i];bEst.delete(i);}});
+  Object.keys(warned).forEach(i=>{if(why[i]||broken[i])delete warned[i];});
+  simState={why,est,broken,bEst,warned,refused};
 }
 function itemTested(n){return !!n&&Array.isArray(n.dsupp);}
 function isSupp(n){return simState?!!simState.why[n.id]:!!n.supp;}
-function isBroken(n){return !!(simState&&simState.broken[n.id]);}
+// 'sim': fails in the preview (from the test) · 'est': may fail in the preview (estimated) · 'design': fails in the design
+function brokenKind(n){if(!n)return null;if(simState&&simState.broken[n.id])return simState.bEst.has(n.id)?'est':'sim';
+  if(n.health===2&&!isSupp(n))return 'design';return null;}
+function isBroken(n){return !!brokenKind(n);}
+// 'sim': gets a warning in the preview (from the test) · 'design': has a warning in the design
+function warnKind(n){if(!n||isBroken(n)||isSupp(n))return null;if(simState&&simState.warned&&simState.warned[n.id])return 'sim';return n.health===1?'design':null;}
+function warnText(n){const k=warnKind(n);return k==='design'?'Has a warning in the design':k?'Would get a warning':'';}
+function brokenText(n){const k=brokenKind(n);return k==='design'?'Fails to compute in the design':k==='est'?'May fail to compute (estimated)':k?'Would fail to compute':'';}
 function isExplicit(n){return sim.items.has(n.id)||(n.supp&&!sim.un.has(n.id));}
 function whyText(n){if(!simState)return '';const w=simState.why[n.id];if(!w)return '';if(w.d)return 'suppressed in the design';
   if(w.g)return (sim.groups.has(w.g)&&groupMembers(w.g).some(m=>m.id===n.id)?'in suppressed group ':'with group ')+(groups[w.g]?groups[w.g].name:w.g);
@@ -1669,7 +1741,7 @@ const GCOL=['#4e79a7','#f28e2b','#59a14f','#e15759','#76b7b2','#edc948','#b07aa1
 const gColor={};D.groups.filter(g=>!g.parent).sort((a,b)=>a.first-b.first).forEach((g,i)=>gColor[g.id]=GCOL[i%GCOL.length]);
 function topGroup(n){return (n&&n.g&&n.g.length)?n.g[0]:null;}
 function colorOfGroup(gid){const p=groupPath(gid);let g=groups[gid];let guard=0;while(g&&g.parent&&guard++<20)g=groups[g.parent];return g?gColor[g.id]:null;}
-function groupTag(g){if(g.fail)return ['cannot be suppressed','bad'];if(g.empty)return ['empty',''];if(!g.dsupp)return ['',''];
+function groupTag(g){if(g.fail)return ['breaks '+(g.fail.node&&byId[g.fail.node]?byId[g.fail.node].name:(g.fail.name||'a feature')),'bad'];if(g.empty)return ['empty',''];if(!g.dsupp)return ['',''];
   const b=(g.dbreak||[]).length;if(!g.dsupp.length&&!b)return ['independent','ok'];return [(g.dsupp.length?'+'+g.dsupp.length+' outside':'')+(b?(g.dsupp.length?', ':'')+b+' fail':''),b?'bad':''];}
 function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';const gs=D.groups.slice().sort((a,b)=>a.first-b.first);$('gpCount').textContent=gs.length;
   $('gpanel').style.display=gs.length?'':'none';
@@ -1681,20 +1753,31 @@ function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';cons
     const [txt,cls]=groupTag(g);const t=document.createElement('span');t.className='gt '+cls;
     if(simState){const k=mem.filter(isSupp).length;if(k===mem.length&&mem.length){r.classList.add('dim');}t.textContent=k?k+'/'+mem.length+' off':(txt||mem.length+' items');}else t.textContent=txt||mem.length+' items';
     r.appendChild(t);r.onclick=()=>{if(selGroup===g.id)clearSel();else selectGroup(g.id);};L.appendChild(r);});}
-function renderSimBar(){const bar=$('simBar');bar.innerHTML='';
+// header chips: how many items fail / have warnings right now (in the design, or in the suppression preview).
+// Clicking a chip steps through those items.
+let healthIdx={b:-1,w:-1};
+function renderHealth(){const h=$('health');if(!h)return;h.innerHTML='';
+  const its=nodes.filter(n=>n.tl!=null||n.cat==='param');const br=its.filter(n=>brokenKind(n)&&brokenKind(n)!=='est'),be=its.filter(n=>brokenKind(n)==='est'),wr=its.filter(n=>warnKind(n));
+  const prev=!!(simOn&&(sim.groups.size||sim.items.size||sim.un.size));
+  if(!br.length&&!be.length&&!wr.length){h.style.display='none';return;}h.style.display='';
+  const chip=(cls,ic,txt,list,key,tip)=>{const b=document.createElement('button');b.className=cls;b.innerHTML='<span class="ic">'+ic+'</span>'+txt;b.title=tip+' · click to go through them';
+    b.onclick=()=>{if(!list.length)return;healthIdx[key]=(healthIdx[key]+1)%list.length;const n=list[healthIdx[key]];(n.g||[]).forEach(g=>expanded.add(g));if(view!=='graph'){setView('graph');renderGraph(false);}select(n.id);};h.appendChild(b);};
+  if(br.length||be.length){const all=[...br,...be];chip('hb','!',(br.length?br.length+' broken':'')+(be.length?(br.length?' ':'')+'<small>'+(br.length?'+':'')+be.length+' may fail</small>':''),all,'b',(prev?'In this suppression preview: ':'In the design: ')+br.length+' fail to compute'+(be.length?', '+be.length+' may fail (estimated)':''));}
+  if(wr.length)chip('hw','',wr.length+' warning'+(wr.length===1?'':'s'),wr,'w',(prev?'In this suppression preview: ':'In the design: ')+wr.length+' with warnings');}
+function renderSimBar(){renderHealth();const bar=$('simBar');bar.innerHTML='';
   const any=simOn&&(sim.groups.size||sim.items.size||sim.un.size);document.body.classList.toggle('simon',!!any);if(!any)return;
   const nItems=nodes.filter(n=>n.tl!=null);const sup=nItems.filter(isSupp).length;const br=simState?Object.keys(simState.broken).length:0;
   const offG=[...sim.groups].map(g=>groups[g]?groups[g].name:g),offI=[...sim.items].map(i=>byId[i].name),onI=[...sim.un].map(i=>byId[i].name);
   const t=document.createElement('span');t.innerHTML='<b>Suppression preview</b>';bar.appendChild(t);
   const w=document.createElement('span');w.textContent='Off: '+[...offG,...offI].join(', ')+(onI.length?' · back on: '+onI.join(', '):'');w.className='cnt';w.style.maxWidth='50vw';w.style.overflow='hidden';w.style.textOverflow='ellipsis';w.style.whiteSpace='nowrap';w.title=w.textContent;bar.appendChild(w);
   const r=document.createElement('span');r.innerHTML='<b>'+sup+'</b> of '+nItems.length+' items suppressed'+(br?' · <span class="st-err"><b>'+br+'</b> would fail</span>':'');bar.appendChild(r);
-  if(simState&&simState.refused.length){const x=document.createElement('span');x.className='st-err';x.textContent='Fusion refuses to suppress: '+simState.refused.map(g=>String(g).startsWith('i:')?byId[g.slice(2)].name:groups[g].name).join(', ');bar.appendChild(x);}
+  if(simState&&simState.refused.length){const x=document.createElement('span');x.className='st-err';x.textContent='Breaks a later feature (estimated): '+simState.refused.map(g=>String(g).startsWith('i:')?byId[g.slice(2)].name:groups[g].name).join(', ');bar.appendChild(x);}
   if(simState&&simState.est.size){const x=document.createElement('span');x.className='cnt';x.textContent=simState.est.size+' estimated (item not covered by the test)';bar.appendChild(x);}
   const rb=document.createElement('button');rb.textContent='Reset';rb.style.marginLeft='auto';rb.onclick=simReset;bar.appendChild(rb);}
 function paintTree(){if(view!=='tree')return;
   document.querySelectorAll('#tree .row').forEach(r=>{const id=r.dataset.id,gid=r.dataset.gid;
     if(id&&byId[id]){const n=byId[id];const nm=r.querySelector('.name');if(nm)nm.className='name '+stateCls(n);const ti=r.querySelector('img.thumb');if(ti)ti.classList.toggle('supp',isSupp(n));
-      const b=r.querySelector('.simb');if(b){const s=isSupp(n),k=isBroken(n);b.className='simb'+(k?' b':s?' s':'');b.textContent=k?'● would fail':(s?(simState&&simState.est.has(n.id)?'suppressed (estimated) · ':'suppressed · ')+whyText(n):(simOn?'':(n.supp?'suppressed':'')));
+      const b=r.querySelector('.simb');if(b){const s=isSupp(n),k=isBroken(n);b.className='simb'+(k?' b':s?' s':'');const wk=!k&&warnKind(n);if(wk)b.className='simb w';b.textContent=k?'● '+({design:'fails in the design',est:'may fail (estimated)',sim:'would fail'}[brokenKind(n)]):wk?'▲ '+(wk==='design'?'warning in the design':'would get a warning'):(s?(simState&&simState.est.has(n.id)?'suppressed (estimated) · ':'suppressed · ')+whyText(n):(simOn?'':(n.supp?'suppressed':'')));
         if(!simOn&&n.supp)b.textContent='suppressed';}
       const tg=r.querySelector('.simtog');if(tg){const on=isExplicit(n);tg.className='simtog'+(on?' off':'');tg.textContent=on?'off':'on';tg.style.display=simOn?'':'none';}}
     else if(gid){const tg=r.querySelector('.simtog');if(tg){const on=sim.groups.has(gid);tg.className='simtog'+(on?' off':'');tg.textContent=on?'off':'on';tg.style.display=simOn?'':'none';}
@@ -1727,7 +1810,7 @@ function buildAdj(){preds={};succs={};nodes.forEach(n=>{preds[n.id]=[];succs[n.i
 function closure(id,dir){const seen=new Set(),st=[id];while(st.length){const x=st.pop();for(const e of (dir==='up'?preds[x]:succs[x])){const y=dir==='up'?e.s:e.t;if(!seen.has(y)){seen.add(y);st.push(y);}}}return seen;}
 
 function pill(n){const s=document.createElement('span');s.className='pill';s.textContent=n.type.replace(/Feature$/,'');s.style.color='var(--c-'+n.cat+')';s.style.background='var(--c-'+n.cat+'-bg)';return s;}
-function stateCls(n){if(simState){if(isBroken(n))return 'st-err';if(isSupp(n))return 'st-sup'+(simState.est.has(n.id)?' st-est':'');return n.health===2?'st-err':(n.health===1?'st-warn':'');}return n.supp?'st-sup':(n.health===2?'st-err':(n.health===1?'st-warn':''));}
+function stateCls(n){if(simState){if(isBroken(n))return 'st-err'+(brokenKind(n)==='est'?' st-est':'');if(isSupp(n))return 'st-sup'+(simState.est.has(n.id)?' st-est':'');return n.health===2?'st-err':(n.health===1?'st-warn':'');}return n.supp?'st-sup':(n.health===2?'st-err':(n.health===1?'st-warn':''));}
 function hl(text){if(!search)return document.createTextNode(text);const i=text.toLowerCase().indexOf(search);if(i<0)return document.createTextNode(text);
   const f=document.createDocumentFragment();f.append(text.slice(0,i));const m=document.createElement('span');m.className='hit';m.textContent=text.slice(i,i+search.length);f.append(m,text.slice(i+search.length));return f;}
 function matches(n){return !search||n.name.toLowerCase().includes(search)||n.type.toLowerCase().includes(search);}
@@ -1814,7 +1897,7 @@ function renderTree(){
       const entries=[...gn.items.map(n=>({n,o:n.o})),...gn.sub.map(s=>({gn:s,o:s.o}))].sort((a,b)=>a.o-b.o);
       const total=gn.items.length+gn.sub.reduce((a,s)=>a+s.items.length,0);
       const gb=gn.g&&gn.g.dbreak?gn.g.dbreak.length:0;const gf=gn.g&&gn.g.fail;
-      const gtag=gn.g&&gn.g.dsupp?((gn.g.dsupp.length?' · suppresses '+gn.g.dsupp.length+' outside':(gb?'':' · independent'))+(gb?' · breaks '+gb:'')):(gf?' · cannot be suppressed':'');
+      const gtag=gn.g&&gn.g.dsupp?((gn.g.dsupp.length?' · suppresses '+gn.g.dsupp.length+' outside':(gb?'':' · independent'))+(gb?' · breaks '+gb:'')):(gf?' · breaks '+(gf.node&&byId[gf.node]?byId[gf.node].name:(gf.name||'a feature')):'');
       cont.appendChild(row({label:gn.g?gn.g.name:'?',gid:gn.g?gn.g.id:null,onLabel:gn.g?()=>selectGroup(gn.g.id):null,count:(search?m+' match':total+' items')+gtag,open:!!search,childrenFn:k=>entries.forEach(x=>{if(x.gn)renderG(x.gn,k);else if(matches(x.n))k.appendChild(itemRow(x.n,new Set()));})}));
     }
     top.forEach(x=>{if(x.gn)renderG(x.gn,tr);else if(matches(x.n))tr.appendChild(itemRow(x.n,new Set()));});
@@ -1849,6 +1932,10 @@ function goHist(d){const j=hIdx+d;if(j<0||j>=hist.length)return;hIdx=j;const st=
 function select(id){setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn([rep(byId[id])]));}}
 function selectGroup(gid){setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&r.dataset.gid===gid));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn([...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
 function clearSel(){setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
+function groupUpIds(gid){const mem=groupMembers(gid);const mset=new Set(mem.map(n=>n.id));
+  const links=mem.flatMap(n=>[...closure(n.id,'up')]);
+  const test=D.meta.gtest?D.groups.filter(o=>o.id!==gid&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).flatMap(o=>groupMembers(o.id).map(n=>n.id)):[];
+  return [...new Set([...links,...test])].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));}
 function groupMembers(gid){return nodes.filter(n=>(n.g||[]).includes(gid));}
 function groupPath(gid){const out=[];let g=groups[gid];let guard=0;while(g&&guard++<20){out.unshift(g.name);g=groups[g.parent];}return out;}
 function groupsSuppressing(id){return D.groups.filter(g=>g.dsupp&&g.dsupp.includes(id));}
@@ -1873,8 +1960,8 @@ function renderGroupDetails(d){
       Object.keys(by).forEach(k=>{const sub=document.createElement('div');sub.className='kv';sub.style.marginTop='6px';sub.textContent=k?(groups[k]?groups[k].name:k):'Not in a group';if(k){sub.style.cursor='pointer';sub.onclick=()=>selectGroup(k);}d.append(sub,itemList(by[k]));});}
     const hb=document.createElement('h3');const inb=D.groups.filter(o=>o.id!==selGroup&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).map(o=>[o.id,o.dsupp.filter(id=>mset.has(id)).length]);
     hb.textContent='Suppressed along with these groups ('+inb.length+')';d.append(hb,groupLinks(inb));
-  }else if(g.fail){const h3=document.createElement('h3');h3.style.color='var(--err)';h3.textContent='Cannot be suppressed';d.appendChild(h3);
-    const x=document.createElement('div');x.className='kv';x.append('Fusion undoes the suppression because a later feature then fails to compute: ');
+  }else if(g.fail){const h3=document.createElement('h3');h3.style.color='var(--err)';h3.textContent='Suppressing it breaks a later feature';d.appendChild(h3);
+    const x=document.createElement('div');x.className='kv';x.append('Fusion refuses to suppress this group through the API because this feature then fails to compute. The preview can still suppress it: that feature is marked broken, the rest is estimated from the links. ');
     if(g.fail.node&&byId[g.fail.node]){const a=document.createElement('span');a.className='name st-err';a.textContent=byId[g.fail.node].name;a.onclick=()=>select(g.fail.node);x.appendChild(a);}else x.append(g.fail.name||'unknown feature');
     d.appendChild(x);if(g.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=g.fail.msg;d.appendChild(m);}
   }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Deep analysis on to see what suppressing this group does.');d.appendChild(x);}
@@ -1888,6 +1975,7 @@ function renderGroupDetails(d){
   const b=document.createElement('div');b.style.marginTop='12px';b.style.display='flex';b.style.gap='6px';b.style.flexWrap='wrap';
   const bg=document.createElement('button');bg.textContent='Show in graph';bg.onclick=()=>showInGraph(()=>groupMembers(selGroup).filter(visibleNode).map(rep));b.appendChild(bg);
   if(view==='graph'){const be=document.createElement('button');be.textContent=expanded.has(selGroup)?'Collapse group':'Expand group';be.onclick=()=>{if(expanded.has(selGroup))expanded.delete(selGroup);else expanded.add(selGroup);renderGraph(false);renderDetails();};b.appendChild(be);}
+  const bp=document.createElement('button');bp.textContent='▶ Play history';bp.title='Animate how this group was built from its dependencies (P)';bp.onclick=()=>playHistory();b.appendChild(bp);
   const bx=document.createElement('button');bx.textContent='Clear selection';bx.onclick=clearSel;b.appendChild(bx);d.appendChild(b);
 }
 function linkList(list,dir){const ul=document.createElement('ul');if(!list.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
@@ -1913,13 +2001,13 @@ function renderDetails(){
   const h=document.createElement('h2');h.textContent=n.name;h.className=stateCls(n);d.appendChild(h);
   if(TH[n.id]&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[n.id];im.alt='Model after '+n.name;d.appendChild(im);}
   const kv=document.createElement('div');kv.className='kv';
-  [n.type+(n.info?' · '+n.info:''),n.tl!=null?'Timeline position '+(n.tl+1):'',n.supp?'Suppressed':(n.health===2?'Error':n.health===1?'Warning':'OK')].filter(Boolean).forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});
+  [n.type+(n.info?' · '+n.info:''),n.tl!=null?'Timeline position '+(n.tl+1):'',isSupp(n)?'Suppressed':(isBroken(n)?brokenText(n):warnKind(n)?warnText(n):'OK')].filter(Boolean).forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});
   if(!(n.g&&n.g.length)){const gl=document.createElement('div');gl.textContent='Not in a timeline group';kv.insertBefore(gl,kv.children[1]||null);}
   d.appendChild(kv);
   if(simOn&&n.tl!=null&&!canItems&&isSupp(n)){const x=document.createElement('div');x.className='kv';x.style.margin='8px 0';x.textContent='Suppressed: '+whyText(n);d.appendChild(x);}
   if(simOn&&n.tl!=null&&canItems){const box=document.createElement('div');box.style.margin='8px 0';box.style.display='flex';box.style.gap='8px';box.style.alignItems='center';box.style.flexWrap='wrap';
     const b=document.createElement('button');const ex=isExplicit(n);b.textContent=ex?'Switch back on (simulation)':'Suppress (simulation)';b.onclick=()=>simToggleItem(n.id);box.appendChild(b);
-    const st=document.createElement('span');st.className=isBroken(n)?'st-err':'kv';st.textContent=isBroken(n)?'Would fail to compute':(isSupp(n)?'Suppressed: '+whyText(n)+(simState&&simState.est.has(n.id)?' (estimated)':''):'Active');box.appendChild(st);d.appendChild(box);
+    const st=document.createElement('span');st.className=isBroken(n)?'st-err':(warnKind(n)?'st-warn':'kv');st.textContent=isBroken(n)?brokenText(n):warnKind(n)?warnText(n):(isSupp(n)?'Suppressed: '+whyText(n)+(simState&&simState.est.has(n.id)?' (estimated)':''):'Active');box.appendChild(st);d.appendChild(box);
 }
   if(n.g&&n.g.length){const h3=document.createElement('h3');h3.textContent='Timeline group';d.appendChild(h3);const ul=document.createElement('ul');
     n.g.forEach((gid,i)=>{const g=groups[gid];if(!g)return;const li=document.createElement('li');li.style.paddingLeft=(i*14)+'px';li.style.alignItems='center';
@@ -1933,7 +2021,7 @@ function renderDetails(){
   const h3a=document.createElement('h3');h3a.textContent='Depends on ('+preds[n.id].length+' direct, '+up.size+' total)';d.append(h3a,linkList(preds[n.id],'up'));
   const h3b=document.createElement('h3');h3b.textContent='Used by ('+succs[n.id].length+' direct, '+down.size+' total)';d.append(h3b,linkList(succs[n.id],'down'));
   if(canItems&&n.tl!=null&&!n.supp){
-    if(n.fail){const h3=document.createElement('h3');h3.style.color='var(--err)';h3.textContent='Cannot be suppressed';d.appendChild(h3);const w=document.createElement('div');w.className='kv';w.textContent='Fusion undoes the suppression of this item'+(n.fail.name?' ('+n.fail.name+' fails)':'')+'.';d.appendChild(w);if(n.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=n.fail.msg;d.appendChild(m);}}
+    if(n.fail){const h3=document.createElement('h3');h3.style.color='var(--err)';h3.textContent='Suppressing it breaks a later feature';d.appendChild(h3);const w=document.createElement('div');w.className='kv';w.textContent='Fusion refuses to suppress this item through the API'+(n.fail.name?' because '+n.fail.name+' then fails to compute':'')+'. The preview can still suppress it: that feature is marked broken, the rest is estimated from the links.';d.appendChild(w);if(n.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=n.fail.msg;d.appendChild(m);}}
     else if(!itemTested(n)){const w=document.createElement('div');w.className='kv';w.style.marginTop='10px';w.textContent='Not covered by the Every item test. The preview estimates its effect from the dependency links.';d.appendChild(w);}
     if(n.dbreak&&n.dbreak.length){const hb=document.createElement('h3');hb.style.color='var(--err)';hb.textContent='Suppressing it breaks ('+n.dbreak.length+')';const w=document.createElement('div');w.className='kv';w.textContent='These stay on but fail to compute when this item is suppressed.';d.append(hb,w,itemList(n.dbreak));}}
   if(n.dsupp){const h3=document.createElement('h3');h3.textContent='Suppressing it also suppresses ('+n.dsupp.length+')';d.appendChild(h3);const ul=document.createElement('ul');n.dsupp.forEach(id=>{const x=byId[id];if(!x)return;const li=document.createElement('li');li.appendChild(pill(x));const a=document.createElement('span');a.className='name '+stateCls(x);a.textContent=x.name;a.onclick=()=>select(id);li.appendChild(a);ul.appendChild(li);});d.appendChild(ul);}
@@ -1953,6 +2041,7 @@ let hovState=null,hovPin=null,routeCache=null,selRelated=[];
 // clicked link: stays highlighted until the mouse really moves (not just the view moving under it)
 window.addEventListener('mousemove',ev=>{if(!hovPin)return;if(Math.hypot(ev.clientX-hovPin.x,ev.clientY-hovPin.y)<5)return;hovPin=null;edgeHover(null,null,null,false);});
 function edgeHover(p,s,t,on){
+  if(on&&PB)return;             // no hover highlights while the history is playing
   if(!on&&hovPin)return;        // a clicked link stays highlighted until the mouse moves
   if(hovState){const h=hovState;if(h.p){h.p.classList.remove('hov');if(h.parent)h.parent.insertBefore(h.p,h.next);}
     h.rings.forEach(r=>{r.style.opacity='0';setTimeout(()=>r.remove(),220);});h.nodes.forEach(g=>g.classList.remove('hov'));hovState=null;}
@@ -2128,9 +2217,12 @@ function renderGraph(fitAfter,centerId){
   let up=null,down=null,selRep=null,selSet=null;selRelated=[];
   if(selected&&byId[selected]){const s=byId[selected];selRep=rep(s);selSet=new Set([selRep]);up=new Set([...closure(selected,'up')].map(i=>rep(byId[i])));down=new Set([...closure(selected,'down')].map(i=>rep(byId[i])));}
   else if(selGroup&&groups[selGroup]){const mem=groupMembers(selGroup);const mset=new Set(mem.map(n=>n.id));selSet=new Set(mem.map(n=>rep(n)));if(R['h'+selGroup])selSet.add('h'+selGroup);selRep='__group__';
-    const g=groups[selGroup];const dn=g.dsupp?[...g.dsupp,...(g.dbreak||[])]:[...new Set(mem.flatMap(n=>[...closure(n.id,'down')]))].filter(i=>!mset.has(i));
-    down=new Set(dn.filter(i=>byId[i]).map(i=>rep(byId[i])));
-    const upIds=D.meta.gtest?D.groups.filter(o=>o.id!==selGroup&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).flatMap(o=>groupMembers(o.id).map(n=>n.id)):[...new Set(mem.flatMap(n=>[...closure(n.id,'up')]))].filter(i=>!mset.has(i));
+    // a group depends on everything any of its items depends on (links, incl. user parameters and items outside
+    // groups), plus, with the group test, the groups whose suppression takes items of this group with them
+    const g=groups[selGroup];const dnLinks=[...new Set(mem.flatMap(n=>[...closure(n.id,'down')]))];
+    const dn=[...new Set([...(g.dsupp?[...g.dsupp,...(g.dbreak||[])]:[]),...dnLinks])].filter(i=>!mset.has(i));
+    down=new Set(dn.filter(i=>byId[i]&&visibleNode(byId[i])).map(i=>rep(byId[i])));
+    const upIds=groupUpIds(selGroup);
     up=new Set(upIds.filter(i=>byId[i]).map(i=>rep(byId[i])));selSet.forEach(r=>{up.delete(r);down.delete(r);});}
   if(selSet)selRelated=[...new Set([...selSet,...(up||[]),...(down||[])])].filter(r=>r!=='__group__');
   // selection: pull the related boxes together in each row, centred under the selection;
@@ -2154,7 +2246,7 @@ function renderGraph(fitAfter,centerId){
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const full=l.id==='_none'?'Not in a group':(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
       const lg=document.createElementNS(NS,'g');lg.style.cursor=l.id==='_none'?'default':'pointer';lg.append(bg,tx);if(l.id!=='_none')lg.addEventListener('click',ev=>{ev.stopPropagation();if(!moved)selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');
-  nodeEls={};edgeEls=[];
+  nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
   // remembered and reused when a re-render (a click, a hover list, the preview) leaves every box in place.
   const ek2=e=>e.s+'>'+e.t+(e.contain?'#c':'');
@@ -2252,7 +2344,16 @@ function renderGraph(fitAfter,centerId){
     const gsupp=!r.isGroup?isSupp(r.members[0]):!!(simState&&r.members.length&&r.members.every(isSupp));
     if(r.isGroup&&simState){const k=r.members.filter(isSupp).length;if(k){label+=' · '+k+' off';}}
     if(gsupp)cat='supp_';rect.setAttribute('fill',gsupp?'var(--supp-bg)':'var(--c-'+cat+'-bg)');if(gsupp)rect.setAttribute('stroke-dasharray','5 3');rect.setAttribute('stroke',gsupp?'var(--supp)':(!r.isGroup&&r.members[0].health===2)?'var(--err)':(!r.isGroup&&r.members[0].health===1)?'var(--warn)':'var(--c-'+cat+')');
-    if(simState&&r.members.some(isBroken)){rect.setAttribute('stroke','var(--err)');rect.setAttribute('stroke-width','3');}
+    const bk=r.members.map(brokenKind).filter(Boolean);
+    if(bk.length){const est=bk.every(k=>k==='est');rect.setAttribute('stroke','var(--err)');rect.setAttribute('stroke-width','3');rect.setAttribute('stroke-dasharray',est?'6 4':'');
+      const bb=document.createElementNS(NS,'g');bb.setAttribute('class','brk'+(est?' est':''));bb.setAttribute('transform','translate('+(NW-3)+',3)');
+      const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4.5);t.textContent='!';
+      const tt=document.createElementNS(NS,'title');tt.textContent=r.isGroup?(bk.length+' item'+(bk.length===1?'':'s')+' in this group fail to compute'+(est?' (estimated)':'')):brokenText(r.members[0]);bb.append(c,t,tt);brkBadges.push([g,bb]);}
+    else{const wk=r.members.map(warnKind).filter(Boolean);
+      if(wk.length){rect.setAttribute('stroke','var(--warn)');rect.setAttribute('stroke-width','2.5');
+        const bb=document.createElementNS(NS,'g');bb.setAttribute('class','wrn');bb.setAttribute('transform','translate('+(NW-3)+',3)');
+        const tri=document.createElementNS(NS,'path');tri.setAttribute('d','M0,-10 L10,8 L-10,8 Z');const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',6);t.textContent='!';
+        const tt=document.createElementNS(NS,'title');tt.textContent=r.isGroup?(wk.length+' item'+(wk.length===1?'':'s')+' in this group with warnings'):warnText(r.members[0]);bb.append(tri,t,tt);brkBadges.push([g,bb]);}}
     if(selSet&&selSet.has(r.id)){rect.setAttribute('stroke','var(--sel)');rect.setAttribute('stroke-width','3.5');
       if(selRep!=='__group__'||r.header){const gl=document.createElementNS(NS,'rect');gl.setAttribute('class','selglow');gl.setAttribute('x',-9);gl.setAttribute('y',-9);gl.setAttribute('width',NW+18);gl.setAttribute('height',NH+18);gl.setAttribute('rx',12);g.appendChild(gl);}}
     else if(selGroup&&down&&down.has(r.id)){rect.setAttribute('stroke','var(--down)');rect.setAttribute('stroke-width','2.5');}
@@ -2261,7 +2362,7 @@ function renderGraph(fitAfter,centerId){
     // action buttons on the right edge of the box (for now: suppress in the preview)
     const acts=[];const gidA=r.isGroup?r.id.slice(1):null;
     if(simOn&&r.isGroup&&canGroups&&groups[gidA])acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
-    else if(simOn&&!r.isGroup&&canItems&&r.members[0].tl!=null){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · Fusion refuses this':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
+    else if(simOn&&!r.isGroup&&canItems&&r.members[0].tl!=null){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · breaks '+(it.fail.name||'a later feature')+', estimated':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
     const maxc=(nth?24:(gth?34:30))-acts.length*(r.isGroup?5:3);
     const tx=document.createElementNS(NS,'text');tx.setAttribute('x',tx0);tx.setAttribute('y',NH/2+4);tx.setAttribute('style','fill:'+(gsupp?'var(--supp);text-decoration:line-through':'var(--c-'+cat+')')+(r.isGroup?';font-weight:600':''));
     tx.textContent=label.length>maxc?label.slice(0,maxc-1)+'…':label;
@@ -2275,6 +2376,7 @@ function renderGraph(fitAfter,centerId){
       hot.addEventListener('mouseenter',ev=>{if(!drag)peekShow(mid,ev);});hot.addEventListener('mousemove',peekMove);hot.addEventListener('mouseleave',peekHide);
       g.append(bg,im,hot);}
     g.append(tx);if(!nth)g.append(ti);
+    brkBadges.filter(x=>x[0]===g).forEach(x=>g.appendChild(x[1]));
     acts.forEach((a,i)=>{const bs=gth?24:18;const bx=NW-6-bs-i*(bs+4),by=(NH-bs)/2;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','act'+(a.on?' on':''));bt.setAttribute('transform','translate('+bx+','+by+')');
       const bg=document.createElementNS(NS,'rect');bg.setAttribute('width',bs);bg.setAttribute('height',bs);bg.setAttribute('rx',5);
       // power symbol
@@ -2351,6 +2453,7 @@ let PB=null;const PBS=[0.5,1,2,4];
 const PB_A={pre:0.3,other:0.06,edgePre:0.16,edgeOther:0.03};
 function pbLP(){const gp=$('gpanel');return (gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;}
 function pbSync(){const b=$('pbStart');if(!b)return;const ok=!!(selected&&byId[selected]);b.disabled=false;
+  if(!ok&&selGroup&&groups[selGroup]){b.title='Play how this timeline group was built from its dependencies (P)';return;}
   b.title=ok?'Play how the selected item was built from its dependencies (P)':'Play the whole history of the design (P). Select an item first to play only how that item was built.';}
 // a link as a polyline with its cumulative length, so a dot can move along it at constant speed
 function pbPath(x){const P=edgeSamples(pos[x.s],pos[x.t],x.o1,x.o2,x.bow,48);const L=[0];
@@ -2360,7 +2463,8 @@ function pbAt(pp,f){const d=f*pp.len;let i=1;while(i<pp.L.length-1&&pp.L[i]<d)i+
 function pbBox(ids,pts){let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;(ids||[]).forEach(i=>{const p=pos[i];if(!p)return;x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});
   (pts||[]).forEach(q=>{x0=Math.min(x0,q[0]);y0=Math.min(y0,q[1]);x1=Math.max(x1,q[0]);y1=Math.max(y1,q[1]);});return x0>x1?null:{x0,y0,x1,y1};}
 function pbArea(){const LP=pbLP();const bar=$('pbBar');const bh=bar&&bar.offsetHeight?bar.offsetHeight+28:0;
-  return {LP,W:Math.max(200,(svg.clientWidth||800)-LP),H:Math.max(200,(svg.clientHeight||600)-bh-52),top:52};}
+  const RP=document.body.classList.contains('pbthumbs')?250:0;
+  return {LP,W:Math.max(200,(svg.clientWidth||800)-LP-RP),H:Math.max(200,(svg.clientHeight||600)-bh-52),top:52};}
 function pbView(b,kmin,kmax,pad){const A=pbArea();pad=pad==null?90:pad;
   let k=Math.min(kmax,(A.W-2*pad)/Math.max(1,b.x1-b.x0),(A.H-2*pad)/Math.max(1,b.y1-b.y0));k=Math.max(kmin,k);
   return {cx:(b.x0+b.x1)/2,cy:(b.y0+b.y1)/2,k};}
@@ -2371,17 +2475,22 @@ function pbCam(v,dt,tau){const A=pbArea();const cxW=A.LP+A.W/2,cyW=A.top+A.H/2;
   T.k=k;T.x=cxW-nx*k;T.y=cyW-ny*k;applyT();}
 function pbEase(a){a=Math.max(0,Math.min(1,a));return a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;}
 
-function playHistory(){if(selGroup&&!selected)clearSel();
+function playHistory(){
   stopPlay();setInfo(false);peekHide();
   if(view!=='graph'){setView('graph');renderGraph(false);}
   if(selected&&byId[selected]&&!pos[rep(byId[selected])]&&collapsedNodes.size){collapsedNodes.clear();renderGraph(false);}
   if(anim){cancelAnimationFrame(anim);anim=null;}
   // wait for a running re-layout (selection glide) to settle, so the boxes are where pos says
   const go=()=>{if(graphAnim){setTimeout(go,60);return;}pbBegin();};go();}
-function pbBegin(){let order;const whole=!(selected&&byId[selected]);
+function pbBegin(){let order;const grp=!selected&&selGroup&&groups[selGroup]?selGroup:null;const whole=!(selected&&byId[selected])&&!grp;
   if(whole){// nothing selected: the whole history, every box on screen in timeline order
     const ord={};nodes.filter(visibleNode).forEach(n=>{const r=rep(n);if(pos[r])ord[r]=Math.min(ord[r]==null?1e9:ord[r],n.o);});
     order=Object.keys(ord).sort((a,b)=>ord[a]-ord[b]);if(!order.length)return;}
+  else if(grp){// a timeline group: everything its items depend on, then its own items, in timeline order
+    const mem=groupMembers(grp).filter(visibleNode);const ord={};const add=n=>{const r=rep(n);if(pos[r])ord[r]=Math.min(ord[r]==null?1e9:ord[r],n.o);};
+    groupUpIds(grp).forEach(i=>add(byId[i]));const upR=Object.keys(ord);const mo={};mem.forEach(n=>{const r=rep(n);if(pos[r])mo[r]=Math.min(mo[r]==null?1e9:mo[r],n.o);});
+    const memR=Object.keys(mo).sort((a,b)=>mo[a]-mo[b]);const ms=new Set(memR);
+    order=upR.filter(r=>!ms.has(r)).sort((a,b)=>ord[a]-ord[b]).concat(memR);if(!order.length)return;}
   else{const selR=rep(byId[selected]);if(!pos[selR])return;
     const up=[...closure(selected,'up')].filter(i=>byId[i]&&visibleNode(byId[i]));
     const ord={};const setR=new Set(up.map(i=>rep(byId[i])).filter(r=>pos[r]));setR.delete(selR);
@@ -2391,39 +2500,55 @@ function pbBegin(){let order;const whole=!(selected&&byId[selected]);
   const edges=edgeEls.filter(x=>S.has(x.s)&&S.has(x.t)&&x.s!==x.t);
   const steps=order.map((r,i)=>({id:r,inc:edges.filter(x=>x.t===r&&idx[x.s]<i)}));
   const ov=document.createElementNS('http://www.w3.org/2000/svg','g');ov.setAttribute('class','pbov');vp.appendChild(ov);
-  PB={whole,order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1800,speed:PB_speed,paused:false,
-    alpha:{},ealpha:new Map(),ov,dots:[],pulses:[],userCam:false,last:performance.now(),raf:0,shown:new Set()};
+  const lits=document.createElementNS('http://www.w3.org/2000/svg','g');ov.appendChild(lits);
+  edgeHover(null,null,null,false);hovPin=null;if(hovState)edgeHover(null,null,null,false);
+  PB={whole,grp,order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1800,speed:PB_speed,paused:false,
+    alpha:{},ealpha:new Map(),ov,lits,fading:[],dots:[],pulses:[],userCam:false,last:performance.now(),raf:0,shown:new Set()};
   Object.keys(nodeEls).forEach(id=>PB.alpha[id]=1);edgeEls.forEach(x=>PB.ealpha.set(x,1));
-  svg.classList.add('playing');document.body.classList.add('pbon');pbUI();
+  svg.classList.add('playing');document.body.classList.add('pbon');document.body.classList.toggle('pbthumbs',hasThumbs&&showThumbs);pbUI();
   PB.raf=requestAnimationFrame(pbFrame);}
 let PB_speed=1;
 function stopPlay(){if(!PB)return;cancelAnimationFrame(PB.raf);PB.ov.remove();
   Object.values(nodeEls).forEach(g=>{g.style.opacity='';});edgeEls.forEach(x=>{x.el.style.opacity='';});
-  PB=null;svg.classList.remove('playing');document.body.classList.remove('pbon');pbUI();}
+  PB=null;svg.classList.remove('playing');document.body.classList.remove('pbon','pbthumbs');$('pbCard').dataset.id='';pbUI();}
 function pbUI(){const bar=$('pbBar');if(!bar)return;bar.style.display=PB?'flex':'none';pbSync();if(!PB)return;
   $('pbPlay').textContent=PB.phase==='done'?'↺':(PB.paused?'▶':'❚❚');
   $('pbPlay').title=PB.phase==='done'?'Replay':(PB.paused?'Resume (Space)':'Pause (Space)');
   $('pbNext').disabled=PB.phase==='done';$('pbSpeed').textContent=PB.speed+'×';
   const n=PB.order.length;let t;
-  if(PB.phase==='intro')t=PB.whole?'Whole history · <b>'+n+'</b> step'+(n===1?'':'s'):'<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
+  if(PB.phase==='intro')t=PB.whole?'Whole history · <b>'+n+'</b> step'+(n===1?'':'s'):PB.grp?'<b>'+n+'</b> step'+(n===1?'':'s')+' to build group <b>'+esc(groups[PB.grp]?groups[PB.grp].name:'')+'</b>':'<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
   else if(PB.phase==='done')t='Done · '+n+' step'+(n===1?'':'s');
   else{const r=PB.order[PB.k];t='Step <b>'+(PB.k+1)+'</b> / '+n+' · '+esc(pbName(r));}
   $('pbInfo').innerHTML=t;
+  pbCardShow(PB.phase==='intro'?null:(PB.phase==='done'?PB.order[n-1]:PB.order[PB.k]));
   const pr=$('pbProg');if(pr)pr.style.width=(PB.phase==='done'?100:Math.max(0,PB.k+1)/n*100)+'%';}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+// small card with the thumbnail of the item being built (the model after that timeline step)
+function pbThumbOf(r){if(byId[r])return TH[r]?r:null;const g=groups[r.slice(1)];if(!g)return null;const m=groupMembers(g.id).filter(x=>TH[x.id]).sort((a,b)=>b.o-a.o)[0];return m?m.id:null;}
+function pbCardShow(r){const c=$('pbCard');if(!c)return;const key=r||'';if(c.dataset.id===key)return;c.dataset.id=key;
+  const im=c.querySelector('img'),cap=c.querySelector('.cap');if(!r){im.style.display='none';cap.innerHTML='<small>Starting…</small>';return;}
+  const tid=pbThumbOf(r);im.style.display=tid?'':'none';if(tid)im.src=TH[tid];
+  const n=byId[r];const cat=n?n.cat:'group';const lab=n?(CAT[n.cat]||n.cat):'Timeline group';
+  cap.innerHTML='<span class="pill" style="color:var(--c-'+cat+');background:var(--c-'+cat+'-bg)">'+esc(lab)+'</span> '+(n?'<span class="ty">'+esc(n.type.replace(/Feature$/,''))+'</span>':'')+'<div class="nm">'+esc(pbName(r))+'</div><small>'+(n&&n.tl!=null?'Timeline position '+(n.tl+1):'')+(tid?'':(n&&n.tl!=null?' · ':'')+'no thumbnail')+'</small>';
+  c.classList.remove('swap');void c.offsetWidth;c.classList.add('swap');}
 function pbName(r){if(byId[r])return byId[r].name;const g=groups[r.slice(1)];return g?g.name+' (group)':r;}
 function pbSetPhase(ph,dur){PB.phase=ph;PB.ph0=PB.vt;PB.dur=dur;}
-function pbStep(k){PB.k=k;PB.userCam=false;PB.dots.forEach(d=>d.el.remove());PB.dots=[];
+function pbStep(k){PB.k=k;PB.userCam=false;pbDropDots();if(PB.steps[k])PB.steps[k].pulsed=false;
   if(k>=PB.order.length){pbSetPhase('done',1e9);pbUI();return;}
   const st=PB.steps[k];
   if(st.inc.length){let mx=0;st.inc.forEach(x=>{const pp=pbPath(x);mx=Math.max(mx,pp.len);
+      const NS2='http://www.w3.org/2000/svg';const d0=edgeCurve(pos[x.s],pos[x.t],x.o1,x.o2,x.bow);
+      const lit=document.createElementNS(NS2,'g');const mk=c=>{const q=document.createElementNS(NS2,'path');q.setAttribute('class','pblit '+c);q.setAttribute('d',d0);lit.appendChild(q);return q;};
+      const lb=mk('base'),lg=mk('glow'),lt=mk('trail');PB.lits.appendChild(lit);const ll=lt.getTotalLength()||pp.len;
       const g=document.createElementNS('http://www.w3.org/2000/svg','g');g.setAttribute('class','pbdot');
       const h=document.createElementNS('http://www.w3.org/2000/svg','circle');h.setAttribute('class','pbhalo');
       const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('class','pbcore');g.append(h,c);PB.ov.appendChild(g);
-      PB.dots.push({x,pp,el:g,h,c});});
+      PB.dots.push({x,pp,el:g,h,c,lit,lb,lg,lt,ll});});
     pbSetPhase('fly',Math.max(1400,Math.min(3400,1100+mx*1.0)));}
   else pbSetPhase('fade',k===0?1400:1100);
   pbUI();}
+// dots are removed at once; their lit links stay fully drawn and fade out
+function pbDropDots(){PB.dots.forEach(d=>{d.el.remove();const L=d.ll;d.lt.setAttribute('stroke-dasharray',(L+10)+' 0');d.lg.setAttribute('stroke-dasharray',(L+10)+' 0');PB.fading.push({el:d.lit,t0:PB.vt});});PB.dots=[];}
 function pbPulse(id){const p=pos[id];if(!p)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',9);PB.ov.appendChild(r);PB.pulses.push({el:r,id,t0:PB.vt});}
 // finish the running step at once (Next)
 function pbSkip(){if(!PB||PB.phase==='done')return;
@@ -2444,16 +2569,20 @@ function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=no
     const rad=Math.min(40,Math.max(5,7/T.k));
     PB.dots.forEach(d=>{const q=pbAt(d.pp,f);camPts.push(q);d.c.setAttribute('cx',q[0]);d.c.setAttribute('cy',q[1]);d.c.setAttribute('r',rad);
       d.h.setAttribute('cx',q[0]);d.h.setAttribute('cy',q[1]);d.h.setAttribute('r',rad*(2.1+0.35*Math.sin(PB.vt/140)));
-      ea.set(d.x,PB_A.edgePre+(1-PB_A.edgePre)*f);});
-    camIds=[st.id];if(p>=1){PB.dots.forEach(d=>d.el.remove());PB.dots=[];pbPulse(st.id);pbSetPhase('fade',1000);}}
+      ea.set(d.x,PB_A.edgePre+(1-PB_A.edgePre)*f);
+      const px=1/T.k;d.lb.setAttribute('stroke-width',3*px);d.lg.setAttribute('stroke-width',13*px);d.lt.setAttribute('stroke-width',4.5*px);
+      const L=d.ll,on=f*L;d.lt.setAttribute('stroke-dasharray',on+' '+(L+10));d.lg.setAttribute('stroke-dasharray',on+' '+(L+10));
+      d.lb.style.opacity=String(Math.min(1,p*4));});
+    camIds=[st.id];if(p>=1){pbDropDots();pbPulse(st.id);pbSetPhase('fade',1000);}}
   else if(PB.phase==='fade'){const st=PB.steps[PB.k];na[st.id]=PB_A.pre+(1-PB_A.pre)*e;st.inc.forEach(x=>ea.set(x,1));
-    camIds=[st.id];kmax=1.3;if(PB.k===0&&!st.inc.length&&!PB.pulses.some(q=>q.id===st.id)&&p>0.15)pbPulse(st.id);
+    camIds=[st.id];kmax=1.3;if(!st.inc.length&&!st.pulsed&&p>0.15){st.pulsed=true;pbPulse(st.id);}
     if(p>=1){PB.shown.add(st.id);pbSetPhase('hold',st.inc.length?500:650);}}
   else if(PB.phase==='hold'){camIds=[PB.order[PB.k]];kmax=1.3;if(p>=1)pbStep(PB.k+1);}
   else if(PB.phase==='done'){camIds=PB.order;kmin=0.02;kmax=1.1;pad=60;}
   // apply opacities
   Object.keys(nodeEls).forEach(id=>{const g=nodeEls[id];const v=na[id];if(PB.alpha[id]!==v){PB.alpha[id]=v;g.style.opacity=String(v);}});
   edgeEls.forEach(x=>{const v=ea.get(x);if(PB.ealpha.get(x)!==v){PB.ealpha.set(x,v);x.el.style.opacity=String(v);}});
+  PB.fading=PB.fading.filter(q=>{const a=(PB.vt-q.t0)/900;if(a>=1){q.el.remove();return false;}q.el.style.opacity=String(1-pbEase(a));return true;});
   // arrival pulses: a ring that grows out of the box and fades
   PB.pulses=PB.pulses.filter(q=>{const a=(PB.vt-q.t0)/1100;const pp=pos[q.id];if(a>=1||!pp){q.el.remove();return false;}
     const g=6+22*pbEase(a);q.el.setAttribute('x',pp.x-g);q.el.setAttribute('y',pp.y-g);q.el.setAttribute('width',NW+2*g);q.el.setAttribute('height',NH+2*g);q.el.style.opacity=String(1-a);return true;});
@@ -2461,6 +2590,7 @@ function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=no
   if(!PB.userCam&&!PB.paused){const b=pbBox(camIds,camPts);if(b)pbCam(pbView(b,kmin,kmax,pad),dt,PB.phase==='intro'||PB.phase==='done'?tau*1.6:tau);}
   PB.raf=requestAnimationFrame(pbFrame);}
 svg.addEventListener('mousedown',()=>{if(PB)PB.userCam=true;},true);
+svg.addEventListener('click',e=>{if(PB){e.stopImmediatePropagation();}},true);
 svg.addEventListener('wheel',()=>{if(PB)PB.userCam=true;},{capture:true,passive:true});
 $('pbStart').onclick=()=>playHistory();
 $('pbStop').onclick=()=>stopPlay();
@@ -2512,7 +2642,7 @@ let st;$('search').oninput=e=>{clearTimeout(st);st=setTimeout(()=>{search=e.targ
 $('search').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();goHit(e.shiftKey?-1:1);}});
 $('sPrev').onclick=()=>goHit(-1);$('sNext').onclick=()=>goHit(1);
 if(canGroups){simOn=true;simCompute();renderSimBar();}
-updateLinksBtn();hist.push(snap());hIdx=0;updHistBtns();
+renderHealth();updateLinksBtn();hist.push(snap());hIdx=0;updHistBtns();
 applyT();buildAdj();renderGroupPanel();setView('graph');renderGraph(false);fit();setInfo(true);
 // opening: show the whole graph first, then glide in to the top row, at its middle (nothing gets selected)
 {// the box in the top row that is closest to the horizontal middle of the graph
