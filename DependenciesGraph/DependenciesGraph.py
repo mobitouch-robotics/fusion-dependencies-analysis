@@ -1611,7 +1611,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
       </defs><g id="vp"></g></svg>
       <div id="gpanel"><div class="gph"><b>Timeline groups</b><span class="cnt" id="gpCount"></span><button id="gpToggle" title="Show/hide the group list">–</button></div><div id="gpList"></div></div>
       <div class="gtools">
-        <button id="expAll" title="Expand all timeline groups">Expand all</button><button id="colAll" title="Collapse all timeline groups">Collapse all</button><span class="sep"></span><button id="pbStart" disabled title="Select an item to play how it was built">▶ Play</button><span class="sep"></span><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it">Fit</button>
+        <button id="expAll" title="Expand all timeline groups">Expand all</button><button id="colAll" title="Collapse all timeline groups">Collapse all</button><span class="sep"></span><button id="pbStart" title="Play the whole history of the design (P)">▶ Play</button><span class="sep"></span><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it">Fit</button>
       </div>
       <div id="pbBar"><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Skip to the next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
     </div>
@@ -1896,7 +1896,7 @@ function setInfo(open){document.body.classList.toggle('infoopen',!!open);$('info
 function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.createElement('div');cols.className='cols';
   const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details. Click empty space in the graph to deselect.</div>';
   const lg=document.createElement('div');lg.className='legend';Object.keys(CAT).forEach(c=>{if(!nodes.some(n=>n.cat===c))return;const s=document.createElement('span');s.className='pill';s.textContent=CAT[c];s.style.color='var(--c-'+c+')';s.style.background='var(--c-'+c+'-bg)';lg.appendChild(s);});c1.appendChild(lg);
-  const h=document.createElement('div');h.className='hint';h.innerHTML='Graph: drag to pan, scroll to zoom, click a grey group box to expand it. Blue links lead to what the selection depends on, green links to what depends on it. <b>▶ Play</b> (or P) animates how the selected item was built from its dependencies: Space pauses, → skips to the next step, Esc stops.'+(D.meta.exact||D.meta.gtest?'':'<br>Links come from references the add-in could read (sketches, profiles, planes, faces/edges, bodies, parameters). Turn on <b>Deep analysis</b> in the add-in to get Fusion\'s real dependencies and the suppression preview.');c1.appendChild(h);
+  const h=document.createElement('div');h.className='hint';h.innerHTML='Graph: drag to pan, scroll to zoom, click a grey group box to expand it. Blue links lead to what the selection depends on, green links to what depends on it. <b>▶ Play</b> (or P) animates how the selected item was built from its dependencies, or the whole history when nothing is selected: Space pauses, → skips to the next step, Esc stops.'+(D.meta.exact||D.meta.gtest?'':'<br>Links come from references the add-in could read (sketches, profiles, planes, faces/edges, bodies, parameters). Turn on <b>Deep analysis</b> in the add-in to get Fusion\'s real dependencies and the suppression preview.');c1.appendChild(h);
   if(canGroups){const x=document.createElement('div');x.className='hint';x.innerHTML='<b>Suppression preview:</b> use the on/off buttons (groups panel, tree, details) or Shift+click a box in the graph'+(canItems?'':' (switches its whole group - this page has the group test only)')+'. The preview bar appears as soon as something is switched off.'+
       '<br><b>How exact it is:</b> one item switched off'+(D.meta.gtest?', or one whole timeline group,':'')+' shows exactly what Fusion did in the suppression test. '+
       'With several things switched off at once, the preview adds up their single results. Features that fail or switch off only when those things are off <i>together</i> are not shown, so treat that result as an estimate.';c1.appendChild(x);}
@@ -2347,11 +2347,11 @@ svg.addEventListener('click',()=>{if(moved)return;if(selected||selGroup)clearSel
 // Select an item and press Play: the view shows the item and everything it depends on, dims it all,
 // then walks the history in timeline order. For each step a dot flies along the links from the
 // items already built to the next one, which then fades in. The camera follows the dots.
-let PB=null;const PBS=[1,2,4];
+let PB=null;const PBS=[0.5,1,2,4];
 const PB_A={pre:0.3,other:0.06,edgePre:0.16,edgeOther:0.03};
 function pbLP(){const gp=$('gpanel');return (gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;}
-function pbSync(){const b=$('pbStart');if(!b)return;const ok=!!(selected&&byId[selected]);b.disabled=!ok;
-  b.title=ok?'Play how the selected item was built from its dependencies (P)':'Select an item to play how it was built';}
+function pbSync(){const b=$('pbStart');if(!b)return;const ok=!!(selected&&byId[selected]);b.disabled=false;
+  b.title=ok?'Play how the selected item was built from its dependencies (P)':'Play the whole history of the design (P). Select an item first to play only how that item was built.';}
 // a link as a polyline with its cumulative length, so a dot can move along it at constant speed
 function pbPath(x){const P=edgeSamples(pos[x.s],pos[x.t],x.o1,x.o2,x.bow,48);const L=[0];
   for(let i=1;i<P.length;i++)L.push(L[i-1]+Math.hypot(P[i][0]-P[i-1][0],P[i][1]-P[i-1][1]));return {P,L,len:L[L.length-1]};}
@@ -2371,23 +2371,27 @@ function pbCam(v,dt,tau){const A=pbArea();const cxW=A.LP+A.W/2,cyW=A.top+A.H/2;
   T.k=k;T.x=cxW-nx*k;T.y=cyW-ny*k;applyT();}
 function pbEase(a){a=Math.max(0,Math.min(1,a));return a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;}
 
-function playHistory(){if(!selected||!byId[selected])return;
+function playHistory(){if(selGroup&&!selected)clearSel();
   stopPlay();setInfo(false);peekHide();
   if(view!=='graph'){setView('graph');renderGraph(false);}
-  if(!pos[rep(byId[selected])]&&collapsedNodes.size){collapsedNodes.clear();renderGraph(false);}
+  if(selected&&byId[selected]&&!pos[rep(byId[selected])]&&collapsedNodes.size){collapsedNodes.clear();renderGraph(false);}
   if(anim){cancelAnimationFrame(anim);anim=null;}
   // wait for a running re-layout (selection glide) to settle, so the boxes are where pos says
   const go=()=>{if(graphAnim){setTimeout(go,60);return;}pbBegin();};go();}
-function pbBegin(){const selR=rep(byId[selected]);if(!pos[selR])return;
-  const up=[...closure(selected,'up')].filter(i=>byId[i]&&visibleNode(byId[i]));
-  const ord={};const setR=new Set(up.map(i=>rep(byId[i])).filter(r=>pos[r]));setR.delete(selR);
-  nodes.forEach(n=>{const r=rep(n);if(r===selR||setR.has(r))ord[r]=Math.min(ord[r]==null?1e9:ord[r],n.o);});
-  const order=[...setR].sort((a,b)=>ord[a]-ord[b]);order.push(selR);
+function pbBegin(){let order;const whole=!(selected&&byId[selected]);
+  if(whole){// nothing selected: the whole history, every box on screen in timeline order
+    const ord={};nodes.filter(visibleNode).forEach(n=>{const r=rep(n);if(pos[r])ord[r]=Math.min(ord[r]==null?1e9:ord[r],n.o);});
+    order=Object.keys(ord).sort((a,b)=>ord[a]-ord[b]);if(!order.length)return;}
+  else{const selR=rep(byId[selected]);if(!pos[selR])return;
+    const up=[...closure(selected,'up')].filter(i=>byId[i]&&visibleNode(byId[i]));
+    const ord={};const setR=new Set(up.map(i=>rep(byId[i])).filter(r=>pos[r]));setR.delete(selR);
+    nodes.forEach(n=>{const r=rep(n);if(r===selR||setR.has(r))ord[r]=Math.min(ord[r]==null?1e9:ord[r],n.o);});
+    order=[...setR].sort((a,b)=>ord[a]-ord[b]);order.push(selR);}
   const S=new Set(order);const idx={};order.forEach((r,i)=>idx[r]=i);
   const edges=edgeEls.filter(x=>S.has(x.s)&&S.has(x.t)&&x.s!==x.t);
   const steps=order.map((r,i)=>({id:r,inc:edges.filter(x=>x.t===r&&idx[x.s]<i)}));
   const ov=document.createElementNS('http://www.w3.org/2000/svg','g');ov.setAttribute('class','pbov');vp.appendChild(ov);
-  PB={order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1100,speed:PB_speed,paused:false,
+  PB={whole,order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1800,speed:PB_speed,paused:false,
     alpha:{},ealpha:new Map(),ov,dots:[],pulses:[],userCam:false,last:performance.now(),raf:0,shown:new Set()};
   Object.keys(nodeEls).forEach(id=>PB.alpha[id]=1);edgeEls.forEach(x=>PB.ealpha.set(x,1));
   svg.classList.add('playing');document.body.classList.add('pbon');pbUI();
@@ -2401,7 +2405,7 @@ function pbUI(){const bar=$('pbBar');if(!bar)return;bar.style.display=PB?'flex':
   $('pbPlay').title=PB.phase==='done'?'Replay':(PB.paused?'Resume (Space)':'Pause (Space)');
   $('pbNext').disabled=PB.phase==='done';$('pbSpeed').textContent=PB.speed+'×';
   const n=PB.order.length;let t;
-  if(PB.phase==='intro')t='<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
+  if(PB.phase==='intro')t=PB.whole?'Whole history · <b>'+n+'</b> step'+(n===1?'':'s'):'<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
   else if(PB.phase==='done')t='Done · '+n+' step'+(n===1?'':'s');
   else{const r=PB.order[PB.k];t='Step <b>'+(PB.k+1)+'</b> / '+n+' · '+esc(pbName(r));}
   $('pbInfo').innerHTML=t;
@@ -2417,8 +2421,8 @@ function pbStep(k){PB.k=k;PB.userCam=false;PB.dots.forEach(d=>d.el.remove());PB.
       const h=document.createElementNS('http://www.w3.org/2000/svg','circle');h.setAttribute('class','pbhalo');
       const c=document.createElementNS('http://www.w3.org/2000/svg','circle');c.setAttribute('class','pbcore');g.append(h,c);PB.ov.appendChild(g);
       PB.dots.push({x,pp,el:g,h,c});});
-    pbSetPhase('fly',Math.max(700,Math.min(1900,550+mx*0.55)));}
-  else pbSetPhase('fade',k===0?750:550);
+    pbSetPhase('fly',Math.max(1400,Math.min(3400,1100+mx*1.0)));}
+  else pbSetPhase('fade',k===0?1400:1100);
   pbUI();}
 function pbPulse(id){const p=pos[id];if(!p)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',9);PB.ov.appendChild(r);PB.pulses.push({el:r,id,t0:PB.vt});}
 // finish the running step at once (Next)
@@ -2427,7 +2431,7 @@ function pbSkip(){if(!PB||PB.phase==='done')return;
   const r=PB.order[PB.k];PB.shown.add(r);PB.steps[PB.k].inc.forEach(x=>PB.ealpha.set(x,1));PB.alpha[r]=1;pbPulse(r);pbStep(PB.k+1);}
 function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=now;
   if(!PB.paused)PB.vt+=dt*PB.speed;
-  const p=(PB.vt-PB.ph0)/PB.dur,e=pbEase(p);const tau=Math.max(90,340/Math.sqrt(PB.speed));
+  const p=(PB.vt-PB.ph0)/PB.dur,e=pbEase(p);const tau=Math.max(120,480/Math.sqrt(PB.speed));
   // target opacities
   const na={},ea=new Map();
   Object.keys(nodeEls).forEach(id=>{na[id]=PB.S.has(id)?(PB.shown.has(id)?1:PB_A.pre):PB_A.other;});
@@ -2439,19 +2443,19 @@ function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=no
   else if(PB.phase==='fly'){const st=PB.steps[PB.k];const f=pbEase(Math.min(1,p));camPts=[];
     const rad=Math.min(40,Math.max(5,7/T.k));
     PB.dots.forEach(d=>{const q=pbAt(d.pp,f);camPts.push(q);d.c.setAttribute('cx',q[0]);d.c.setAttribute('cy',q[1]);d.c.setAttribute('r',rad);
-      d.h.setAttribute('cx',q[0]);d.h.setAttribute('cy',q[1]);d.h.setAttribute('r',rad*(2.1+0.35*Math.sin(PB.vt/90)));
+      d.h.setAttribute('cx',q[0]);d.h.setAttribute('cy',q[1]);d.h.setAttribute('r',rad*(2.1+0.35*Math.sin(PB.vt/140)));
       ea.set(d.x,PB_A.edgePre+(1-PB_A.edgePre)*f);});
-    camIds=[st.id];if(p>=1){PB.dots.forEach(d=>d.el.remove());PB.dots=[];pbPulse(st.id);pbSetPhase('fade',550);}}
+    camIds=[st.id];if(p>=1){PB.dots.forEach(d=>d.el.remove());PB.dots=[];pbPulse(st.id);pbSetPhase('fade',1000);}}
   else if(PB.phase==='fade'){const st=PB.steps[PB.k];na[st.id]=PB_A.pre+(1-PB_A.pre)*e;st.inc.forEach(x=>ea.set(x,1));
     camIds=[st.id];kmax=1.3;if(PB.k===0&&!st.inc.length&&!PB.pulses.some(q=>q.id===st.id)&&p>0.15)pbPulse(st.id);
-    if(p>=1){PB.shown.add(st.id);pbSetPhase('hold',st.inc.length?180:260);}}
+    if(p>=1){PB.shown.add(st.id);pbSetPhase('hold',st.inc.length?500:650);}}
   else if(PB.phase==='hold'){camIds=[PB.order[PB.k]];kmax=1.3;if(p>=1)pbStep(PB.k+1);}
   else if(PB.phase==='done'){camIds=PB.order;kmin=0.02;kmax=1.1;pad=60;}
   // apply opacities
   Object.keys(nodeEls).forEach(id=>{const g=nodeEls[id];const v=na[id];if(PB.alpha[id]!==v){PB.alpha[id]=v;g.style.opacity=String(v);}});
   edgeEls.forEach(x=>{const v=ea.get(x);if(PB.ealpha.get(x)!==v){PB.ealpha.set(x,v);x.el.style.opacity=String(v);}});
   // arrival pulses: a ring that grows out of the box and fades
-  PB.pulses=PB.pulses.filter(q=>{const a=(PB.vt-q.t0)/700;const pp=pos[q.id];if(a>=1||!pp){q.el.remove();return false;}
+  PB.pulses=PB.pulses.filter(q=>{const a=(PB.vt-q.t0)/1100;const pp=pos[q.id];if(a>=1||!pp){q.el.remove();return false;}
     const g=6+22*pbEase(a);q.el.setAttribute('x',pp.x-g);q.el.setAttribute('y',pp.y-g);q.el.setAttribute('width',NW+2*g);q.el.setAttribute('height',NH+2*g);q.el.style.opacity=String(1-a);return true;});
   // camera: follow the dots and the box being built
   if(!PB.userCam&&!PB.paused){const b=pbBox(camIds,camPts);if(b)pbCam(pbView(b,kmin,kmax,pad),dt,PB.phase==='intro'||PB.phase==='done'?tau*1.6:tau);}
@@ -2464,7 +2468,7 @@ $('pbNext').onclick=()=>{if(PB){PB.paused=false;pbSkip();pbUI();}};
 $('pbPlay').onclick=()=>{if(!PB)return;if(PB.phase==='done'){playHistory();return;}PB.paused=!PB.paused;PB.userCam=false;pbUI();};
 $('pbSpeed').onclick=()=>{PB_speed=PBS[(PBS.indexOf(PB_speed)+1)%PBS.length];if(PB)PB.speed=PB_speed;pbUI();};
 window.addEventListener('keydown',e=>{if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||e.target.tagName==='TEXTAREA'))return;
-  if(!PB){if((e.key==='p'||e.key==='P')&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&selected&&view==='graph'){e.preventDefault();playHistory();}return;}
+  if(!PB){if((e.key==='p'||e.key==='P')&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&view==='graph'){e.preventDefault();playHistory();}return;}
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();stopPlay();}
   else if(e.key===' '){e.preventDefault();$('pbPlay').onclick();}
   else if(e.key==='ArrowRight'&&!e.altKey){e.preventDefault();$('pbNext').onclick();}},true);
