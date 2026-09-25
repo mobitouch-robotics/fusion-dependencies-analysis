@@ -33,6 +33,8 @@ timeline groups, components, parameters and optional suppression tests.
 - **Legend** explaining every colour, icon, outline, marker and line.
 - **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
   and "Same body, later" links.
+- **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
+  and "Same body, later" links.
 
 ### History playback
 Select an item (or a group, or nothing for the whole design) and press **Play** (or `P`) to animate how
