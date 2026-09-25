@@ -60,6 +60,19 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
   touching the design, including groups and items Fusion refuses to suppress (estimated).
 - Features that fail to compute or have warnings are marked, with counts in the header.
 
+### Derived designs
+- Option *Include derived designs* (off by default): every design brought in with Derive is read too, and
+  the designs those derive from, at any depth. A design derived several times (from several files, or at
+  different versions) appears once, linked to every Derive feature that uses it.
+- Links end in the Derive feature: from the sketches and bodies it hands over, and from the source
+  parameters to the derived parameters.
+- With *Full analysis*, derived designs get the same suppression tests. Each is read and tested in a
+  hidden copy of the version the Derive uses, closed without saving; a derived design you have open in a
+  tab is read as it is and not tested.
+- In the Groups and Components layouts every design is a frame of its own, with its timeline groups and
+  a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.
+- Cancel stops the whole run; no page is generated.
+
 ## Install
 
 1. Copy the `DependenciesGraph` folder into Fusion's add-ins folder:

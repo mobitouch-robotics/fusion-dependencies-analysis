@@ -902,14 +902,18 @@ class Collector:
         n_items = tl.count
         prev = None
         self.thumbs_begin()
+        stop = getattr(self, 'cancelled', None)
         for i in range(n_items):
+            if stop and i % 5 == 0 and stop():
+                break
             it = tl.item(i)
             if it.isGroup:
                 continue
             nid = self.tl2node.get(i)
             if self.progress:
                 self.progress(it.name, i, n_items)
-            _safe(lambda: it.rollTo(True))
+            if not getattr(self, 'no_roll', False):
+                _safe(lambda: it.rollTo(True))
             self.keep_active()
             if prev is not None:
                 self.capture(*prev)
@@ -925,7 +929,8 @@ class Collector:
             for src, kind in links:
                 self.add_edge(src, nid, kind)
             prev = (it, nid)
-        _safe(lambda: tl.moveToEnd())
+        if not getattr(self, 'no_roll', False):
+            _safe(lambda: tl.moveToEnd())
         if prev is not None:
             self.capture(*prev)
             _safe(lambda: self.record_outputs(*prev))
@@ -1218,6 +1223,25 @@ class Collector:
     def _recover(self):
         """Reopen the saved version (the run only starts on a saved design) and continue on it."""
         app = adsk.core.Application.get()
+        hd = getattr(self, 'hidden_doc', None)
+        if hd is not None:
+            # a derived design read in a hidden document: reopen that version, hidden again
+            df = _safe(lambda: hd.dataFile)
+            active = _safe(lambda: app.activeDocument)
+            try:
+                hd.close(False)
+                nd = app.documents.open(df, False)
+            except Exception:
+                return False
+            if active is not None and _safe(lambda: app.activeDocument) != active:
+                _safe(active.activate)
+            self.hidden_doc = nd
+            self.des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
+            self.tl = self.des.timeline
+            self.root = self.des.rootComponent
+            self.expand_groups()
+            self.recovered = getattr(self, 'recovered', 0) + 1
+            return True
         doc = app.activeDocument
         df = _safe(lambda: doc.dataFile)
         if df is None:
@@ -1352,14 +1376,312 @@ class Collector:
 
     def result(self, doc_name, exact):
         edges = [{'s': s, 't': t, 'k': sorted(k)} for (s, t), k in self.edges.items()]
-        return {'meta': {'doc': doc_name, 'exact': exact, 'gtest': getattr(self, 'gtested', False), 'warnings': self.warnings,
+        return {'meta': {'doc': doc_name, 'exact': exact, 'pic': getattr(self, 'part_pic', None), 'gtest': getattr(self, 'gtested', False), 'warnings': self.warnings,
                          'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')},
                 'nodes': self.nodes, 'groups': self.groups, 'edges': edges, 'thumbs': self.thumbs}
 
 
+# ------------------------------------------------------- derived designs ---
+# With "Include derived designs", every design brought in with a Derive feature is read too (references only:
+# it is not the active document, so it is not suppression-tested), and so are the designs those derive from, at
+# any depth. Each one becomes a timeline group of its own ('X1', 'X2'...) holding its items and its own timeline
+# groups, so the page shows it as one block named after the design. Its links end in the Derive feature: from the
+# items it hands over (the source entities, bodies) and from its parameters to the derived parameters.
+
+def _has_geometry(des):
+    for c in (_safe(lambda: list(des.allComponents)) or []):
+        if (_safe(lambda: c.bRepBodies.count, 0) or 0) or (_safe(lambda: c.meshBodies.count, 0) or 0):
+            return True
+    return False
+
+
+def _part_picture(w=640, h=420):
+    """A picture of the whole part in the active window: isometric view, fitted, camera put back afterwards."""
+    app = adsk.core.Application.get()
+    vp = _safe(lambda: app.activeViewport)
+    if vp is None:
+        return None
+    cam0 = _safe(lambda: vp.camera)
+    path = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', '_part.png')
+    try:
+        cam = vp.camera
+        cam.viewOrientation = adsk.core.ViewOrientations.IsoTopRightViewOrientation
+        cam.isFitView = True
+        cam.isSmoothTransition = False
+        vp.camera = cam
+        adsk.doEvents()
+        vp.fit()
+        adsk.doEvents()
+        if not vp.saveAsImageFile(path, w, h) or not os.path.exists(path):
+            return None
+        with open(path, 'rb') as f:
+            return 'data:image/png;base64,' + base64.b64encode(f.read()).decode('ascii')
+    except Exception:
+        return None
+    finally:
+        if cam0 is not None:
+            _safe(lambda: setattr(vp, 'camera', cam0))
+
+
+def _derive_features(col):
+    out = []
+    for idx, nid in sorted(col.tl2node.items()):
+        e = _safe(lambda: col.tl.item(idx).entity)
+        if e is not None and _t(e) == 'DeriveFeature':
+            out.append((nid, e))
+    return out
+
+
+def _source_param(name, src_names):
+    """The source parameter a derived parameter comes from: the same name, or the longest source name it starts
+    with (derived parameters are often renamed with a suffix, e.g. Width -> Width_Ref)."""
+    if name in src_names:
+        return name
+    best = None
+    for n in src_names:
+        if name.startswith(n) and (best is None or len(n) > len(best)):
+            best = n
+    return best
+
+
+def _open_version(sd):
+    """Opens the saved version a Derive feature uses as a hidden document of its own, so it can be read (and
+    its timeline stepped through) without touching the copy the open design references. None if it cannot."""
+    app = adsk.core.Application.get()
+    ref_doc = _safe(lambda: sd.parentDocument)
+    dfile = _safe(lambda: ref_doc.dataFile)
+    if dfile is None:
+        return None
+    ver = _safe(lambda: dfile.versionNumber)
+    target = dfile
+    for v in (_safe(lambda: list(dfile.versions)) or []):
+        if _safe(lambda: v.versionNumber) == ver:
+            target = v
+            break
+    active = _safe(lambda: app.activeDocument)
+    before = list(_safe(lambda: list(app.documents)) or [])
+    try:
+        doc = app.documents.open(target, False)
+    except Exception:
+        return None
+    if active is not None and _safe(lambda: app.activeDocument) != active:
+        _safe(active.activate)
+    # Fusion hands back a document that is already open (e.g. a tab of the user's) instead of a new one: that one
+    # must be neither closed nor changed
+    mine = not any(_safe(lambda: d == doc, False) for d in before)
+    return doc, mine
+
+
+def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=40):
+    sources = []            # [{'key', 'col', 'prefix', 'gid', 'name', 'depth', 'doc'}]
+    by_key = {}
+    links = []              # (source id, target id) across designs, ids already prefixed
+    app = adsk.core.Application.get()
+
+    def read(sd, depth):
+        ref_doc = _safe(lambda: sd.parentDocument)
+        name = _safe(lambda: ref_doc.name) or 'Derived design'
+        dfile = _safe(lambda: ref_doc.dataFile)
+        # one entry per file: the same design derived several times (from any file, even at another version)
+        # is read once and linked to every Derive feature that uses it
+        key = _safe(lambda: dfile.id) or name
+        ver = _safe(lambda: dfile.versionNumber)
+        if key in by_key:
+            src = by_key[key]
+            src['depth'] = max(src['depth'], depth)
+            if ver is not None:
+                src['versions'].add(ver)
+            return src
+        if len(sources) >= max_designs or cancelled():
+            return None
+        if progress:
+            progress('Opening ' + name, len(sources), len(sources) + 1)
+        opened = _open_version(sd)
+        doc, mine = opened if opened else (None, False)
+        des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType'))) if doc else None
+        if des is None:
+            main.warnings.append('Could not open %s to read it.' % name)
+            if doc is not None and mine:
+                _safe(lambda: doc.close(False))
+            return None
+        k = len(sources) + 1
+        sc = Collector(des, None, False)
+        sc.cancelled = cancelled
+        sc.doc = None                        # a hidden document: the main design stays the active one
+        sc.no_roll = not mine                # a document the user has open: read as it is, the timeline is not moved
+        src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
+               'doc': doc if mine else None,
+               'versions': {ver} if ver is not None else set(), 'read_ver': ver}
+        sources.append(src)
+        by_key[key] = src
+        if progress:
+            progress('Reading ' + name, len(sources) - 1, len(sources))
+        if mine:
+            sc.expand_groups()
+        else:
+            sc.collapsed = []
+        sc.build_nodes()
+        sc.scan()
+        if pictures and not cancelled() and _has_geometry(des):
+            # Fusion takes pictures only in the active window: this design is shown for a moment
+            back = _safe(lambda: app.activeDocument)
+            if mine:
+                _safe(lambda: sc.tl.moveToEnd())
+            if _safe(doc.activate) is not False:
+                adsk.doEvents()
+                src['pic'] = _part_picture()
+            if back is not None:
+                _safe(back.activate)
+                adsk.doEvents()
+        _safe(sc.scan_components)
+        sc.scan_parameters()
+        if mine and (exact or groups_test):
+            # Full analysis: the same suppression tests as on the main design, on this hidden copy (it is closed
+            # without saving afterwards, so nothing of it is kept)
+            sc.hidden_doc = doc
+            prog = (lambda msg, i, n: progress('%s: %s' % (name, msg), i, n)) if progress else (lambda *a: None)
+            _safe(lambda: sc.tl.moveToEnd())
+            if groups_test:
+                try:
+                    sc.group_suppression_test(prog, cancelled)
+                except Exception as ex:
+                    main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
+            if exact:
+                try:
+                    sc.suppression_test(prog, cancelled)
+                except Exception as ex:
+                    main.warnings.append('%s: the item test failed: %s' % (name, ex))
+            src['doc'] = None                 # closed through sc.hidden_doc (the test may have reopened it)
+        elif not mine and (exact or groups_test):
+            main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). '
+                                 'Close it and generate again to test it too.' % name)
+        if mine:
+            _safe(lambda: sc.tl.moveToEnd())
+        elif any(_safe(lambda: g.isCollapsed, False) for g in (_safe(lambda: list(sc.tl.timelineGroups)) or [])):
+            main.warnings.append('%s is open in Fusion, so it was read as it is: items inside its collapsed timeline '
+                                 'groups are left out. Close it and generate again for the full picture.' % name)
+        sc.by_tlname = {}
+        for n in sc.nodes:
+            if n.get('tl') is not None:
+                sc.by_tlname.setdefault(n['name'], n['id'])
+        walk(sc, src['prefix'], depth + 1)     # the designs this one derives from, while its groups are open
+        return src
+
+    def walk(col, prefix, depth):
+        for nid, df in _derive_features(col):
+            if cancelled():
+                return
+            sd = _safe(lambda: df.sourceDesign)
+            if sd is None:
+                main.warnings.append('The source design of %s could not be read.' % _safe(lambda: df.name, 'a Derive feature'))
+                continue
+            src = read(sd, depth)
+            if src is None:
+                continue
+            sc, sp, target = src['col'], src['prefix'], prefix + nid
+            n0 = len(links)
+            # the items the derive hands over (objects of the referenced copy: matched by their timeline item)
+            for se in (_safe(lambda: list(df.sourceEntities)) or []):
+                t = _t(se)
+                n = sc.by_tlname.get(_safe(lambda: se.timelineObject.name))
+                if n is None and t == 'BRepBody':
+                    n = sc.body_owner.get(_safe(lambda: se.name))
+                if n is None and t in ('Component', 'Occurrence'):
+                    n = sc.comp_owner.get(_safe(lambda: se.name) or _safe(lambda: se.component.name))
+                if n:
+                    links.append((sp + n, target))
+            for b in (_safe(lambda: list(df.bodies)) or []):
+                sb = _safe(lambda: df.getSourceEntity(b))
+                n = sc.body_owner.get(_safe(lambda: sb.name)) if sb is not None else None
+                if n:
+                    links.append((sp + n, target))
+            # parameters -> the derived parameters of this Derive feature
+            src_names = [n['name'] for n in sc.nodes if n['type'] == 'UserParameter']
+            dname = _safe(lambda: df.timelineObject.name)
+            for p in (_safe(lambda: list(col.des.allParameters)) or []):
+                if _t(p) != 'DerivedParameter':
+                    continue
+                if _safe(lambda: p.deriveFeature.timelineObject.name) != dname:
+                    continue
+                pn = _safe(lambda: p.name, '') or ''
+                sn = _source_param(pn, src_names)
+                if sn and any(n['id'] == 'd:' + pn for n in col.nodes):
+                    links.append((sp + 'p:' + sn, prefix + 'd:' + pn))
+                elif sn:
+                    links.append((sp + 'p:' + sn, target))
+            if len(links) == n0:
+                # nothing specific found: the source design's last item leads into the Derive feature
+                last = max((n for n in sc.nodes if n.get('tl') is not None), key=lambda n: n['o'], default=None)
+                if last:
+                    links.append((sp + last['id'], target))
+
+    active = _safe(lambda: app.activeDocument)
+    try:
+        walk(main, '', 1)
+    finally:
+        # the hidden documents are closed without saving: nothing of them is kept or changed
+        for src in sources:
+            hd = src['doc'] or getattr(src['col'], 'hidden_doc', None)
+            if hd is not None:                   # only the hidden documents this run opened itself
+                _safe(src['col'].restore_groups)
+                _safe(lambda: hd.close(False))
+        if active is not None and _safe(lambda: app.activeDocument) != active:
+            _safe(active.activate)
+    if not sources:
+        return
+
+    # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
+    order = sorted(sources, key=lambda s: -s['depth'])
+    for rank, src in enumerate(order):
+        sc, sp, gid = src['col'], src['prefix'], src['gid']
+        base = -1e6 + rank * 1e4
+        if len(src['versions']) > 1:
+            base_name = re.sub(r'\s+v\d+$', '', src['name'])
+            src['name'] = '%s (v%s; read v%s)' % (base_name, ', v'.join(str(v) for v in sorted(src['versions'])), src['read_ver'])
+            main.warnings.append('%s is derived at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
+        main.groups.append({'id': gid, 'name': src['name'], 'first': base, 'parent': None, 'design': True,
+                            'pic': src.get('pic')})
+        # a source design's user parameters only when something uses them (a big design can have hundreds)
+        used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a, _ in links if a.startswith(sp))
+        pre = lambda ids: [sp + x for x in ids]
+        for g in sc.groups:
+            ng = {'id': sp + g['id'], 'name': g['name'], 'first': base + 1 + (g['first'] if g['first'] < 10 ** 6 else 9000),
+                  'parent': sp + g['parent'] if g.get('parent') else gid}
+            for f in ('dsupp', 'dbreak', 'dwarn'):
+                if g.get(f): ng[f] = pre(g[f])
+            for f in ('fail', 'empty'):
+                if f in g: ng[f] = g[f]
+            main.groups.append(ng)
+        for n in sc.nodes:
+            if n['type'] == 'UserParameter' and n['id'] not in used:
+                continue
+            m = dict(n)
+            m['id'] = sp + n['id']
+            for f in ('dsupp', 'dbreak', 'dwarn'):
+                if n.get(f): m[f] = pre(n[f])
+            m['o'] = base + 5 + (n['o'] if n['o'] is not None and n['o'] >= 0 else 0) + (0 if n['o'] is None or n['o'] >= 0 else n['o'] * 0.001)
+            m['g'] = [gid] + [sp + x for x in (n.get('g') or [])]
+            m['dsg'] = src['name']
+            if n.get('tl') is not None:
+                m['stl'] = n['tl']
+            m['tl'] = None                   # not in this design's timeline: no suppression preview, no Select in Fusion
+            m['tok'] = ''
+            m.pop('occ', None)
+            m['info'] = ((n.get('info') or '') + (' · ' if n.get('info') else '') + 'in ' + src['name']).strip()
+            main.nodes.append(m)
+        for (a, b), k in sc.edges.items():
+            main.edges.setdefault((sp + a, sp + b), set()).update(k)
+        for w in sc.warnings[:5]:
+            main.warnings.append('%s: %s' % (src['name'], w))
+    ids = {n['id'] for n in main.nodes}
+    for a, b in links:
+        if a in ids and b in ids:
+            main.add_edge(a, b, 'derive')
+
+
 # ------------------------------------------------------------------- run ---
 
-def generate(mode='both', thumbs=True):
+def generate(mode='both', thumbs=True, derived=False):
     exact = mode in ('items', 'both')
     groups_test = mode in ('groups', 'both')
     global _app, _ui
@@ -1397,7 +1719,13 @@ def generate(mode='both', thumbs=True):
             cur['base'] = sum(w for _, w in steps[:k]) / total
             cur['span'] = steps[k][1] / total
 
+        stopped = {'v': False}
+
         def progress(msg, i, n):
+            # after Cancel nothing updates the window any more (an update shows it again)
+            if stopped['v'] or _safe(lambda: progress_dlg.wasCancelled, False):
+                stopped['v'] = True
+                return
             frac = cur['base'] + cur.get('span', 0) * min(1.0, i / max(1, n))
             # %p is filled in by Fusion with the bar's percentage
             progress_dlg.message = ('%%p%%  ·  step %d of %d: %s  (%d/%d)\n%s' % (
@@ -1407,8 +1735,11 @@ def generate(mode='both', thumbs=True):
             adsk.doEvents()
 
         def cancelled():
-            adsk.doEvents()
-            return progress_dlg.wasCancelled
+            # Cancel stops the whole run: the current test and every step after it
+            if not stopped['v']:
+                adsk.doEvents()
+                stopped['v'] = bool(_safe(lambda: progress_dlg.wasCancelled, False))
+            return stopped['v']
 
         tl = des.timeline
         marker0 = tl.markerPosition
@@ -1422,20 +1753,34 @@ def generate(mode='both', thumbs=True):
             steps.append(['Whole groups test', n_groups * 2.5])
         if exact:
             steps.append(['Every item test', n_tl * 1.7])
+        if derived:
+            # testing the derived designs too takes about as long as the main design's own tests
+            steps.append(['Derived designs' + (' (read and tested)' if (exact or groups_test) else ''),
+                          (n_tl * 1.7 + n_groups * 2.5) if (exact or groups_test) else 20])
         t0 = time.time()
         try:
             set_step(0)
             col.build_nodes()
             col.scan()
+            if thumbs and _has_geometry(col.des):
+                col.part_pic = _part_picture()
             _safe(col.scan_components)
             col.scan_parameters()
             k = 1
-            if groups_test:
+            if groups_test and not cancelled():
                 set_step(k); k += 1
                 col.group_suppression_test(progress, cancelled)
-            if exact:
-                set_step(k)
+            if exact and not cancelled():
+                set_step(k); k += 1
                 col.suppression_test(progress, cancelled)
+            if derived and not cancelled():
+                # while the groups are still expanded: the derive features' timeline indexes are read from them
+                set_step(k)
+                _safe(lambda: col.tl.moveToEnd())
+                try:
+                    _collect_derived(col, progress, cancelled, exact, groups_test, thumbs)
+                except Exception as ex:
+                    col.warnings.append('Could not read the derived designs: %s' % ex)
         finally:
             tl = col.tl
             if at_end:
@@ -1447,6 +1792,11 @@ def generate(mode='both', thumbs=True):
                                     'because switching a feature back on made Fusion lose references.' % col.recovered)
             col.restore_groups()
             _safe(col.thumbs_end)
+        if stopped['v']:
+            # cancelled: the design is put back (above, and by reopening the saved version), no page is made
+            _safe(lambda: progress_dlg.hide())
+            progress_dlg = None
+            return []
         data = col.result(doc_name, exact)
         progress_dlg.hide()
         progress_dlg = None
@@ -1697,6 +2047,12 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             th.tooltip = 'A picture of every timeline step'
             th.tooltipDescription = ('Each item is photographed straight on (sketches, planes) or in a three-quarter '
                                      'view (3D features), zoomed to the item. Adds about 20 seconds on a large design.')
+            dv = oc.addBoolValueInput('hgDerived', 'Include derived designs', True, '', False)
+            dv.tooltip = 'Also map the designs this one derives from'
+            dv.tooltipDescription = ('Each design brought in with Derive is read as well (and the designs those derive '
+                                     'from, at any depth). It is shown as a block of its own, and its links end in the '
+                                     'Derive feature. Source designs are read from their references only; they are '
+                                     'not suppression-tested.')
 
             # --- two ways to generate: Full analysis (the dialog's OK button) or Quick estimate (a button here)
             mins = max(1, int(round((n_items * 1.7 + n_groups * 2.5) / 60.0)))
@@ -1744,7 +2100,8 @@ def _modes_info(mins):
 def _options(inputs):
     mode = _run_mode.pop('mode', None) or 'both'
     ti = inputs.itemById('hgThumbs')
-    return mode, (bool(ti.value) if ti else True)
+    dv = inputs.itemById('hgDerived')
+    return mode, (bool(ti.value) if ti else True), (bool(dv.value) if dv else False)
 
 
 def _revert(doc):
@@ -1786,7 +2143,9 @@ class _InputChangedHandler(adsk.core.InputChangedEventHandler):
             # Fusion does not let a command end itself from its own events, so ask for the run through the
             # custom event: its handler closes this dialog first, then runs with references only
             ti = args.inputs.itemById('hgThumbs')
+            dv = args.inputs.itemById('hgDerived')
             _app.fireCustomEvent(EVENT_ID, json.dumps({'mode': 'off', 'thumbs': bool(ti.value) if ti else True,
+                                                       'derived': bool(dv.value) if dv else False,
                                                        'closeDialog': True}))
 
 
@@ -1798,9 +2157,9 @@ class _ValidateHandler(adsk.core.ValidateInputsEventHandler):
 
 class _ExecuteHandler(adsk.core.CommandEventHandler):
     def notify(self, args):
-        mode, thumbs = _options(args.command.commandInputs)
+        mode, thumbs, derived = _options(args.command.commandInputs)
         # run after the dialog has closed, outside the command
-        _app.fireCustomEvent(EVENT_ID, json.dumps({'mode': mode, 'thumbs': thumbs}))
+        _app.fireCustomEvent(EVENT_ID, json.dumps({'mode': mode, 'thumbs': thumbs, 'derived': derived}))
 
 
 class _RunHandler(adsk.core.CustomEventHandler):
@@ -1829,7 +2188,8 @@ class _RunHandler(adsk.core.CustomEventHandler):
             if _unsaved_reason():
                 return
             doc = _app.activeDocument
-            w = list(generate(opts.get('mode', 'both'), bool(opts.get('thumbs', True))) or [])
+            w = list(generate(opts.get('mode', 'both'), bool(opts.get('thumbs', True)),
+                              bool(opts.get('derived', False))) or [])
             doc = _app.activeDocument      # the test may have reopened the design
             if _safe(lambda: doc.isModified):
                 # The design was saved when the run started and nothing else could edit it during the run,
@@ -2359,12 +2719,12 @@ function iconName(n){if(!n)return 'other';if(ICON_BY_TYPE[n.type])return ICON_BY
 function iconHTML(name,cat,size){size=size||14;return '<svg class="ico" width="'+size+'" height="'+size+'" style="color:var(--c-'+(cat||'other')+')" aria-hidden="true"><use href="#ic-'+name+'"/></svg>';}
 function iconEl(n,size){const s=document.createElement('span');s.className='icw';s.innerHTML=iconHTML(iconName(n),n?n.cat:'other',size);return s;}
 function iconUse(name,x,y,size,color){const NS='http://www.w3.org/2000/svg';const u=document.createElementNS(NS,'use');u.setAttribute('href','#ic-'+name);u.setAttribute('x',x);u.setAttribute('y',y);u.setAttribute('width',size);u.setAttribute('height',size);u.setAttribute('class','nico');u.style.color=color;return u;}
-const KIND={sketch:'Sketch',profile:'Profile',plane:'Plane / axis / point',geometry:'Faces / edges',body:'Body',feature:'Feature',param:'Parameter',component:'Component',incomp:'In component',joint:'Joint / motion',suppress:'Suppression test',order:'Same body, later'};
+const KIND={sketch:'Sketch',profile:'Profile',plane:'Plane / axis / point',geometry:'Faces / edges',body:'Body',feature:'Feature',param:'Parameter',component:'Component',incomp:'In component',joint:'Joint / motion',suppress:'Suppression test',order:'Same body, later',derive:'Derived design'};
 const nodes=D.nodes, byId={}; nodes.forEach(n=>byId[n.id]=n);
 // graphs made before the split had one "assembly" category
 nodes.forEach(n=>{if(n.cat==='assembly'||(n.cat==='other'&&ICON_BY_TYPE[n.type]&&catOfIcon(ICON_BY_TYPE[n.type])!=='other'))n.cat=catOfIcon(ICON_BY_TYPE[n.type]||'other')==='other'?((n.type==='Occurrence'||n.type==='DeriveFeature')?'insert':'joint'):catOfIcon(ICON_BY_TYPE[n.type]);});
 // one common parent for all user parameters (derived parameters stay under their Derive feature)
-{const ups=nodes.filter(n=>n.type==='UserParameter');
+{const ups=nodes.filter(n=>n.type==='UserParameter'&&!n.dsg);
   if(ups.length&&!byId['up:all']){const r={id:'up:all',name:'User Parameters',type:'UserParameters',cat:'param',tl:null,o:-2,g:[],supp:false,health:0,msg:'',info:ups.length+' parameter'+(ups.length===1?'':'s')};
     nodes.push(r);byId[r.id]=r;// only parameters with no other parent (not driven by another parameter) hang directly under it
     // a parameter driven by other parameters sits below them: order user parameters by their depth in the
@@ -2443,7 +2803,9 @@ function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';cons
   $('gpanel').style.display=gs.length?'':'none';
   gs.forEach(g=>{const mem=groupMembers(g.id);if(!mem.length&&!g.empty)return;const r=document.createElement('div');r.className='gprow'+(selGroup===g.id?' sel':'');
     const depth=groupPath(g.id).length-1;r.style.paddingLeft=(8+depth*14)+'px';
-    if(simOn){r.appendChild(simButton(sim.groups.has(g.id),'Switch this whole group off/on in the simulation',()=>simToggleGroup(g.id)));}
+    const extG=mem.length&&mem.every(n=>n.dsg);   // a derived design (or a group in it): not in this timeline, nothing to simulate
+    if(simOn&&!extG){r.appendChild(simButton(sim.groups.has(g.id),'Switch this whole group off/on in the simulation',()=>simToggleGroup(g.id)));}
+    else if(simOn){const sp=document.createElement('span');sp.style.cssText='width:30px;flex:none';r.appendChild(sp);}
     const dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:50%;flex:none;background:'+(colorOfGroup(g.id)||'transparent');r.appendChild(dot);
     const n=document.createElement('span');n.className='gn';n.textContent=g.name;n.title=g.name+' ('+mem.length+' items)';r.appendChild(n);
     const [txt,cls]=groupTag(g);const t=document.createElement('span');t.className='gt '+cls;
@@ -2793,7 +3155,7 @@ function renderDetails(){
   const h=document.createElement('h2');h.textContent=n.name;h.className=stateCls(n);h.prepend(iconEl(n,18));d.appendChild(h);
   if(TH[n.id]&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[n.id];im.alt='Model after '+n.name;d.appendChild(im);}
   const kv=document.createElement('div');kv.className='kv';
-  [n.type+(n.info?' · '+n.info:''),n.tl!=null?'Timeline position '+(n.tl+1):'',isSupp(n)?'Suppressed':(isBroken(n)?brokenText(n):warnKind(n)?warnText(n):'OK')].filter(Boolean).forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});
+  [n.type+(n.info?' · '+n.info:''),n.tl!=null?'Timeline position '+(n.tl+1):n.stl!=null?'Timeline position '+(n.stl+1)+' in '+n.dsg:'',isSupp(n)?'Suppressed':(isBroken(n)?brokenText(n):warnKind(n)?warnText(n):'OK')].filter(Boolean).forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});
   if(!(n.g&&n.g.length)){const gl=document.createElement('div');gl.textContent='Not in a timeline group';kv.insertBefore(gl,kv.children[1]||null);}
   d.appendChild(kv);
   // routes to the other end (route button in the graph)
@@ -3013,7 +3375,7 @@ function routePreview(items,on,tt){routePreviewClear();if(!on||PB||drag||!select
   return RT;}
 function setRoute(items){routePreviewClear();saveView();route=items?{sel:selected,items}:null;setTimeout(pushHist,0);renderDetails();
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{},focus?{fit:'fit'}:{dur:450});}
-let searchOpen=new Set();let layoutMode='lanes',lanes=[],laneEls={};const collapsedNodes=new Set();let collapseEverything=false;
+let searchOpen=new Set();let layoutMode='lanes',lanes=[],laneEls={},designFrames=[];const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
 const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
 const compOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component')compOf[e.t]=e.s;});
@@ -3021,7 +3383,17 @@ nodes.forEach(n=>{if(n.cat==='component')compOf[n.id]=n.id;});
 const cColor={};nodes.filter(n=>n.cat==='component').sort((a,b)=>a.o-b.o).forEach((n,i)=>cColor[n.id]=GCOL[(i+3)%GCOL.length]);
 // user parameters get a block of their own; a derived parameter stays with its Derive feature
 const dparamOf={};D.edges.forEach(e=>{if(byId[e.t]&&byId[e.t].type==='DerivedParameter'&&byId[e.s]&&byId[e.s].tl!=null)dparamOf[e.t]=e.s;});
-function laneKey(n){if(!n)return null;if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
+// With derived designs in the graph, each design is a frame of its own, laid out inside like the main design:
+// its timeline groups, its user parameters and its items outside groups get blocks keyed 'X2|_params' etc.
+const hasDesigns=nodes.some(n=>n.dsg);
+const MAIN_DSG='_main';
+function dsgOfNode(n){return n&&n.dsg&&n.g&&n.g.length?n.g[0]:MAIN_DSG;}
+function laneBase(id){return id&&id.includes('|')?id.split('|')[1]:id;}
+function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
+function laneKey(n){if(!n)return null;
+  if(n.dsg&&n.g&&n.g.length){const X=n.g[0];if(layoutMode==='comps')return compOf[n.id]||X+'|_root';
+    if(n.type==='UserParameter')return X+'|_params';return n.g.length>1?n.g[1]:X+'|_none';}
+  if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
   if(n.type==='DerivedParameter'&&dparamOf[n.id])return laneKey(byId[dparamOf[n.id]]);
   if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
 // while searching, the fold (−) buttons are switched off; unfolding (+) still works
@@ -3096,7 +3468,7 @@ function renderGraph(fitAfter,centerId){
       R[h.id]={id:h.id,o:Math.min(...h.mem.map(n=>n.o))-0.5,members:h.mem,isGroup:true,header:true,depth:h.depth};reps.push(R[h.id]);pr[h.id]=[];
       layer[h.id]=Math.min(...h.targets.map(t=>layer[t]!=null?layer[t]:0))-1;});}
   const cols={};reps.forEach(r=>{(cols[layer[r.id]]=cols[layer[r.id]]||[]).push(r);});
-  pos={};lanes=[];const Ls=Object.keys(cols).map(Number).sort((a,b)=>a-b);
+  pos={};lanes=[];designFrames=[];const Ls=Object.keys(cols).map(Number).sort((a,b)=>a-b);
   const laneLevels=[];
   if(layoutMode==='time'){
     // Timeline layout: one row, every box in timeline order; an open group's box is an event just before its items
@@ -3112,20 +3484,30 @@ function renderGraph(fitAfter,centerId){
     // 1) each lane on its own: rows by dependency depth, long rows wrap into a small grid
     const built=order.map(l=>{const inL=new Set(l.items.map(r=>r.id));const ll={};l.items.sort((a,b)=>a.o-b.o).forEach(r=>{let d=0;pr[r.id].forEach(s=>{if(inL.has(s)&&ll[s]!=null&&R[s].o<r.o)d=Math.max(d,ll[s]+1);});ll[r.id]=d;});
       const rows={};l.items.forEach(r=>{(rows[ll[r.id]]=rows[ll[r.id]]||[]).push(r);});
-      const maxc=Math.max(2,Math.min(5,Math.ceil(Math.sqrt(l.items.length))));
+      const maxc=Math.max(2,Math.min(l.items.length>40?14:5,Math.ceil(Math.sqrt(l.items.length*(l.items.length>40?1.8:1)))));   // big blocks (e.g. hundreds of parameters) grow wider, not only taller
       const loc={};let y=TOP,w=1;const levels=[];
       Object.keys(rows).map(Number).sort((a,b)=>a-b).forEach((L,li)=>{const a=rows[L];if(li)y+=YG;const lv={ids:a.map(r=>r.id),ys:[],home:{}};levels.push(lv);
         for(let i=0;i<a.length;i+=maxc){if(i)y+=SUBG;const ch=a.slice(i,i+maxc);lv.ys.push(y);ch.forEach((r,k)=>{loc[r.id]={x:k*(NW+XG),y:y};lv.home[r.id]=(lv.ys.length-1)*1000+k;});w=Math.max(w,ch.length);y+=NH;}});
       // the places a row may use when the selection pulls boxes together: every column of the block, on the row's own lines
       levels.forEach(lv=>{lv.slots=[];lv.ys.forEach((yy,ri)=>{for(let k=0;k<w;k++)lv.slots.push({x:k*(NW+XG),y:yy,key:ri*1000+k});});});
       return {l,loc,levels,w:w*(NW+XG)-XG,h:y+18};});
-    // 2) lanes packed left to right into rows of lanes, aiming at a roughly 16:10 overall shape
-    const area=built.reduce((a,b)=>a+(b.w+LG)*(b.h+LG),0);const target=Math.max(Math.max(...built.map(b=>b.w)),Math.sqrt(area*1.6));
-    let lx=0,ly=0,rowH=0;
-    built.forEach(b=>{if(lx>0&&lx+b.w>target){lx=0;ly+=rowH+LG;rowH=0;}
-      Object.keys(b.loc).forEach(id=>{pos[id]={x:lx+b.loc[id].x,y:ly+b.loc[id].y};});
+    // 2) lanes packed left to right into rows of lanes, aiming at a roughly 16:10 overall shape; with derived designs,
+    //    each design's lanes are packed on their own, inside a frame, and the frames are packed the same way
+    const pack=(list,ratio=1.6)=>{const area=list.reduce((a,b)=>a+(b.w+LG)*(b.h+LG),0);const target=Math.max(Math.max(...list.map(b=>b.w)),Math.sqrt(area*ratio));
+      let lx=0,ly=0,rowH=0,W=0;const placed=[];
+      list.forEach(b=>{if(lx>0&&lx+b.w>target){lx=0;ly+=rowH+LG;rowH=0;}placed.push({b,x:lx,y:ly});W=Math.max(W,lx+b.w);lx+=b.w+LG;rowH=Math.max(rowH,b.h);});
+      return {placed,w:W,h:ly+rowH};};
+    const putLane=(b,lx,ly)=>{Object.keys(b.loc).forEach(id=>{pos[id]={x:lx+b.loc[id].x,y:ly+b.loc[id].y};});
       b.levels.forEach(lv=>laneLevels.push({ids:lv.ids,home:lv.home,slots:lv.slots.map(q=>({x:lx+q.x,y:ly+q.y,key:q.key}))}));
-      lanes.push({id:b.l.id,x:lx-14,w:b.w+28,y0:ly,y1:ly+b.h});lx+=b.w+LG;rowH=Math.max(rowH,b.h);});
+      lanes.push({id:b.l.id,x:lx-14,w:b.w+28,y0:ly,y1:ly+b.h});};
+    designFrames=[];
+    {const byD={};built.forEach(b=>{const d=laneDesign(b.l.id);(byD[d]=byD[d]||[]).push(b);});
+      const PADX=40,PADB=40,PIC_W=330,PIC_H=216;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>picOf(d)?PIC_H+44:74;
+      const frameTitle=d=>d===MAIN_DSG?'This design · '+(D.meta.doc||''):'Derived design · '+(groups[d]?groups[d].name:d);
+      const frames=Object.keys(byD).map(d=>{const pk=pack(byD[d]);return {d,pk,w:Math.max(pk.w+2*PADX,frameTitle(d).length*15.5+60+(picOf(d)?PIC_W+30:0)),h:pk.h+padT(d)+PADB,o:Math.min(...byD[d].map(b=>b.l.o))};}).sort((a,b)=>a.o-b.o);
+      const fr=pack(frames.map(f=>({w:f.w,h:f.h,f})),2.4);
+      fr.placed.forEach(q=>{const f=q.b.f;f.pk.placed.forEach(p=>putLane(p.b,q.x+PADX+p.x,q.y+padT(f.d)+p.y));
+        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),x:q.x-14,y:q.y,w:f.w+28,h:f.h});});}
   }else
   Ls.forEach(L=>{const c=cols[L];c.forEach(r=>{const xs=pr[r.id].map(s=>pos[s]?pos[s].x+NW/2:null).filter(v=>v!=null);r.bc=xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;});
     const withBc=c.filter(r=>r.bc!=null);const avg=withBc.length?withBc.reduce((a,r)=>a+r.bc,0)/withBc.length:0;
@@ -3198,11 +3580,23 @@ function renderGraph(fitAfter,centerId){
       const x0=Math.min(...xs),x1=Math.max(...xs)+NW,y=NH+16+(h.depth-1)*7,col=colorOfGroup(h.gid)||'var(--muted)';
       const rc=document.createElementNS(NS,'rect');rc.setAttribute('x',x0);rc.setAttribute('y',y);rc.setAttribute('width',x1-x0);rc.setAttribute('height',4);rc.setAttribute('rx',2);rc.setAttribute('style','fill:'+col+';fill-opacity:.75');
       const tt=document.createElementNS(NS,'title');tt.textContent='Timeline group: '+(groups[h.gid]?groups[h.gid].name:h.gid);rc.appendChild(tt);gb.appendChild(rc);});}
+  if(designFrames.length){const fl=document.createElementNS(NS,'g');fl.setAttribute('class','dframes');vp.appendChild(fl);
+    designFrames.forEach(f=>{const isMain=f.d===MAIN_DSG;const col=isMain?'var(--accent)':(gColor[f.d]||'var(--muted)');
+      const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',f.x);bg.setAttribute('y',f.y);bg.setAttribute('width',f.w);bg.setAttribute('height',f.h);bg.setAttribute('rx',18);
+      bg.setAttribute('style','fill:'+col+';fill-opacity:.035;stroke:'+col+';stroke-opacity:.85;stroke-width:3.5;stroke-dasharray:'+(isMain?'none':'14 7'));
+      const tx=document.createElementNS(NS,'text');tx.setAttribute('x',f.x+26);tx.setAttribute('y',f.y+46);tx.setAttribute('style','font-size:26px;font-weight:800;fill:'+col);
+      tx.textContent=f.title;
+      fl.append(bg,tx);
+      if(f.pic){const pw=330,ph=216;const px=f.x+f.w-pw-24,py=f.y+22;
+        const pb=document.createElementNS(NS,'rect');pb.setAttribute('x',px);pb.setAttribute('y',py);pb.setAttribute('width',pw);pb.setAttribute('height',ph);pb.setAttribute('rx',10);pb.setAttribute('style','fill:var(--panel);stroke:'+col+';stroke-opacity:.5;stroke-width:1.5');
+        const im=document.createElementNS(NS,'image');im.setAttribute('x',px+4);im.setAttribute('y',py+4);im.setAttribute('width',pw-8);im.setAttribute('height',ph-8);im.setAttribute('preserveAspectRatio','xMidYMid meet');im.setAttribute('href',f.pic);
+        const tt=document.createElementNS(NS,'title');tt.textContent='The finished part';im.appendChild(tt);fl.append(pb,im);}});}
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
-    const CM=layoutMode==='comps';const noLane=id=>id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);
-    lanes.forEach(l=>{const col=l.id==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
+    const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);};
+    lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.07;stroke:'+col+';stroke-opacity:.45;stroke-width:1.5');
-      const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const full=l.id==='_params'?'User parameters':l.id==='_none'?'Not in a group':l.id==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
+      const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const DSG=groups[l.id]&&groups[l.id].design;if(DSG){bg.setAttribute('style','fill:'+col+';fill-opacity:.05;stroke:'+col+';stroke-opacity:.8;stroke-width:3;stroke-dasharray:10 5');tx.setAttribute('style','font-size:17px;font-weight:800;fill:'+col);}
+      const LB=laneBase(l.id);const full=DSG?'Design · '+groups[l.id].name:LB==='_params'?'User parameters':LB==='_none'?'Not in a group':LB==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
       // fold button on the block title: a whole timeline group (Groups layout) or a whole component (Components layout)
       {const gidL=CM?null:l.id,cidL=CM&&byId[l.id]?l.id:null,psL=(l.id==='_params'||(l.id==='_none'&&!CM))?l.id:null;const gk=psL||gidL;
         const can=(gk&&groups[gk])||(cidL&&canCollapse(cidL))||(cidL&&collapsedNodes.has(cidL));
@@ -3212,7 +3606,7 @@ function renderGraph(fitAfter,centerId){
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
           bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
           l.btn=bt;}}
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM&&!(groups[l.id]&&groups[l.id].design))select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');ge.setAttribute('class','elayer');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');geHi.setAttribute('class','elayer');const gBadge=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
@@ -3424,6 +3818,7 @@ function renderGraph(fitAfter,centerId){
 function fit(centerRep,only){const ids=(only&&only.length?only:Object.keys(pos)).filter(i=>pos[i]);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;
   if(centerRep&&pos[centerRep]){T.k=1;T.x=LP+W/2-(pos[centerRep].x+NW/2);T.y=H/2-(pos[centerRep].y+NH/2);applyT();return;}
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;ids.forEach(i=>{const p=pos[i];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});if(layoutMode==='time')y0-=tlArcTop;
+  if(!(only&&only.length))designFrames.forEach(f=>{x0=Math.min(x0,f.x);y0=Math.min(y0,f.y);x1=Math.max(x1,f.x+f.w);y1=Math.max(y1,f.y+f.h);});   // the design frames' titles and pictures too
   const k=Math.min(1.2,Math.min((W-40)/(x1-x0||1),(H-80)/(y1-y0||1)));T.k=Math.max(0.03,k);const cw=(x1-x0)*T.k,ch=(y1-y0)*T.k;T.x=LP+(cw<W-40?(W-cw)/2-x0*T.k:20-x0*T.k);T.y=only&&ch<H-100?50+(H-50-ch)/2-y0*T.k:60-y0*T.k;applyT();}
 // zoom and centre on the given boxes (animated); a single item is shown at a readable size
 let anim=null;
@@ -3437,10 +3832,19 @@ function focusOn(repIds,dur0,alignTop){const ps=repIds.map(r=>pos[r]).filter(Boo
   const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;
     T.k=s0.k+(k-s0.k)*e;T.x=s0.x+(tx-s0.x)*e;T.y=s0.y+(ty-s0.y)*e;applyT();if(a<1)anim=requestAnimationFrame(step);else anim=null;};
   anim=requestAnimationFrame(step);}
+// animated zoom to a rectangle of the graph (in graph coordinates)
+function zoomToRect(x0,y0,x1,y1,dur){const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
+  const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;const k=Math.max(0.03,Math.min(1.2,(W-40)/(x1-x0||1),(H-80)/(y1-y0||1)));
+  const tx=LP+(W-(x1-x0)*k)/2-x0*k,ty=50+Math.max(0,(H-60-(y1-y0)*k)/2)-y0*k;
+  const s0={x:T.x,y:T.y,k:T.k},t0=performance.now();if(anim)cancelAnimationFrame(anim);
+  const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;
+    T.k=s0.k+(k-s0.k)*e;T.x=s0.x+(tx-s0.x)*e;T.y=s0.y+(ty-s0.y)*e;applyT();if(a<1)anim=requestAnimationFrame(step);else anim=null;};
+  anim=requestAnimationFrame(step);}
 // first view: like Fit, but never zoomed out further than MIN_START_ZOOM (top of the graph, centred)
 const MIN_START_ZOOM=0.55;
 function fitInitial(){const ids=Object.keys(pos);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;ids.forEach(i=>{const p=pos[i];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});if(layoutMode==='time')y0-=tlArcTop;
+  designFrames.forEach(f=>{x0=Math.min(x0,f.x);y0=Math.min(y0,f.y);x1=Math.max(x1,f.x+f.w);y1=Math.max(y1,f.y+f.h);});
   const k=Math.max(MIN_START_ZOOM,Math.min(1.2,(W-40)/(x1-x0||1),(H-80)/(y1-y0||1)));T.k=k;T.x=LP+(W-(x1-x0)*k)/2-x0*k;T.y=60-y0*k;
   // Timeline layout: start at the beginning of the row, with room above it for the arcs
   if(layoutMode==='time'){T.k=Math.max(k,0.5);T.x=LP+30-x0*T.k;T.y=Math.min(H-120,Math.max(90+tlArcTop*T.k,H*0.45));}   // the row (y=0) sits low enough for the arcs above it
@@ -3698,6 +4102,7 @@ const CAT_DESC={sketch:'Sketches.',construct:'Construction planes, axes and poin
   joint:'Joints, as-built joints, joint origins, rigid groups, motion links, contact sets, Arrange and captured positions (snapshots).',
   other:'Anything else (canvases, decals, add-in features, items the Fusion API does not describe).'};
 const KIND_DESC={sketch:'uses a sketch (or geometry projected/included into it)',profile:'uses a sketch profile',plane:'built on or references a construction plane, axis or point',
+  derive:'comes from the design it derives from (what the Derive feature brings in)',
   geometry:'references faces, edges or vertices made by that item',body:'works on a body that item created',feature:'references that feature directly',
   param:'a parameter drives it (expression or dimension)',component:'references a component, or something inside a component, that item brought in',
   incomp:'is built inside that component (sketches, features, joints and sub-components of a component)',
@@ -3848,12 +4253,14 @@ $('sPrev').onclick=()=>goHit(-1);$('sNext').onclick=()=>goHit(1);
 if(canGroups){simOn=true;simCompute();renderSimBar();}
 renderHealth();updateLinksBtn();hist.push(snap());hIdx=0;updHistBtns();
 applyT();buildAdj();renderGroupPanel();setView('graph');renderGraph(false);fit();setInfo(true);
+// opening: the whole picture first (every design), then a glide in to the design the analysis started from
+{const mf=designFrames.find(f=>f.d===MAIN_DSG);if(mf&&designFrames.length>1)setTimeout(()=>{if(view==='graph'&&!selected&&!selGroup)zoomToRect(mf.x,mf.y,mf.x+mf.w,mf.y+mf.h,1400);},900);}
 // opening: show the whole graph first, then glide in to the top row, at its middle (nothing gets selected)
 {// the box in the top row that is closest to the horizontal middle of the graph
   const ids=Object.keys(pos);let first=null;
   if(ids.length){const top=Math.min(...ids.map(i=>pos[i].y));const x0=Math.min(...ids.map(i=>pos[i].x)),x1=Math.max(...ids.map(i=>pos[i].x+NW));const mid=(x0+x1)/2;
     first=ids.filter(i=>Math.abs(pos[i].y-top)<1).sort((a,b)=>Math.abs(pos[a].x+NW/2-mid)-Math.abs(pos[b].x+NW/2-mid))[0];}
-  if(first)setTimeout(()=>{if(!selected&&!selGroup)focusOn([first],1100,true);},650);}
+  if(first&&!designFrames.length)setTimeout(()=>{if(!selected&&!selGroup)focusOn([first],1100,true);},650);}
 })();
 </script>
 </body>
