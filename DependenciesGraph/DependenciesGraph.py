@@ -1810,6 +1810,25 @@ def generate(mode='both', thumbs=True, derived=False):
             cur['span'] = steps[k][1] / total
 
         stopped = {'v': False}
+        run_t0 = time.time()
+        eta = {'v': None}
+
+        def time_left(frac):
+            """Estimated time left, from the time taken so far and the part of the run done (smoothed, so it does
+            not jump with every item)."""
+            spent = time.time() - run_t0
+            if frac < 0.02 or spent < 5:
+                return 'Estimating time left...'
+            left = spent * (1 - frac) / frac
+            eta['v'] = left if eta['v'] is None else 0.8 * eta['v'] + 0.2 * left
+            left = eta['v']
+            if left < 45:
+                return 'Less than a minute left'
+            if left < 90:
+                return 'About a minute left'
+            if left < 3600:
+                return 'About %d min left' % round(left / 60)
+            return 'About %d h %02d min left' % (left // 3600, round(left % 3600 / 60))
 
         def progress(msg, i, n):
             # after Cancel nothing updates the window any more (an update shows it again)
@@ -1817,9 +1836,8 @@ def generate(mode='both', thumbs=True, derived=False):
                 stopped['v'] = True
                 return
             frac = cur['base'] + cur.get('span', 0) * min(1.0, i / max(1, n))
-            # %p is filled in by Fusion with the bar's percentage
-            progress_dlg.message = ('%%p%%  ·  step %d of %d: %s  (%d/%d)\n%s' % (
-                cur['k'] + 1, len(steps), steps[cur['k']][0] if steps else '', min(i + 1, n), n,
+            progress_dlg.message = ('%s  ·  step %d of %d: %s  (%d/%d)\n%s' % (
+                time_left(frac), cur['k'] + 1, len(steps), steps[cur['k']][0] if steps else '', min(i + 1, n), n,
                 msg.replace('%', ' percent')))[:200]
             progress_dlg.progressValue = int(1000 * frac)
             adsk.doEvents()
