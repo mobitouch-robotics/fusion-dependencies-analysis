@@ -1786,6 +1786,14 @@ def generate(mode='both', thumbs=True, derived=False):
         path = os.path.join(out_dir, '%s_dependencies_graph_%s.html' % (
             re.sub(r'[^\w\- ]+', '_', doc_name).strip() or 'design',
             datetime.datetime.now().strftime('%Y%m%d_%H%M%S')))
+        chosen = _settings().get('savePath')
+        if chosen:
+            # a file chosen in the dialog (replaced by each run); the temporary folder when it cannot be written
+            try:
+                os.makedirs(os.path.dirname(chosen) or '.', exist_ok=True)
+                path = chosen
+            except Exception:
+                pass
 
         progress_dlg = _ui.createProgressDialog()
         progress_dlg.isCancelButtonShown = True
@@ -1886,8 +1894,15 @@ def generate(mode='both', thumbs=True, derived=False):
         if _sel_info.get('port'):
             data['meta']['sel'] = {'port': _sel_info['port'], 'token': _sel_info['token']}
         html = TEMPLATE.replace('/*__DATA__*/null', json.dumps(data).replace('</', '<\\/'))
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(html)
+        try:
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(html)
+        except Exception as ex:
+            fallback = os.path.join(out_dir, os.path.basename(path))
+            data['meta']['warnings'].append('Could not save to %s (%s); saved to %s instead.' % (path, ex, fallback))
+            path = fallback
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(html)
         webbrowser.open(pathlib.Path(path).as_uri())
         return data['meta']['warnings']
     except Exception:
@@ -2132,9 +2147,16 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             dv = oc.addBoolValueInput('hgDerived', 'Include linked designs', True, '', False)
             dv.tooltip = 'Also map the designs this one derives from or inserts'
             dv.tooltipDescription = ('Each design brought in with Derive or inserted as a linked component is read as well '
-                                     '(and the designs those link, at any depth). It is shown as a block of its own, and its links end in the '
-                                     'Derive feature. Source designs are read from their references only; they are '
-                                     'not suppression-tested.')
+                                     '(and the designs those link, at any depth). Each is shown in a frame of its own, '
+                                     'connected to the Derive feature or insert that uses it. With Full analysis they are '
+                                     'suppression-tested too, each in a hidden copy.')
+            # where the page is saved: the temporary folder, or a file chosen here (remembered for next time)
+            sv = oc.addTextBoxCommandInput('hgSavePath', 'Save to', _save_label(), 1, True)
+            sv.tooltip = 'Where the page is saved (a single self-contained .html file: opens in any browser)'
+            bt = oc.addBoolValueInput('hgSaveChoose', 'Choose file...', False, '', False)
+            bt.tooltip = 'Choose where to save the page'
+            bt2 = oc.addBoolValueInput('hgSaveTemp', 'Use temporary folder', False, '', False)
+            bt2.tooltip = 'Save to the temporary folder again (a new file every time)'
 
             # --- two ways to generate: Full analysis (the dialog's OK button) or Quick estimate (a button here)
             mins = max(1, int(round((n_items * 1.7 + n_groups * 2.5) / 60.0)))
@@ -2179,6 +2201,51 @@ def _modes_info(mins):
             'dependencies are missing and a few links may be wrong.</span>' % mins)
 
 
+_SETTINGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
+
+
+def _settings():
+    try:
+        with open(_SETTINGS, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def _save_settings(d):
+    try:
+        with open(_SETTINGS, 'w', encoding='utf-8') as f:
+            json.dump(d, f)
+    except Exception:
+        pass
+
+
+def _save_label():
+    p = _settings().get('savePath')
+    return p if p else 'Temporary folder (a new file each time)'
+
+
+def _choose_save_path():
+    """System Save dialog; the chosen file is remembered. Returns the path or None."""
+    dlg = _ui.createFileDialog()
+    dlg.title = 'Save the dependencies graph as'
+    dlg.filter = 'Web page (*.html)'
+    cur = _settings().get('savePath')
+    doc = _safe(lambda: _app.activeDocument.name, 'design') or 'design'
+    dlg.initialFilename = os.path.basename(cur) if cur else re.sub(r'[^\w\- ]+', '_', doc).strip() + '_dependencies_graph.html'
+    if cur:
+        dlg.initialDirectory = os.path.dirname(cur)
+    if dlg.showSave() != adsk.core.DialogResults.DialogOK:
+        return None
+    path = dlg.filename
+    if not path.lower().endswith(('.html', '.htm')):
+        path += '.html'
+    st = _settings()
+    st['savePath'] = path
+    _save_settings(st)
+    return path
+
+
 def _options(inputs):
     mode = _run_mode.pop('mode', None) or 'both'
     ti = inputs.itemById('hgThumbs')
@@ -2219,6 +2286,18 @@ def _unsaved_reason():
 
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
+        if args.input.id in ('hgSaveChoose', 'hgSaveTemp'):
+            if args.input.id == 'hgSaveChoose':
+                _choose_save_path()
+            else:
+                st = _settings()
+                st.pop('savePath', None)
+                _save_settings(st)
+            cmd = _safe(lambda: args.firingEvent.sender)
+            box = _safe(lambda: cmd.commandInputs.itemById('hgSavePath'))
+            if box is not None:
+                box.formattedText = _save_label()
+            return
         if args.input.id == 'hgQuick':
             if _unsaved_reason():
                 return
