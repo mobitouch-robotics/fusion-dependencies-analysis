@@ -21,7 +21,8 @@ timeline groups, components, parameters and optional suppression tests.
   the Display menu.
 
 ### Layouts and navigation
-- **Depth**, **Groups** (one block per timeline group) and **Components** (one block per component)
+- **Depth**, **Groups** (one block per timeline group), **Components** (one block per component) and
+  **Timeline** (every item in one row in timeline order, groups as events, longer links arcing above)
   layouts. User parameters have a block of their own (no extra *User Parameters* box there).
 - **Folding**: timeline groups, components, *Not in a group* and *User parameters* fold into one box;
   any box can fold what depends on it. *Collapse all* / *Expand all*. A line going into a folded box shows
@@ -64,8 +65,9 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
 
 ## Use
 
-Open a parametric design and run **Dependencies Graph**. Choose whether to run the suppression tests
-and capture thumbnails. The design is restored afterwards (the tests suppress and unsuppress items and
+Open a parametric design and run **Dependencies Graph**. Choose whether to capture thumbnails, then press
+**Full analysis** (runs the suppression tests: every link is a real dependency; takes minutes) or
+**Quick estimate** (references only; takes seconds). The design is restored afterwards (the tests suppress and unsuppress items and
 the pictures change visibility, so save your work first). The result opens in your browser as a
 self-contained HTML file.
 
