@@ -3666,7 +3666,7 @@ function renderGraph(fitAfter,centerId){
       lanes.push({id:b.l.id,x:lx-14,w:b.w+28,y0:ly,y1:ly+b.h});};
     designFrames=[];
     {const byD={};built.forEach(b=>{const d=laneDesign(b.l.id);(byD[d]=byD[d]||[]).push(b);});
-      const PADX=40,PADB=40,PIC_W=330,PIC_H=216;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>picOf(d)?PIC_H+44:74;
+      const PADX=40,PADB=40,PIC_W=150,PIC_H=100;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>picOf(d)?PIC_H+34:74;   // a small picture beside the title: the header grows only a little
       const frameTitle=d=>{if(d===MAIN_DSG)return 'This design · '+(D.meta.doc||'');const g=groups[d]||{};const v=g.via||[];return (v.includes('derive')&&!v.includes('insert')?'Derived design · ':v.includes('insert')&&!v.includes('derive')?'Inserted design · ':'Linked design · ')+(g.name||d);};
       const frames=Object.keys(byD).map(d=>{const pk=pack(byD[d]);return {d,pk,w:Math.max(pk.w+2*PADX,frameTitle(d).length*15.5+60+(picOf(d)?PIC_W+30:0)),h:pk.h+padT(d)+PADB,o:Math.min(...byD[d].map(b=>b.l.o))};}).sort((a,b)=>a.o-b.o);
       const fr=pack(frames.map(f=>({w:f.w,h:f.h,f})),2.4);
@@ -3753,10 +3753,12 @@ function renderGraph(fitAfter,centerId){
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',f.x+26);tx.setAttribute('y',f.y+46);tx.setAttribute('style','font-size:26px;font-weight:800;fill:'+col);
       tx.textContent=f.title;
       fl.append(bg,tx);
-      if(f.pic){const pw=330,ph=216;const px=f.x+f.w-pw-24,py=f.y+22;
-        const pb=document.createElementNS(NS,'rect');pb.setAttribute('x',px);pb.setAttribute('y',py);pb.setAttribute('width',pw);pb.setAttribute('height',ph);pb.setAttribute('rx',10);pb.setAttribute('style','fill:var(--panel);stroke:'+col+';stroke-opacity:.5;stroke-width:1.5');
-        const im=document.createElementNS(NS,'image');im.setAttribute('x',px+4);im.setAttribute('y',py+4);im.setAttribute('width',pw-8);im.setAttribute('height',ph-8);im.setAttribute('preserveAspectRatio','xMidYMid meet');im.setAttribute('href',f.pic);
-        const tt=document.createElementNS(NS,'title');tt.textContent='The finished part';im.appendChild(tt);fl.append(pb,im);}});}
+      if(f.pic){const pw=150,ph=100;const px=f.x+f.w-pw-22,py=f.y+14;
+        const pb=document.createElementNS(NS,'rect');pb.setAttribute('x',px);pb.setAttribute('y',py);pb.setAttribute('width',pw);pb.setAttribute('height',ph);pb.setAttribute('rx',8);pb.setAttribute('style','fill:var(--panel);stroke:'+col+';stroke-opacity:.5;stroke-width:1.5');
+        const im=document.createElementNS(NS,'image');im.setAttribute('x',px+3);im.setAttribute('y',py+3);im.setAttribute('width',pw-6);im.setAttribute('height',ph-6);im.setAttribute('preserveAspectRatio','xMidYMid meet');im.setAttribute('href',f.pic);im.style.cursor='zoom-in';
+        // hovering the small picture shows it large
+        im.addEventListener('mouseenter',ev=>picPopShow(f.pic,f.title,ev));im.addEventListener('mousemove',ev=>picPopMove(ev));im.addEventListener('mouseleave',picPopHide);
+        fl.append(pb,im);}});}
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
     const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);};
     lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
@@ -3999,6 +4001,15 @@ function focusOn(repIds,dur0,alignTop){const ps=repIds.map(r=>pos[r]).filter(Boo
   const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;
     T.k=s0.k+(k-s0.k)*e;T.x=s0.x+(tx-s0.x)*e;T.y=s0.y+(ty-s0.y)*e;applyT();if(a<1)anim=requestAnimationFrame(step);else anim=null;};
   anim=requestAnimationFrame(step);}
+// the large picture shown while hovering a design frame's small one
+let picPop=null;
+function picPopShow(src,title,ev){if(!picPop){picPop=document.createElement('div');picPop.id='picPop';
+    picPop.style.cssText='position:fixed;z-index:60;pointer-events:none;background:var(--panel);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 36px rgba(0,0,0,.28);padding:10px;display:none';
+    picPop.innerHTML='<div style="font-weight:700;font-size:13px;margin:0 2px 8px;color:var(--text)"></div><img style="display:block;width:560px;max-width:70vw;max-height:60vh;object-fit:contain;border-radius:8px;background:#fff">';document.body.appendChild(picPop);}
+  picPop.firstChild.textContent=title||'';picPop.lastChild.src=src;picPop.style.display='block';picPopMove(ev);}
+function picPopMove(ev){if(!picPop||picPop.style.display==='none')return;const r=picPop.getBoundingClientRect(),W=innerWidth,H=innerHeight;
+  let x=ev.clientX+18,y=ev.clientY+18;if(x+r.width>W-8)x=ev.clientX-r.width-18;if(y+r.height>H-8)y=Math.max(8,H-r.height-8);picPop.style.left=Math.max(8,x)+'px';picPop.style.top=y+'px';}
+function picPopHide(){if(picPop)picPop.style.display='none';}
 // animated zoom to a rectangle of the graph (in graph coordinates)
 function zoomToRect(x0,y0,x1,y1,dur){const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;const k=Math.max(0.03,Math.min(1.2,(W-40)/(x1-x0||1),(H-80)/(y1-y0||1)));
