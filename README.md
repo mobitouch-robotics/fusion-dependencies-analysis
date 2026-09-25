@@ -36,6 +36,8 @@ timeline groups, components, parameters and optional suppression tests.
 - **Back / forward** through selections, restoring the zoom and position you had.
 - **Legend** explaining every colour, icon, outline, marker and line.
 - **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
+  and "Same body, later" links.
+- **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
   what the selection highlights around itself (what it depends on / what uses it, each either direct only
   or the whole chain), and "Same body, later" links.
 
