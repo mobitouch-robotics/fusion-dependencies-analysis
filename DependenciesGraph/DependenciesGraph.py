@@ -3666,12 +3666,17 @@ function renderGraph(fitAfter,centerId){
       lanes.push({id:b.l.id,x:lx-14,w:b.w+28,y0:ly,y1:ly+b.h});};
     designFrames=[];
     {const byD={};built.forEach(b=>{const d=laneDesign(b.l.id);(byD[d]=byD[d]||[]).push(b);});
-      const PADX=40,PADB=40,PIC_W=150,PIC_H=100;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>picOf(d)?PIC_H+34:74;   // a small picture beside the title: the header grows only a little
+      const PADX=40,PADB=40,PIC_W=150,PIC_H=100;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>74;
       const frameTitle=d=>{if(d===MAIN_DSG)return 'This design · '+(D.meta.doc||'');const g=groups[d]||{};const v=g.via||[];return (v.includes('derive')&&!v.includes('insert')?'Derived design · ':v.includes('insert')&&!v.includes('derive')?'Inserted design · ':'Linked design · ')+(g.name||d);};
-      const frames=Object.keys(byD).map(d=>{const pk=pack(byD[d]);return {d,pk,w:Math.max(pk.w+2*PADX,frameTitle(d).length*15.5+60+(picOf(d)?PIC_W+30:0)),h:pk.h+padT(d)+PADB,o:Math.min(...byD[d].map(b=>b.l.o))};}).sort((a,b)=>a.o-b.o);
+      // the part's picture is a tile of its own, packed with the blocks (it fills space beside them instead of
+      // adding a header strip); a folded design gets a smaller one
+      const frames=Object.keys(byD).map(d=>{const folded=byD[d].every(b=>laneBase(b.l.id)==='_folded');
+        const list=byD[d].slice();if(picOf(d))list.unshift(folded?{w:210,h:140,picTile:true}:{w:330,h:230,picTile:true});
+        const pk=pack(list);return {d,pk,w:Math.max(pk.w+2*PADX,frameTitle(d).length*15.5+60),h:pk.h+padT(d)+PADB,o:Math.min(...byD[d].map(b=>b.l.o))};}).sort((a,b)=>a.o-b.o);
       const fr=pack(frames.map(f=>({w:f.w,h:f.h,f})),2.4);
-      fr.placed.forEach(q=>{const f=q.b.f;f.pk.placed.forEach(p=>putLane(p.b,q.x+PADX+p.x,q.y+padT(f.d)+p.y));
-        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),x:q.x-14,y:q.y,w:f.w+28,h:f.h});});
+      fr.placed.forEach(q=>{const f=q.b.f;let pr=null;
+        f.pk.placed.forEach(p=>{const x=q.x+PADX+p.x,y=q.y+padT(f.d)+p.y;if(p.b.picTile)pr={x,y,w:p.b.w,h:p.b.h};else putLane(p.b,x,y);});
+        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),picRect:pr,x:q.x-14,y:q.y,w:f.w+28,h:f.h});});
       // a derived design's connector sits on the middle of its frame's bottom edge
       ports.forEach(r=>{const d=laneKey(r.members[0]).split('|')[0];const f=designFrames.find(x=>x.d===d);if(f)pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h-NH/2};});}
   }else
@@ -3753,8 +3758,8 @@ function renderGraph(fitAfter,centerId){
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',f.x+26);tx.setAttribute('y',f.y+46);tx.setAttribute('style','font-size:26px;font-weight:800;fill:'+col);
       tx.textContent=f.title;
       fl.append(bg,tx);
-      if(f.pic){const pw=150,ph=100;const px=f.x+f.w-pw-22,py=f.y+14;
-        const pb=document.createElementNS(NS,'rect');pb.setAttribute('x',px);pb.setAttribute('y',py);pb.setAttribute('width',pw);pb.setAttribute('height',ph);pb.setAttribute('rx',8);pb.setAttribute('style','fill:var(--panel);stroke:'+col+';stroke-opacity:.5;stroke-width:1.5');
+      if(f.pic&&f.picRect){const pw=f.picRect.w,ph=f.picRect.h;const px=f.picRect.x-14,py=f.picRect.y;
+        const pb=document.createElementNS(NS,'rect');pb.setAttribute('x',px);pb.setAttribute('y',py);pb.setAttribute('width',pw);pb.setAttribute('height',ph);pb.setAttribute('rx',10);pb.setAttribute('style','fill:var(--panel);stroke:'+col+';stroke-opacity:.5;stroke-width:1.5');
         const im=document.createElementNS(NS,'image');im.setAttribute('x',px+3);im.setAttribute('y',py+3);im.setAttribute('width',pw-6);im.setAttribute('height',ph-6);im.setAttribute('preserveAspectRatio','xMidYMid meet');im.setAttribute('href',f.pic);im.style.cursor='zoom-in';
         // hovering the small picture shows it large
         im.addEventListener('mouseenter',ev=>picPopShow(f.pic,f.title,ev));im.addEventListener('mousemove',ev=>picPopMove(ev));im.addEventListener('mouseleave',picPopHide);
