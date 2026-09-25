@@ -1511,7 +1511,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         sc.no_roll = not mine                # a document the user has open: read as it is, the timeline is not moved
         src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
                'doc': doc if mine else None,
-               'versions': {ver} if ver is not None else set(), 'read_ver': ver}
+               'versions': {ver} if ver is not None else set(), 'read_ver': ver, 'into': set(), 'targets': set()}
         sources.append(src)
         by_key[key] = src
         if progress:
@@ -1579,7 +1579,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if src is None:
                 continue
             sc, sp, target = src['col'], src['prefix'], prefix + nid
-            n0 = len(links)
+            # everything goes through the design's connector: its items -> connector -> this Derive feature
+            src['targets'].add(target)
             # the items the derive hands over (objects of the referenced copy: matched by their timeline item)
             for se in (_safe(lambda: list(df.sourceEntities)) or []):
                 t = _t(se)
@@ -1589,12 +1590,12 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 if n is None and t in ('Component', 'Occurrence'):
                     n = sc.comp_owner.get(_safe(lambda: se.name) or _safe(lambda: se.component.name))
                 if n:
-                    links.append((sp + n, target))
+                    src['into'].add(sp + n)
             for b in (_safe(lambda: list(df.bodies)) or []):
                 sb = _safe(lambda: df.getSourceEntity(b))
                 n = sc.body_owner.get(_safe(lambda: sb.name)) if sb is not None else None
                 if n:
-                    links.append((sp + n, target))
+                    src['into'].add(sp + n)
             # parameters -> the derived parameters of this Derive feature
             src_names = [n['name'] for n in sc.nodes if n['type'] == 'UserParameter']
             dname = _safe(lambda: df.timelineObject.name)
@@ -1605,15 +1606,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                     continue
                 pn = _safe(lambda: p.name, '') or ''
                 sn = _source_param(pn, src_names)
-                if sn and any(n['id'] == 'd:' + pn for n in col.nodes):
-                    links.append((sp + 'p:' + sn, prefix + 'd:' + pn))
-                elif sn:
-                    links.append((sp + 'p:' + sn, target))
-            if len(links) == n0:
-                # nothing specific found: the source design's last item leads into the Derive feature
-                last = max((n for n in sc.nodes if n.get('tl') is not None), key=lambda n: n['o'], default=None)
-                if last:
-                    links.append((sp + last['id'], target))
+                if sn:
+                    src['into'].add(sp + 'p:' + sn)   # the derived parameter itself hangs under the Derive feature
 
     active = _safe(lambda: app.activeDocument)
     try:
@@ -1642,7 +1636,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         main.groups.append({'id': gid, 'name': src['name'], 'first': base, 'parent': None, 'design': True,
                             'pic': src.get('pic')})
         # a source design's user parameters only when something uses them (a big design can have hundreds)
-        used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a, _ in links if a.startswith(sp))
+        used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a in src['into'])
         pre = lambda ids: [sp + x for x in ids]
         for g in sc.groups:
             ng = {'id': sp + g['id'], 'name': g['name'], 'first': base + 1 + (g['first'] if g['first'] < 10 ** 6 else 9000),
@@ -1671,6 +1665,14 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             main.nodes.append(m)
         for (a, b), k in sc.edges.items():
             main.edges.setdefault((sp + a, sp + b), set()).update(k)
+        # the design's connector: the whole design as one item, on its frame; its parents are the items the
+        # Derive features hand over, its children are those Derive features
+        port = sp + '@'
+        main.nodes.append({'id': port, 'name': src['name'], 'type': 'DerivedDesign', 'cat': 'insert', 'tl': None,
+                           'o': base + 9990, 'g': [gid], 'dsg': src['name'], 'port': True, 'tok': '', 'supp': False,
+                           'health': 0, 'msg': '', 'info': 'the whole design, as the Derive features bring it in'})
+        links.extend((a, port) for a in src['into'])
+        links.extend((port, t) for t in src['targets'])
         for w in sc.warnings[:5]:
             main.warnings.append('%s: %s' % (src['name'], w))
     ids = {n['id'] for n in main.nodes}
@@ -2697,7 +2699,7 @@ const ICON_BY_TYPE={Sketch:'sketch',ConstructionPlane:'plane',ConstructionAxis:'
   PathPatternFeature:'pathpattern',MoveFeature:'move',SplitBodyFeature:'splitbody',SilhouetteSplitFeature:'splitbody',
   CopyPasteBody:'copy',CutPasteBody:'copy',RemoveFeature:'remove',
   UserParameter:'param',DerivedParameter:'dparam',UserParameters:'params',Component:'component',
-  Occurrence:'insert',DeriveFeature:'derive',Joint:'joint',AsBuiltJoint:'joint',JointOrigin:'jointorigin',RigidGroup:'rigid',
+  Occurrence:'insert',DeriveFeature:'derive',DerivedDesign:'derive',Joint:'joint',AsBuiltJoint:'joint',JointOrigin:'jointorigin',RigidGroup:'rigid',
   MotionLink:'motion',ContactSet:'contact',Snapshot:'snapshot',ArrangeFeature:'arrange',
   PatchFeature:'patch',StitchFeature:'stitch',UnstitchFeature:'stitch',TrimFeature:'trim',UntrimFeature:'trim',ExtendFeature:'extend',
   OffsetFeature:'surface',RuledSurfaceFeature:'surface',ReverseNormalFeature:'surface',SurfaceDeleteFaceFeature:'deleteface',
@@ -2855,7 +2857,7 @@ const kindsPresent=[...new Set(D.edges.flatMap(e=>e.k))].filter(k=>KIND[k]);
 const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // every kind is always on; only "Same body, later" can be switched (Display menu)
 // links found by the suppression test are real dependencies: always shown, no toggle
 let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=true, search='';
-const expanded=new Set(Object.keys(groups)); // graph starts with every group expanded
+const expanded=new Set(Object.keys(groups).filter(g=>!groups[g].design)); // graph starts with every group expanded, derived designs folded into one box each
 const $=id=>document.getElementById(id);
 
 $('title').textContent='Dependencies graph: '+D.meta.doc;document.title='Dependencies graph: '+D.meta.doc;
@@ -3392,7 +3394,7 @@ function laneBase(id){return id&&id.includes('|')?id.split('|')[1]:id;}
 function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
 function laneKey(n){if(!n)return null;
   if(n.dsg&&n.g&&n.g.length){const X=n.g[0];if(layoutMode==='comps')return compOf[n.id]||X+'|_root';
-    if(n.type==='UserParameter')return X+'|_params';return n.g.length>1?n.g[1]:X+'|_none';}
+    if(n.port)return X+'|_port';if(n.type==='UserParameter')return X+'|_params';return n.g.length>1?n.g[1]:X+'|_none';}
   if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
   if(n.type==='DerivedParameter'&&dparamOf[n.id])return laneKey(byId[dparamOf[n.id]]);
   if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
@@ -3478,8 +3480,8 @@ function renderGraph(fitAfter,centerId){
   }else if(isLanes()){
     // one column per top-level timeline group, in timeline order; rows inside a lane follow the
     // dependencies between that lane's own boxes, so each lane starts at the top
-    const laneOf=r=>laneKey(r.members[0]);const LN={};
-    reps.forEach(r=>{const k=laneOf(r);(LN[k]=LN[k]||{id:k,o:1e9,items:[]});LN[k].o=Math.min(LN[k].o,r.o);LN[k].items.push(r);});
+    const laneOf=r=>{if(r.isGroup){const gid=r.id.slice(1);if(groups[gid]&&groups[gid].design)return gid+'|_folded';}return laneKey(r.members[0]);};const LN={};   // a folded derived design keeps its frame
+    const ports=[];reps.forEach(r=>{const k=laneOf(r);if(k&&k.endsWith('|_port')){ports.push(r);return;}(LN[k]=LN[k]||{id:k,o:1e9,items:[]});LN[k].o=Math.min(LN[k].o,r.o);LN[k].items.push(r);});
     const order=Object.values(LN).sort((a,b)=>a.o-b.o);const LG=46,TOP=44,SUBG=YG*0.45;
     // 1) each lane on its own: rows by dependency depth, long rows wrap into a small grid
     const built=order.map(l=>{const inL=new Set(l.items.map(r=>r.id));const ll={};l.items.sort((a,b)=>a.o-b.o).forEach(r=>{let d=0;pr[r.id].forEach(s=>{if(inL.has(s)&&ll[s]!=null&&R[s].o<r.o)d=Math.max(d,ll[s]+1);});ll[r.id]=d;});
@@ -3507,7 +3509,9 @@ function renderGraph(fitAfter,centerId){
       const frames=Object.keys(byD).map(d=>{const pk=pack(byD[d]);return {d,pk,w:Math.max(pk.w+2*PADX,frameTitle(d).length*15.5+60+(picOf(d)?PIC_W+30:0)),h:pk.h+padT(d)+PADB,o:Math.min(...byD[d].map(b=>b.l.o))};}).sort((a,b)=>a.o-b.o);
       const fr=pack(frames.map(f=>({w:f.w,h:f.h,f})),2.4);
       fr.placed.forEach(q=>{const f=q.b.f;f.pk.placed.forEach(p=>putLane(p.b,q.x+PADX+p.x,q.y+padT(f.d)+p.y));
-        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),x:q.x-14,y:q.y,w:f.w+28,h:f.h});});}
+        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),x:q.x-14,y:q.y,w:f.w+28,h:f.h});});
+      // a derived design's connector sits on the middle of its frame's bottom edge
+      ports.forEach(r=>{const d=laneKey(r.members[0]).split('|')[0];const f=designFrames.find(x=>x.d===d);if(f)pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h-NH/2};});}
   }else
   Ls.forEach(L=>{const c=cols[L];c.forEach(r=>{const xs=pr[r.id].map(s=>pos[s]?pos[s].x+NW/2:null).filter(v=>v!=null);r.bc=xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;});
     const withBc=c.filter(r=>r.bc!=null);const avg=withBc.length?withBc.reduce((a,r)=>a+r.bc,0)/withBc.length:0;
@@ -3596,7 +3600,7 @@ function renderGraph(fitAfter,centerId){
     lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.07;stroke:'+col+';stroke-opacity:.45;stroke-width:1.5');
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const DSG=groups[l.id]&&groups[l.id].design;if(DSG){bg.setAttribute('style','fill:'+col+';fill-opacity:.05;stroke:'+col+';stroke-opacity:.8;stroke-width:3;stroke-dasharray:10 5');tx.setAttribute('style','font-size:17px;font-weight:800;fill:'+col);}
-      const LB=laneBase(l.id);const full=DSG?'Design · '+groups[l.id].name:LB==='_params'?'User parameters':LB==='_none'?'Not in a group':LB==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
+      const LB=laneBase(l.id);const full=DSG?'Design · '+groups[l.id].name:LB==='_folded'?'Whole design (folded)':LB==='_params'?'User parameters':LB==='_none'?'Not in a group':LB==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
       // fold button on the block title: a whole timeline group (Groups layout) or a whole component (Components layout)
       {const gidL=CM?null:l.id,cidL=CM&&byId[l.id]?l.id:null,psL=(l.id==='_params'||(l.id==='_none'&&!CM))?l.id:null;const gk=psL||gidL;
         const can=(gk&&groups[gk])||(cidL&&canCollapse(cidL))||(cidL&&collapsedNodes.has(cidL));
@@ -3729,6 +3733,7 @@ function renderGraph(fitAfter,centerId){
     if(r.isGroup&&simState){const k=r.members.filter(isSupp).length;if(k){label+=' · '+k+' off';}}
     if(r.isGroup&&!r.header&&hitCount[r.id])label=label.startsWith('▸ ')?'▸ '+hitCount[r.id]+' found · '+label.slice(2):label+' · '+hitCount[r.id]+' found';   // first, so it is not cut off
     if(gsupp)cat='supp_';rect.setAttribute('fill',gsupp?'var(--supp-bg)':'var(--c-'+cat+'-bg)');if(gsupp)rect.setAttribute('stroke-dasharray','5 3');rect.setAttribute('stroke',gsupp?'var(--supp)':(!r.isGroup&&r.members[0].health===2)?'var(--err)':(!r.isGroup&&r.members[0].health===1)?'var(--warn)':'var(--c-'+cat+')');
+    if(!r.isGroup&&r.members[0].port){rect.setAttribute('rx',NH/2);rect.setAttribute('stroke-width','3');}
     if(laneFold){rect.setAttribute('fill','transparent');rect.setAttribute('stroke','transparent');rect.removeAttribute('stroke-dasharray');}
     const bk=r.members.map(brokenKind).filter(Boolean);
     if(bk.length){const est=bk.every(k=>k==='est');rect.setAttribute('stroke','var(--err)');rect.setAttribute('stroke-width','3');rect.setAttribute('stroke-dasharray',est?'6 4':'');
