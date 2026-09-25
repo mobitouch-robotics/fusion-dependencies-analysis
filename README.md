@@ -60,14 +60,15 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
   touching the design, including groups and items Fusion refuses to suppress (estimated).
 - Features that fail to compute or have warnings are marked, with counts in the header.
 
-### Derived designs
-- Option *Include derived designs* (off by default): every design brought in with Derive is read too, and
-  the designs those derive from, at any depth. A design derived several times (from several files, or at
-  different versions) appears once, linked to every Derive feature that uses it.
-- Links end in the Derive feature: from the sketches and bodies it hands over, and from the source
-  parameters to the derived parameters.
-- With *Full analysis*, derived designs get the same suppression tests. Each is read and tested in a
-  hidden copy of the version the Derive uses, closed without saving; a derived design you have open in a
+### Linked designs
+- Option *Include linked designs* (off by default): every design brought in with Derive or inserted as a
+  linked component is read too, and the designs those link, at any depth. A design used several times
+  (from several files, or at different versions) appears once, linked to every place that uses it.
+- Each linked design has a connector on its frame: the items a Derive hands over (sketches, bodies,
+  parameters) lead into it, and it leads into the Derive feature or the insert item. Linked designs start
+  folded into one box; + opens them. Designs without a timeline (e.g. library parts) show only their frame.
+- With *Full analysis*, linked designs get the same suppression tests. Each is read and tested in a
+  hidden copy of the version that is used, closed without saving; a linked design you have open in a
   tab is read as it is and not tested.
 - In the Groups and Components layouts every design is a frame of its own, with its timeline groups and
   a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.

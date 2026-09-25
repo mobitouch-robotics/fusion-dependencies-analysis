@@ -1423,6 +1423,41 @@ def _part_picture(w=640, h=420):
             _safe(lambda: setattr(vp, 'camera', cam0))
 
 
+class _PlainDesign:
+    """Stand-in collector for a linked design without a timeline (a direct-modelling design, e.g. a library part):
+    no items of its own, only its frame, connector and picture."""
+    def __init__(self, des):
+        self.des = des
+        self.root = _safe(lambda: des.rootComponent)
+        self.tl = None
+        self.nodes, self.groups, self.edges, self.warnings = [], [], {}, []
+        self.tl2node, self.body_owner, self.comp_owner, self.by_tlname = {}, {}, {}, {}
+
+    def restore_groups(self):
+        pass
+
+    def occ_node(self, occ):
+        return None
+
+
+def _linked_occurrences(des):
+    """The outermost linked (inserted, referenced) components of a design: the ones inside a linked design are
+    found when that design itself is read."""
+    out = []
+    for o in (_safe(lambda: list(des.rootComponent.allOccurrences)) or []):
+        if not _safe(lambda: o.isReferencedComponent, False):
+            continue
+        a, inner, guard = _safe(lambda: o.assemblyContext), False, 0
+        while a is not None and guard < 20:
+            if _safe(lambda: a.isReferencedComponent, False):
+                inner = True
+                break
+            a, guard = _safe(lambda: a.assemblyContext), guard + 1
+        if not inner:
+            out.append(o)
+    return out
+
+
 def _derive_features(col):
     out = []
     for idx, nid in sorted(col.tl2node.items()):
@@ -1472,7 +1507,7 @@ def _open_version(sd):
     return doc, mine
 
 
-def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=40):
+def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80):
     sources = []            # [{'key', 'col', 'prefix', 'gid', 'name', 'depth', 'doc'}]
     by_key = {}
     links = []              # (source id, target id) across designs, ids already prefixed
@@ -1505,13 +1540,32 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 _safe(lambda: doc.close(False))
             return None
         k = len(sources) + 1
+        parametric = _safe(lambda: des.designType) == adsk.fusion.DesignTypes.ParametricDesignType
+        if not parametric:
+            sc = _PlainDesign(des)
+            src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
+                   'doc': doc if mine else None, 'versions': {ver} if ver is not None else set(), 'read_ver': ver,
+                   'into': set(), 'targets': set(), 'via': set()}
+            sources.append(src)
+            by_key[key] = src
+            if pictures and not cancelled() and _has_geometry(des):
+                back = _safe(lambda: app.activeDocument)
+                if _safe(doc.activate) is not False:
+                    adsk.doEvents()
+                    src['pic'] = _part_picture()
+                if back is not None:
+                    _safe(back.activate)
+                    adsk.doEvents()
+            walk(sc, src['prefix'], depth + 1)
+            return src
         sc = Collector(des, None, False)
         sc.cancelled = cancelled
         sc.doc = None                        # a hidden document: the main design stays the active one
         sc.no_roll = not mine                # a document the user has open: read as it is, the timeline is not moved
         src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
                'doc': doc if mine else None,
-               'versions': {ver} if ver is not None else set(), 'read_ver': ver, 'into': set(), 'targets': set()}
+               'versions': {ver} if ver is not None else set(), 'read_ver': ver, 'into': set(), 'targets': set(),
+               'via': set()}
         sources.append(src)
         by_key[key] = src
         if progress:
@@ -1581,6 +1635,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             sc, sp, target = src['col'], src['prefix'], prefix + nid
             # everything goes through the design's connector: its items -> connector -> this Derive feature
             src['targets'].add(target)
+            src['via'].add('derive')
             # the items the derive hands over (objects of the referenced copy: matched by their timeline item)
             for se in (_safe(lambda: list(df.sourceEntities)) or []):
                 t = _t(se)
@@ -1608,6 +1663,20 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 sn = _source_param(pn, src_names)
                 if sn:
                     src['into'].add(sp + 'p:' + sn)   # the derived parameter itself hangs under the Derive feature
+        # linked (inserted) components: the whole design comes in, through the item that inserted it
+        for occ in _linked_occurrences(col.des):
+            if cancelled():
+                return
+            sd = _safe(lambda: occ.component.parentDesign)
+            if sd is None:
+                continue
+            src = read(sd, depth)
+            if src is None:
+                continue
+            src['via'].add('insert')
+            t = _safe(lambda: col.occ_node(occ)) or _safe(lambda: col.comp_ref(occ))
+            if t:
+                src['targets'].add(prefix + t)
 
     active = _safe(lambda: app.activeDocument)
     try:
@@ -1632,9 +1701,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         if len(src['versions']) > 1:
             base_name = re.sub(r'\s+v\d+$', '', src['name'])
             src['name'] = '%s (v%s; read v%s)' % (base_name, ', v'.join(str(v) for v in sorted(src['versions'])), src['read_ver'])
-            main.warnings.append('%s is derived at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
+            main.warnings.append('%s is linked at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
         main.groups.append({'id': gid, 'name': src['name'], 'first': base, 'parent': None, 'design': True,
-                            'pic': src.get('pic')})
+                            'pic': src.get('pic'), 'via': sorted(src.get('via') or [])})
         # a source design's user parameters only when something uses them (a big design can have hundreds)
         used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a in src['into'])
         pre = lambda ids: [sp + x for x in ids]
@@ -1670,7 +1739,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         port = sp + '@'
         main.nodes.append({'id': port, 'name': src['name'], 'type': 'DerivedDesign', 'cat': 'insert', 'tl': None,
                            'o': base + 9990, 'g': [gid], 'dsg': src['name'], 'port': True, 'tok': '', 'supp': False,
-                           'health': 0, 'msg': '', 'info': 'the whole design, as the Derive features bring it in'})
+                           'health': 0, 'msg': '', 'info': 'the whole design, as ' + ('it is inserted' if src.get('via') == {'insert'} else 'the Derive features bring it in')})
         links.extend((a, port) for a in src['into'])
         links.extend((port, t) for t in src['targets'])
         for w in sc.warnings[:5]:
@@ -2049,10 +2118,10 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             th.tooltip = 'A picture of every timeline step'
             th.tooltipDescription = ('Each item is photographed straight on (sketches, planes) or in a three-quarter '
                                      'view (3D features), zoomed to the item. Adds about 20 seconds on a large design.')
-            dv = oc.addBoolValueInput('hgDerived', 'Include derived designs', True, '', False)
-            dv.tooltip = 'Also map the designs this one derives from'
-            dv.tooltipDescription = ('Each design brought in with Derive is read as well (and the designs those derive '
-                                     'from, at any depth). It is shown as a block of its own, and its links end in the '
+            dv = oc.addBoolValueInput('hgDerived', 'Include linked designs', True, '', False)
+            dv.tooltip = 'Also map the designs this one derives from or inserts'
+            dv.tooltipDescription = ('Each design brought in with Derive or inserted as a linked component is read as well '
+                                     '(and the designs those link, at any depth). It is shown as a block of its own, and its links end in the '
                                      'Derive feature. Source designs are read from their references only; they are '
                                      'not suppression-tested.')
 
@@ -2144,10 +2213,11 @@ class _InputChangedHandler(adsk.core.InputChangedEventHandler):
                 return
             # Fusion does not let a command end itself from its own events, so ask for the run through the
             # custom event: its handler closes this dialog first, then runs with references only
-            ti = args.inputs.itemById('hgThumbs')
-            dv = args.inputs.itemById('hgDerived')
-            _app.fireCustomEvent(EVENT_ID, json.dumps({'mode': 'off', 'thumbs': bool(ti.value) if ti else True,
-                                                       'derived': bool(dv.value) if dv else False,
+            # the options sit inside the Options group: read them from the whole dialog, like Full analysis does
+            # (args.inputs holds only the inputs next to this button)
+            cmd = _safe(lambda: args.firingEvent.sender)
+            _, thumbs, derived = _options(cmd.commandInputs if cmd else args.inputs)
+            _app.fireCustomEvent(EVENT_ID, json.dumps({'mode': 'off', 'thumbs': thumbs, 'derived': derived,
                                                        'closeDialog': True}))
 
 
@@ -3505,7 +3575,7 @@ function renderGraph(fitAfter,centerId){
     designFrames=[];
     {const byD={};built.forEach(b=>{const d=laneDesign(b.l.id);(byD[d]=byD[d]||[]).push(b);});
       const PADX=40,PADB=40,PIC_W=330,PIC_H=216;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>picOf(d)?PIC_H+44:74;
-      const frameTitle=d=>d===MAIN_DSG?'This design · '+(D.meta.doc||''):'Derived design · '+(groups[d]?groups[d].name:d);
+      const frameTitle=d=>{if(d===MAIN_DSG)return 'This design · '+(D.meta.doc||'');const g=groups[d]||{};const v=g.via||[];return (v.includes('derive')&&!v.includes('insert')?'Derived design · ':v.includes('insert')&&!v.includes('derive')?'Inserted design · ':'Linked design · ')+(g.name||d);};
       const frames=Object.keys(byD).map(d=>{const pk=pack(byD[d]);return {d,pk,w:Math.max(pk.w+2*PADX,frameTitle(d).length*15.5+60+(picOf(d)?PIC_W+30:0)),h:pk.h+padT(d)+PADB,o:Math.min(...byD[d].map(b=>b.l.o))};}).sort((a,b)=>a.o-b.o);
       const fr=pack(frames.map(f=>({w:f.w,h:f.h,f})),2.4);
       fr.placed.forEach(q=>{const f=q.b.f;f.pk.placed.forEach(p=>putLane(p.b,q.x+PADX+p.x,q.y+padT(f.d)+p.y));
