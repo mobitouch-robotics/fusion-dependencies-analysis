@@ -1743,7 +1743,7 @@ TEMPLATE = r'''<!DOCTYPE html>
 <style>
 :root{
   --bg:#f7f7f5;--panel:#ffffff;--panel2:#f1efe8;--text:#1f1f1d;--muted:#6b6a64;--border:#d9d7cf;--accent:#185fa5;
-  --up:#185fa5;--down:#1f8a4c;--sel:#7a3fd1;--hov:#c9950c;--err:#c0392b;--warn:#b7791f;--edge:#b4b2a9;
+  --up:#185fa5;--down:#1f8a4c;--sel:#7a3fd1;--hov:#c9950c;--route:#d9480f;--err:#c0392b;--warn:#b7791f;--edge:#b4b2a9;
   --c-sketch:#0f6e56;--c-sketch-bg:#e1f5ee;--c-construct:#5f5e5a;--c-construct-bg:#f1efe8;
   --c-solid:#185fa5;--c-solid-bg:#e6f1fb;--c-finish:#854f0b;--c-finish-bg:#faeeda;
   --c-offset:#534ab7;--c-offset-bg:#eeedfe;--c-hole:#993c1d;--c-hole-bg:#faece7;
@@ -1755,7 +1755,7 @@ TEMPLATE = r'''<!DOCTYPE html>
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#1b1b1a;--panel:#242422;--panel2:#2d2d2a;--text:#ecebe6;--muted:#a3a19a;--border:#3d3c38;--accent:#85b7eb;
-  --up:#85b7eb;--down:#6fd39a;--sel:#afa9ec;--hov:#f2c14e;--err:#f09595;--warn:#ef9f27;--edge:#5f5e5a;
+  --up:#85b7eb;--down:#6fd39a;--sel:#afa9ec;--hov:#f2c14e;--route:#ff8f5a;--err:#f09595;--warn:#ef9f27;--edge:#5f5e5a;
   --c-sketch:#9fe1cb;--c-sketch-bg:#08352c;--c-construct:#d3d1c7;--c-construct-bg:#34332f;
   --c-solid:#b5d4f4;--c-solid-bg:#0c2f52;--c-finish:#fac775;--c-finish-bg:#3d2a07;
   --c-offset:#cecbf6;--c-offset-bg:#26215c;--c-hole:#f5c4b3;--c-hole-bg:#4a1b0c;
@@ -1783,6 +1783,7 @@ header .hl{max-width:300px}header .hl .meta{font-size:11px;line-height:1.3}
 .pop.open .popbox{display:block}.pop.open>button{border-color:var(--accent)}
 .popbox .ph{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px}
 .popbox label.chk{display:flex;padding:3px 0;font-size:13px;color:var(--text)}
+.popbox label.chk.sub{padding-left:22px}.popbox label.chk.off{opacity:.45;pointer-events:none}
 #cats label.chk{align-items:center;gap:6px;white-space:nowrap}#cats .pill{font-size:12px}#cats .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}
 .fbtns{display:flex;gap:6px;margin:8px 0 4px}.fbtns button{padding:2px 10px;font-size:12px}.fnote{font-size:11px;max-width:240px;margin-top:4px}
 svg .edge.bridge{stroke-dasharray:1.5 4}
@@ -1894,6 +1895,29 @@ svg .ehit.off{pointer-events:none}   /* links greyed out by the selection do not
 svg .edge.hov{stroke-width:3.4!important;stroke-opacity:1!important;opacity:1!important}
 svg .edge.hov{stroke:var(--hov)!important}   /* hovered link: gold, same colour as the rings on its ends */
 svg .nd.hov{opacity:1!important}
+/* hovered box: its direct parents and children stay bright, everything else fades */
+svg.nhov .nd:not(.nhc):not(.nhr){opacity:.22}
+svg.nhov .edge:not(.nhl){opacity:.1}
+svg.nhov .nd.nhc,svg.nhov .nd.nhr{opacity:1!important}
+svg .nhov-ov{pointer-events:none}
+/* routes between the selection and another item */
+svg .edge.route{stroke:var(--route);stroke-width:2.6;stroke-opacity:1}
+svg .rbtn{cursor:pointer}svg .rbtn circle{fill:var(--panel);stroke:var(--route);stroke-width:1.2}
+svg .rbtn path{fill:none;stroke:var(--route);stroke-width:1.6;stroke-linecap:round}svg .rbtn .rdot{fill:var(--route);stroke:none}
+svg .rbtn:hover circle{stroke-width:2}svg .rbtn.on circle{fill:var(--route)}svg .rbtn.on path{stroke:var(--panel)}svg .rbtn.on .rdot{fill:var(--panel)}
+svg .rbtn .rcount{font-size:11px;font-weight:700;fill:var(--route);stroke:none}
+svg.playing .rbtn{display:none}
+/* number of items a joined link leads to inside a collapsed box */
+svg .ecount rect{fill:var(--panel);stroke:var(--edge);stroke-width:1.2}
+svg .ecount text{font-size:10.5px;font-weight:700;fill:var(--muted);text-anchor:middle}
+svg .ecount.up rect{stroke:var(--up)}svg .ecount.up text{fill:var(--up)}
+svg .ecount.down rect{stroke:var(--down)}svg .ecount.down text{fill:var(--down)}
+svg .ecount.dim{opacity:.18}svg .ecount{transition:opacity .2s ease}
+svg.nhov .ecount:not(.nhl){opacity:.1}
+svg.playing .ecount{display:none}
+svg .edge.nhl{stroke-width:2.6;stroke-opacity:1;opacity:1}
+svg .edge.nhl.up{stroke:var(--up)}svg .edge.nhl.down{stroke:var(--down)}
+svg .hovring.up{stroke:var(--up);stroke-width:4}svg .hovring.down{stroke:var(--down);stroke-width:4}
 svg .hovring{fill:none;stroke:var(--hov);stroke-width:5;pointer-events:none;transition:opacity .2s ease}
 svg .edge{transition:stroke .2s ease,stroke-width .2s ease,stroke-opacity .2s ease,opacity .2s ease}
 svg .nd{transition:opacity .2s ease}
@@ -1966,7 +1990,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
       <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
-      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label></div></div>
+      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn" checked> What uses it</label><label class="chk sub" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label></div></div>
     <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
     <button id="infoBtn" title="How to use, warnings">Info</button>
   </div>
@@ -2265,6 +2289,11 @@ function buildAdj(){computeEff();preds={};succs={};nodes.forEach(n=>{preds[n.id]
   EFF.forEach(e=>{preds[e.t].push(e);succs[e.s].push(e);});
   for(const id in preds){preds[id].sort((a,b)=>byId[a.s].o-byId[b.s].o);succs[id].sort((a,b)=>byId[a.t].o-byId[b.t].o);}}
 function closure(id,dir){const seen=new Set(),st=[id];while(st.length){const x=st.pop();for(const e of (dir==='up'?preds[x]:succs[x])){const y=dir==='up'?e.s:e.t;if(!seen.has(y)){seen.add(y);st.push(y);}}}return seen;}
+// what the selection highlights around itself (Display menu): what it depends on / what uses it, each either
+// only the direct neighbours or the whole chain. The whole chain needs the direct level switched on.
+const relShow={up:true,upAll:true,dn:true,dnAll:true};
+function relOf(id,dir){const on=dir==='up'?relShow.up:relShow.dn,all=dir==='up'?relShow.upAll:relShow.dnAll;
+  if(!on)return new Set();if(all)return closure(id,dir);return new Set((dir==='up'?preds[id]:succs[id]).map(e=>dir==='up'?e.s:e.t));}
 
 function pill(n){const s=document.createElement('span');s.className='pill';s.innerHTML=iconHTML(iconName(n),n.cat,12);s.appendChild(document.createTextNode(n.type.replace(/Feature$/,'')));s.style.color='var(--c-'+n.cat+')';s.style.background='var(--c-'+n.cat+'-bg)';return s;}
 function stateCls(n){if(simState){if(isBroken(n))return 'st-err'+(brokenKind(n)==='est'?' st-est':'');if(isSupp(n))return 'st-sup'+(simState.est.has(n.id)?' st-est':'');return n.health===2?'st-err':(n.health===1?'st-warn':'');}return n.supp?'st-sup':(n.health===2?'st-err':(n.health===1?'st-warn':''));}
@@ -2516,6 +2545,25 @@ function edgeHover(p,s,t,on){
   [s,t].forEach(id=>{const g=nodeEls[id];if(!g)return;g.classList.add('hov');st.nodes.push(g);
     const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','hovring');r.setAttribute('x',-6);r.setAttribute('y',-6);r.setAttribute('width',NW+12);r.setAttribute('height',NH+12);r.setAttribute('rx',9);r.style.opacity='0';requestAnimationFrame(()=>requestAnimationFrame(()=>{r.style.opacity='';}));g.appendChild(r);st.rings.push(r);});
   hovState=st;}
+// hovering a box highlights it (gold ring), its direct parents (blue) and children (green) and the links
+// between them; the rest of the graph fades. The links are copied into a layer under the boxes.
+let nhState=null,nhAnchor=null;
+function nodeHoverClear(){const h=nhState;nhState=null;svg.classList.remove('nhov');if(!h)return;
+  h.ov.remove();h.rings.forEach(r=>r.remove());h.nodes.forEach(g=>g.classList.remove('nhc','nhr'));(h.badgeCls||[]).forEach(([b,c])=>b.setAttribute('class',c));}
+function nodeHover(id,on){
+  nodeHoverClear();if(!on||PB||drag||hovPin||!nodeEls[id])return;
+  const NS='http://www.w3.org/2000/svg';const ov=document.createElementNS(NS,'g');ov.setAttribute('class','nhov-ov');
+  const st={ov,rings:[],nodes:[],badgeCls:[]};const kin={};
+  edgeEls.forEach(x=>{if(x.s===x.t)return;let dir=null,o=null;if(x.t===id){dir='up';o=x.s;}else if(x.s===id){dir='down';o=x.t;}if(!dir||!nodeEls[o])return;
+    const c=x.el.cloneNode(true);c.querySelectorAll('title').forEach(t=>t.remove());c.removeAttribute('style');
+    c.setAttribute('class','edge nhl '+dir+(x.el.classList.contains('bridge')?' bridge':''));ov.appendChild(c);
+    if(x.badge){st.badgeCls.push([x.badge,x.badge.getAttribute('class')]);x.badge.setAttribute('class','ecount nhl '+dir);}
+    if(!kin[o])kin[o]=dir;else if(kin[o]!==dir)kin[o]='both';});
+  const ring=(g,cls)=>{const r=document.createElementNS(NS,'rect');r.setAttribute('class','hovring'+(cls?' '+cls:''));r.setAttribute('x',-6);r.setAttribute('y',-6);r.setAttribute('width',NW+12);r.setAttribute('height',NH+12);r.setAttribute('rx',9);g.appendChild(r);st.rings.push(r);};
+  const g0=nodeEls[id];g0.classList.add('nhc');st.nodes.push(g0);ring(g0,'');
+  Object.keys(kin).forEach(o=>{const g=nodeEls[o];g.classList.add('nhr');st.nodes.push(g);ring(g,kin[o]==='up'?'up':kin[o]==='down'?'down':'');});
+  const vpEl=$('vp');if(nhAnchor&&nhAnchor.parentNode===vpEl)vpEl.insertBefore(ov,nhAnchor);else vpEl.appendChild(ov);
+  svg.classList.add('nhov');nhState=st;}
 // hovering a link in the side panel highlights the same link in the graph
 function panelLinkHover(s,t,on){if(view!=='graph'||!byId[s]||!byId[t])return;
   if(!on){edgeHover(null,null,null,false);return;}
@@ -2527,6 +2575,10 @@ function arrowAt(x,y,dx,dy){const px=-dy,py=dx,w=AH*0.7;return ' M'+(x-dx*AH+px*
 function edgeEnd(a,b,o2){const x2=b.x+NW/2+(o2||0),y2=b.y;if(y2>a.y+NH)return [x2,y2,0,1];const by=b.y+NH/2;
   if(b.x>=a.x+NW)return [b.x,by,1,0];if(b.x+NW<=a.x)return [b.x+NW,by,-1,0];return [b.x+NW,by,-1,0];}
 function edgeD(a,b,o1,o2,bow){const e=edgeEnd(a,b,o2);return edgeCurve(a,b,o1,o2,bow)+arrowAt(e[0],e[1],e[2],e[3]);}
+// the middle of a link (where its item-count badge sits)
+function edgeMid(a,b,o1,o2,bow){const sg=edgeSegs(a,b,o1,o2,bow);if(sg.length>1)return sg[0][3];const q=sg[0];
+  return [0,1].map(i=>0.125*q[0][i]+0.375*q[1][i]+0.375*q[2][i]+0.125*q[3][i]);}
+function placeBadge(x,a,b){if(!x.badge)return;const m=edgeMid(a,b,x.o1,x.o2,x.bow);x.badge.setAttribute('transform','translate('+m[0]+','+m[1]+')');}
 // A link as a list of cubic Bezier segments [p0,c1,c2,p3]; used both to draw it and to sample it
 // for the crossing checks (sampling in plain maths is much faster than asking the browser).
 function edgeSegs(a,b,o1,o2,bow){const x1=a.x+NW/2+(o1||0),y1=a.y+NH,x2=b.x+NW/2+(o2||0),y2=b.y;
@@ -2590,12 +2642,25 @@ function animatedRerender(change,opts){opts=opts||{};
     Object.keys(pos).forEach(id=>{const s0=start[id],t1=pos[id];const c={x:s0.x+(t1.x-s0.x)*e,y:s0.y+(t1.y-s0.y)*e};cur[id]=c;const el=nodeEls[id];
       if(el){el.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))el.style.opacity=a<1?String(e):'';}
       const bw=nodeBtnEls[id];if(bw){bw.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))bw.style.opacity=a<1?String(e):'';}});
-    edgeEls.forEach(x=>{if(cur[x.s]&&cur[x.t]){{const dd=edgeD(cur[x.s],cur[x.t],x.o1,x.o2,x.bow);x.el.setAttribute('d',dd);if(x.hit)x.hit.setAttribute('d',dd);}if(fresh.has(x.s)||fresh.has(x.t)||freshE.has(x))x.el.style.opacity=a<1?String(e):'';}});
+    edgeEls.forEach(x=>{if(cur[x.s]&&cur[x.t]){{const dd=edgeD(cur[x.s],cur[x.t],x.o1,x.o2,x.bow);x.el.setAttribute('d',dd);if(x.hit)x.hit.setAttribute('d',dd);placeBadge(x,cur[x.s],cur[x.t]);}if(fresh.has(x.s)||fresh.has(x.t)||freshE.has(x)){x.el.style.opacity=a<1?String(e):'';if(x.badge)x.badge.style.opacity=a<1?String(e):'';}}});
     gEdges.forEach(x=>{x.el.style.opacity=String(1-e);});
     if(newLanes)newLanes.style.opacity=a<1?String(e):'';if(oldLanes&&oldLanes!==newLanes){oldLanes.style.opacity=String(1-e);if(a>=1)oldLanes.remove();}
     ghosts.forEach(g=>{const c={x:g.from.x+(g.to.x-g.from.x)*e,y:g.from.y+(g.to.y-g.from.y)*e};g.el.setAttribute('transform','translate('+c.x+','+c.y+')');g.el.style.opacity=String(1-e);});
     if(a<1)graphAnim=requestAnimationFrame(step);else{graphAnim=null;gl.remove();}};
   graphAnim=requestAnimationFrame(step);}
+// Routes: with an item selected, every other item of its tree (what it depends on, or what uses it, at any
+// distance) gets a small button; clicking it highlights every route between the two. route = {sel, rep, items}.
+let route=null;
+function routeCompute(){if(!route||!selected||route.sel!==selected){route=null;return null;}
+  const S=selected,aS=closure(S,'up'),dS=closure(S,'down'),ri=new Set([S]);let nPaths=0;
+  const count=(from,to,memo)=>{if(from===to)return 1;if(memo.has(from))return memo.get(from);let n=0;
+    for(const e of succs[from]){if(ri.has(e.t))n+=count(e.t,to,memo);if(n>1e6)break;}memo.set(from,n);return n;};
+  const pairs=[];
+  route.items.forEach(t=>{if(aS.has(t)){const dT=closure(t,'down');aS.forEach(x=>{if(dT.has(x))ri.add(x);});ri.add(t);pairs.push([t,S]);}
+    else if(dS.has(t)){const aT=closure(t,'up');dS.forEach(x=>{if(aT.has(x))ri.add(x);});ri.add(t);pairs.push([S,t]);}});
+  if(ri.size<2){route=null;return null;}
+  pairs.forEach(([a,b])=>{nPaths+=count(a,b,new Map());});
+  return {items:ri,up:new Set([...ri].filter(i=>aS.has(i))),down:new Set([...ri].filter(i=>dS.has(i))),paths:nPaths};}
 let searchOpen=new Set();let layoutMode='lanes',lanes=[];const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
 const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
@@ -2612,14 +2677,18 @@ function rep(n){const gp=n.g||[];for(const g of gp){if(!expanded.has(g)&&!search
 let NW=210,NH=26;const XG=18,YG=64;// top-down: XG = gap between boxes in a row, YG = gap between rows
 function renderGraph(fitAfter,centerId){
   if(PB)stopPlay();   // a re-render replaces the boxes the playback is animating
+  nodeHoverClear();const RT=routeCompute();
   const gth=hasThumbs&&showThumbs;NW=gth?240:210;NH=gth?50:26;
   searchOpen=new Set();let hitReps=null;
   if(search){nodes.filter(n=>visibleNode(n)&&matches(n)).forEach(n=>{(n.g||[]).forEach(g=>searchOpen.add(g));const ps=pseudoOf(n);if(ps)searchOpen.add(ps);});}
-  const vis=nodes.filter(visibleNode);
+  // the Groups and Components layouts give user parameters a block of their own, so the common
+  // "User Parameters" parent box is left out there
+  const vis=nodes.filter(n=>visibleNode(n)&&!(isLanes()&&n.id==='up:all'));
   let keep=null;
-  if(focus&&selected){keep=new Set([selected,...closure(selected,'up'),...closure(selected,'down')]);}
+  if(focus&&selected&&RT){keep=new Set(RT.items);}
+  else if(focus&&selected){keep=new Set([selected,...relOf(selected,'up'),...relOf(selected,'down')]);}
   else if(focus&&selGroup&&groups[selGroup]){const mem=groupMembers(selGroup).map(n=>n.id);const g=groups[selGroup];
-    keep=new Set([...mem,...(g.dsupp||mem.flatMap(i=>[...closure(i,'down')])),...mem.flatMap(i=>[...closure(i,'up')])]);}
+    keep=new Set([...mem,...(relShow.dn&&relShow.dnAll&&g.dsupp?g.dsupp:mem.flatMap(i=>[...relOf(i,'down')])),...mem.flatMap(i=>[...relOf(i,'up')])]);}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
   let reps=Object.values(R).sort((a,b)=>a.o-b.o);
@@ -2707,15 +2776,20 @@ function renderGraph(fitAfter,centerId){
     headers.forEach(h=>h.targets.forEach(t=>{if(pos[t])redges.push({s:h.id,t:t,n:0,src:[],contain:true});}));}
   // relation sets for highlight
   let up=null,down=null,selRep=null,selSet=null;selRelated=[];
-  if(selected&&byId[selected]){const s=byId[selected];selRep=rep(s);selSet=new Set([selRep]);up=new Set([...closure(selected,'up')].map(i=>rep(byId[i])));down=new Set([...closure(selected,'down')].map(i=>rep(byId[i])));}
+  if(selected&&byId[selected]){const s=byId[selected];selRep=rep(s);selSet=new Set([selRep]);up=new Set([...relOf(selected,'up')].map(i=>rep(byId[i])));down=new Set([...relOf(selected,'down')].map(i=>rep(byId[i])));}
   else if(selGroup&&groups[selGroup]){const mem=groupMembers(selGroup);const mset=new Set(mem.map(n=>n.id));selSet=new Set(mem.map(n=>rep(n)));if(R['h'+selGroup])selSet.add('h'+selGroup);selRep='__group__';
     // a group depends on everything any of its items depends on (links, incl. user parameters and items outside
     // groups), plus, with the group test, the groups whose suppression takes items of this group with them
-    const g=groups[selGroup];const dnLinks=[...new Set(mem.flatMap(n=>[...closure(n.id,'down')]))];
-    const dn=[...new Set([...(g.dsupp?[...g.dsupp,...(g.dbreak||[])]:[]),...dnLinks])].filter(i=>!mset.has(i));
+    const g=groups[selGroup];const dnLinks=[...new Set(mem.flatMap(n=>[...relOf(n.id,'down')]))];
+    // the group test results are whole chains: only used when the whole chain forward is shown
+    const dn=[...new Set([...(g.dsupp&&relShow.dn&&relShow.dnAll?[...g.dsupp,...(g.dbreak||[])]:[]),...dnLinks])].filter(i=>!mset.has(i));
     down=new Set(dn.filter(i=>byId[i]&&visibleNode(byId[i])).map(i=>rep(byId[i])));
-    const upIds=groupUpIds(selGroup);
+    const upIds=!relShow.up?[]:relShow.upAll?groupUpIds(selGroup):[...new Set(mem.flatMap(n=>[...relOf(n.id,'up')]))].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));
     up=new Set(upIds.filter(i=>byId[i]).map(i=>rep(byId[i])));selSet.forEach(r=>{up.delete(r);down.delete(r);});}
+  let routeReps=null,treeIds=null;
+  if(selected&&byId[selected])treeIds=new Set([...closure(selected,'up'),...closure(selected,'down')]);
+  if(RT&&selSet){routeReps=new Set([...RT.items].filter(i=>byId[i]).map(i=>rep(byId[i])));
+    up=new Set([...RT.up].map(i=>rep(byId[i])));down=new Set([...RT.down].map(i=>rep(byId[i])));selSet.forEach(r=>{up.delete(r);down.delete(r);});}
   if(selSet)selRelated=[...new Set([...selSet,...(up||[]),...(down||[])])].filter(r=>r!=='__group__');
   // selection: pull the related boxes together in each row, centred under the selection;
   // unrelated boxes in those rows move aside (rows themselves stay where they are)
@@ -2746,9 +2820,11 @@ function renderGraph(fitAfter,centerId){
   const NS='http://www.w3.org/2000/svg';hovState=null;hovPin=null;vp.innerHTML='';
   // +/- buttons live in a layer above everything, so links never cover them; each box's buttons follow the box
   const btnLayer=document.createElementNS(NS,'g');btnLayer.setAttribute('class','btnlayer');nodeBtnEls={};
-  const addBtn=(id,bt)=>{let w=nodeBtnEls[id];if(!w){w=document.createElementNS(NS,'g');w.setAttribute('transform','translate('+pos[id].x+','+pos[id].y+')');nodeBtnEls[id]=w;btnLayer.appendChild(w);}w.appendChild(bt);};
+  const addBtn=(id,bt)=>{let w=nodeBtnEls[id];if(!w){w=document.createElementNS(NS,'g');w.setAttribute('transform','translate('+pos[id].x+','+pos[id].y+')');nodeBtnEls[id]=w;btnLayer.appendChild(w);
+    // the box's +/- button counts as part of the box for the hover highlight
+    w.addEventListener('mouseenter',()=>nodeHover(id,true));w.addEventListener('mouseleave',()=>{if(nhState)nodeHover(id,false);});}w.appendChild(bt);};
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
-    const CM=layoutMode==='comps';const noLane=id=>id==='_none'||id==='_root'||(id==='_params'&&!byId['up:all']);
+    const CM=layoutMode==='comps';const noLane=id=>id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);
     lanes.forEach(l=>{const col=l.id==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.07;stroke:'+col+';stroke-opacity:.45;stroke-width:1.5');
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const full=l.id==='_params'?'User parameters':l.id==='_none'?'Not in a group':l.id==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
@@ -2761,8 +2837,8 @@ function renderGraph(fitAfter,centerId){
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
           bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
           l.btn=bt;}}
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')select('up:all');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
-  const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
+  const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');const gBadge=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
   // remembered and reused when a re-render (a click, a hover list, the preview) leaves every box in place.
@@ -2844,8 +2920,19 @@ function renderGraph(fitAfter,centerId){
       if(selSet.has(e.s)&&selSet.has(e.t))cls+=' insel';   // a link inside the selection (between items of a selected group)
       else if(selSet.has(e.t)&&up.has(e.s))cls+=' up';else if(selSet.has(e.s)&&down.has(e.t))cls+=' down';else if(up.has(e.s)&&up.has(e.t))cls+=' up ind';else if(down.has(e.s)&&down.has(e.t))cls+=' down ind';else cls+=' dim';}
     if(!selSet&&hitReps&&!hitReps.has(e.s)&&!hitReps.has(e.t))cls+=' dim';
-    p.setAttribute('class',cls);const lift=/ (up|down|insel)\b/.test(cls);
+    if(routeReps){if(!e.contain&&routeReps.has(e.s)&&routeReps.has(e.t)&&e.src.some(x=>RT.items.has(x.s)&&RT.items.has(x.t)))cls=cls.replace(/ (dim|up|down|ind|insel)\b/g,'')+' route';
+      else if(!/\bdim\b/.test(cls))cls+=' dim';}
+    p.setAttribute('class',cls);const lift=/ (up|down|insel|route)\b/.test(cls);
     const t=document.createElementNS(NS,'title');t.textContent=e.contain?'Part of timeline group '+(groups[e.s.slice(1)]?groups[e.s.slice(1)].name:''):[...new Set(e.src.flatMap(x=>x.k))].map(x=>KIND[x]||x).join(', ')+(e.n>1?' ('+e.n+' links)':'');if(!e.contain&&e.via)t.textContent+=' (through collapsed items)';else if(!e.contain&&/ bridge/.test(cls))t.textContent+=' (through hidden items)';p.appendChild(t);const layer=lift?geHi:ge;layer.appendChild(p);
+    // a link joined into a collapsed box (a folded group, or a box that hides what depends on it): show how many
+    // of the items folded into that box the link actually leads to
+    {const br=R[e.t];const tIds=e.contain?[]:[...new Set(e.src.map(x=>x.t).filter(i=>byId[i]))];
+      const intoFold=br&&!e.contain&&tIds.length&&((br.isGroup&&!br.header)||(e.via&&collapsedNodes.has(e.t)&&tIds.some(i=>i!==e.t)));
+      if(intoFold){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':''));
+        const txt=String(tIds.length),w=Math.max(18,8+txt.length*7);const rc=document.createElementNS(NS,'rect');rc.setAttribute('x',-w/2);rc.setAttribute('y',-8);rc.setAttribute('width',w);rc.setAttribute('height',16);rc.setAttribute('rx',8);
+        const tx=document.createElementNS(NS,'text');tx.setAttribute('y',3.8);tx.textContent=txt;
+        const tt=document.createElementNS(NS,'title');tt.textContent='Leads to '+tIds.length+' item'+(tIds.length===1?'':'s')+' inside the collapsed box:\n'+tIds.slice(0,20).map(i=>'• '+byId[i].name).join('\n')+(tIds.length>20?'\n…':'');
+        bg.append(rc,tx,tt);gBadge.appendChild(bg);const x=edgeEls[edgeEls.length-1];x.badge=bg;placeBadge(x,a,b);}}
     // wide invisible twin that catches the mouse; hovering shows the link bold and rings both ends
     const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
     edgeEls[edgeEls.length-1].hit=h;const es=e.s,et=e.t;
@@ -2855,7 +2942,7 @@ function renderGraph(fitAfter,centerId){
     h.addEventListener('mouseleave',()=>edgeHover(p,es,et,false));});
   // layers, bottom to top: other links, dimmed boxes, links of the selection, boxes of the selection.
   // Links of the selected item run above boxes that are not part of its history.
-  const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gn);
+  const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gBadge,gn);nhAnchor=gnDim;
   reps.forEach(r=>{const p=pos[r.id];const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('width',NW);rect.setAttribute('height',NH);rect.setAttribute('rx',5);
     let label,cat;
@@ -2927,8 +3014,24 @@ function renderGraph(fitAfter,centerId){
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
       bt.addEventListener('click',ev=>{ev.stopPropagation();const rid=r.id;animatedRerender(()=>{if(col)collapsedNodes.delete(rid);else collapsedNodes.add(rid);},{keepOld:rid,keepNew:rid});});addBtn(r.id,bt);}
     if(selSet&&!selSet.has(r.id)&&!up.has(r.id)&&!down.has(r.id)&&!(r.header&&hdrRelated(r)))g.classList.add('dim');
+    if(routeReps){if(routeReps.has(r.id)&&!r.header){g.classList.remove('dim');if(!selSet.has(r.id)){rect.setAttribute('stroke','var(--route)');rect.setAttribute('stroke-width',route.rep===r.id?'3.5':'2.2');}}else g.classList.add('dim');}
+    // route button: on every other box of the selected item's tree
+    if(treeIds&&!laneFold&&!r.header&&!selSet.has(r.id)){const tItems=r.members.filter(m=>treeIds.has(m.id)).map(m=>m.id);
+      if(tItems.length){const on=!!(RT&&route.rep===r.id);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','rbtn'+(on?' on':''));bt.setAttribute('transform','translate('+(NW-14)+','+(NH+1)+')');
+        const c=document.createElementNS(NS,'circle');c.setAttribute('r',8);
+        const pa=document.createElementNS(NS,'path');pa.setAttribute('d','M-4,3.5 C-4,-1 4,1 4,-3.5');
+        const d1=document.createElementNS(NS,'circle');d1.setAttribute('class','rdot');d1.setAttribute('cx',-4);d1.setAttribute('cy',3.5);d1.setAttribute('r',1.8);
+        const d2=document.createElementNS(NS,'circle');d2.setAttribute('class','rdot');d2.setAttribute('cx',4);d2.setAttribute('cy',-3.5);d2.setAttribute('r',1.8);
+        const tt=document.createElementNS(NS,'title');tt.textContent=on?('Showing '+(RT.paths>=1e6?'over a million':RT.paths)+' route'+(RT.paths===1?'':'s')+' ('+RT.items.size+' items) between the selection and this. Click to hide them.'):'Show every route between the selection and this';
+        bt.append(c,pa,d1,d2,tt);
+        if(on){const n=document.createElementNS(NS,'text');n.setAttribute('class','rcount');n.setAttribute('x',-12);n.setAttribute('y',4);n.setAttribute('text-anchor','end');n.textContent=(RT.paths>=1e6?'1M+':RT.paths)+' route'+(RT.paths===1?'':'s');bt.appendChild(n);}
+        ['mousedown','dblclick'].forEach(ev=>bt.addEventListener(ev,e=>e.stopPropagation()));
+        const rid=r.id,sel=selected;bt.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;
+          animatedRerender(()=>{route=on?null:{sel,rep:rid,items:tItems};},focus?{fit:'fit'}:{dur:450});});
+        addBtn(r.id,bt);}}
     if(hitReps){if(hitReps.has(r.id)){rect.setAttribute('stroke','var(--sel)');rect.setAttribute('stroke-width','3');if(r.id===graphHits[hitIdx]){rect.setAttribute('stroke','var(--down)');rect.setAttribute('stroke-width','4');}}else if(!selSet)g.classList.add('dim');}
 
+    {const rid=r.id;g.addEventListener('mouseenter',()=>nodeHover(rid,true));g.addEventListener('mouseleave',()=>{if(nhState&&nodeEls[rid]===g)nodeHover(rid,false);});}
     g.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(simOn&&(ev.shiftKey||ev.altKey)){if(r.isGroup)simToggleGroup(r.id.slice(1));else if(canItems)simToggleItem(r.members[0].id);else{const gg=(r.members[0].g||[]);if(gg.length)simToggleGroup(gg[gg.length-1]);}return;}if(r.isGroup){selectGroup(r.id.slice(1));}else select(r.members[0].id);});
     (selSet&&g.classList.contains('dim')?gnDim:gn).appendChild(g);if(nodeBtnEls[r.id]&&g.classList.contains('dim'))nodeBtnEls[r.id].classList.add('dim');});
   vp.appendChild(btnLayer);
@@ -3030,7 +3133,7 @@ function pbBegin(){let order;const grp=!selected&&selGroup&&groups[selGroup]?sel
   const steps=order.map((r,i)=>({id:r,inc:edges.filter(x=>x.t===r&&idx[x.s]<i)}));
   const ov=document.createElementNS('http://www.w3.org/2000/svg','g');ov.setAttribute('class','pbov');vp.appendChild(ov);
   const lits=document.createElementNS('http://www.w3.org/2000/svg','g');ov.appendChild(lits);
-  edgeHover(null,null,null,false);hovPin=null;if(hovState)edgeHover(null,null,null,false);
+  edgeHover(null,null,null,false);hovPin=null;if(hovState)edgeHover(null,null,null,false);nodeHoverClear();
   PB={whole,grp,order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1800,speed:PB_speed,paused:false,
     alpha:{},ealpha:new Map(),ov,lits,fading:[],dots:[],pulses:[],userCam:false,last:performance.now(),raf:0,shown:new Set()};
   Object.keys(nodeEls).forEach(id=>PB.alpha[id]=1);edgeEls.forEach(x=>PB.ealpha.set(x,1));
@@ -3198,6 +3301,8 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     row(line('order'),'Dashed','"Same body, later": only timeline order on the same body, not a real reference. Off by default (Display menu).'),
     row(sv('<path d="M4,15 L60,15" fill="none" stroke="'+G+'" stroke-width="2.4" stroke-opacity=".85" stroke-linecap="round"/>'),'Thick coloured line','Joins a group header to the group\'s items (Depth layout).'),
     row(line('bridge'),'Dotted','Not a direct link: it goes through items that are hidden by the Filter menu or folded into a collapsed box ("N hidden"). The chain continues through them.'),
+    row(sv('<path class="edge" d="M4,15 L64,15"/><rect x="24" y="7" width="22" height="16" rx="8" style="fill:var(--panel);stroke:var(--edge);stroke-width:1.2"/><text x="35" y="19" style="font-size:10.5px;font-weight:700;fill:var(--muted);text-anchor:middle">3</text>'),'Number on a line','The line goes into a collapsed box (a folded group, or a box hiding what depends on it): the number is how many of the items folded into that box it leads to. Hover it to see their names.'),
+    row(sv('<path d="M4,15 L64,15" fill="none" style="stroke:var(--route);stroke-width:2.6"/><g transform="translate(34,15)"><circle r="8" style="fill:var(--panel);stroke:var(--route);stroke-width:1.2"/><path d="M-4,3.5 C-4,-1 4,1 4,-3.5" style="fill:none;stroke:var(--route);stroke-width:1.6"/></g>'),'Orange / route button','With an item selected, every other box of its tree (what it depends on or what uses it, at any distance) gets a small route button at its lower right. Click it to show, in orange, every route between the selection and that box, with the number of routes; everything else fades. Click it again (or press Esc) to hide them.'),
     row(sv('<path class="edge" d="M4,24 C22,24 20,6 38,6 S60,6 64,6"/>'),'Curves and bends','Only routing: long links bend sideways so they do not lie on top of each other. The shape means nothing.'),
   ],'Each line may stand for several references between the same two items; hover it to see which kinds.');
   h+=sec('Link kinds',Object.keys(KIND).filter(k=>KIND_DESC[k]).map(k=>row('<span class="pill lgk">'+KIND[k]+'</span>',KIND[k],KIND_DESC[k])),
@@ -3234,11 +3339,15 @@ if(!kindsPresent.includes('order')){const l=$('showOrder').parentNode;l.style.di
 if(hasThumbs)$('thumbCtrl').style.display='';
 $('infoBtn').onclick=()=>{const open=!document.body.classList.contains('infoopen');if(open){renderInfo();}setInfo(open);};
 $('infoClose').onclick=()=>setInfo(false);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.classList.contains('infoopen'))setInfo(false);else if(selected||selGroup)clearSel();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.classList.contains('infoopen'))setInfo(false);else if(route&&view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{route=null;},{dur:450});else if(selected||selGroup)clearSel();}});
 $('gpToggle').onclick=()=>{const m=$('gpanel').classList.toggle('min');$('gpToggle').textContent=m?'+':'–';};
 $('showThumbs').onchange=e=>{const v=e.target.checked;const ch=()=>{showThumbs=v;document.body.classList.toggle('nothumbs',!showThumbs);peekHide();renderDetails();};
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(ch,{fit:'fit',dur:480});else{ch();if(view==='graph')renderGraph(true);}};
 $('pullTog').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{pullTogether=v;},{dur:450});else pullTogether=v;};
+[['relUp','up'],['relUpAll','upAll'],['relDn','dn'],['relDnAll','dnAll']].forEach(([el,k])=>{$(el).onchange=e=>{const v=e.target.checked;
+  const set=()=>{relShow[k]=v;$('relUpAllL').classList.toggle('off',!relShow.up);$('relDnAllL').classList.toggle('off',!relShow.dn);
+    $('relUpAll').disabled=!relShow.up;$('relDnAll').disabled=!relShow.dn;};
+  if(view==='graph'&&Object.keys(pos).length&&(selected||selGroup))animatedRerender(set,focus?{fit:'fit'}:{dur:450});else{set();if(view==='graph')renderGraph(false);}};});
 $('focus').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{focus=v;},{fit:'fit'});else{focus=v;renderGraph(true,selected);}};
 $('expAll').onclick=()=>{setLevel('items');};
 $('colAll').onclick=()=>{collapseEverything=true;setLevel('groups');};

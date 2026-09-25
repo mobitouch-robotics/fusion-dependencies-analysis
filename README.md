@@ -13,8 +13,8 @@ timeline groups, components, parameters and optional suppression tests.
 - **Components** as boxes of their own: each hangs under the item that brought it in (insert, New
   Component, a feature set to new component, or a Derive feature) and is the parent of what is built in
   it; joints and motion links hang under the components they connect.
-- **Parameters**: user parameters under a common *User Parameters* box (or under the parameter or
-  sketch that drives them), and derived parameters under their Derive feature.
+- **Parameters**: user parameters under a common *User Parameters* box in the Depth layout (or under the
+  parameter or sketch that drives them), and derived parameters under their Derive feature.
 - **Thumbnails** of the model after each timeline step, and one picture per component.
 - **Links** for every kind of reference (sketch, profile, plane, faces/edges, body, feature, parameter,
   component, joint, suppression test). *Same body, later* (timeline order only) can be switched on in
@@ -22,21 +22,22 @@ timeline groups, components, parameters and optional suppression tests.
 
 ### Layouts and navigation
 - **Depth**, **Groups** (one block per timeline group) and **Components** (one block per component)
-  layouts. User parameters have a block of their own.
+  layouts. User parameters have a block of their own (no extra *User Parameters* box there).
 - **Folding**: timeline groups, components, *Not in a group* and *User parameters* fold into one box;
-  any box can fold what depends on it. *Collapse all* / *Expand all*.
+  any box can fold what depends on it. *Collapse all* / *Expand all*. A line going into a folded box shows
+  how many of the items folded into it the line leads to.
 - **Filter menu**: show or hide any kind of item. Hidden items are skipped, not cut out: their links are
   joined through to the items they connect (dotted lines).
 - **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
+- **Hover** a box to highlight it with its direct parents (blue) and children (green); the rest fades.
+- **Routes**: with an item selected, every other box of its tree gets a small route button; click it to
+  highlight every route between the two (orange), with the number of routes. `Esc` hides them.
 - **Back / forward** through selections, restoring the zoom and position you had.
 - **Legend** explaining every colour, icon, outline, marker and line.
 - **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
-  and "Same body, later" links.
-- **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
-  and "Same body, later" links.
-- **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
-  and "Same body, later" links.
+  what the selection highlights around itself (what it depends on / what uses it, each either direct only
+  or the whole chain), and "Same body, later" links.
 
 ### History playback
 Select an item (or a group, or nothing for the whole design) and press **Play** (or `P`) to animate how
