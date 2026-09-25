@@ -3200,7 +3200,8 @@ function setMulti(list){clickMod=false;list=[...new Set(list)].filter(i=>byId[i]
   if(!list.length){clearSel();return;}if(list.length===1){select(list[0]);return;}
   multi=list;groups._sel={id:'_sel',name:list.length+' items selected',parent:null,multi:true};selectGroup('_sel');}
 function toggleMulti(ids){const cur=curSelItems();const all=ids.length&&ids.every(i=>cur.includes(i));setMulti(all?cur.filter(i=>!ids.includes(i)):[...cur,...ids]);}
-function select(id){if(clickMod&&!hMute&&byId[id]){toggleMulti([id]);return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[rep(byId[id])]));}}
+function select(id){if(clickMod&&!hMute&&byId[id]){toggleMulti([id]);return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;if(byId[id])(byId[id].g||[]).forEach(g=>{if(groups[g]&&groups[g].design)expanded.add(g);});   // an item inside a folded linked design: open that design
+  renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[rep(byId[id])]));}}
 function selectGroup(gid){if(clickMod&&!hMute&&gid!=='_sel'&&groups[gid]){toggleMulti(groupMembers(gid).filter(visibleNode).map(n=>n.id));return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&(r.dataset.gid===gid||(gid==='_sel'&&multi.includes(r.dataset.id)))));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
 function clearSel(){if(!hMute)route=null;saveView();setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
 function groupUpIds(gid){const mem=groupMembers(gid);const mset=new Set(mem.map(n=>n.id));
@@ -3644,6 +3645,10 @@ function renderGraph(fitAfter,centerId){
     // dependencies between that lane's own boxes, so each lane starts at the top
     const laneOf=r=>{if(r.isGroup){const gid=r.id.slice(1);if(groups[gid]&&groups[gid].design)return gid+'|_folded';}return laneKey(r.members[0]);};const LN={};   // a folded derived design keeps its frame
     const ports=[];reps.forEach(r=>{const k=laneOf(r);if(k&&k.endsWith('|_port')){ports.push(r);return;}(LN[k]=LN[k]||{id:k,o:1e9,items:[]});LN[k].o=Math.min(LN[k].o,r.o);LN[k].items.push(r);});
+    // a connector sits on its design's frame; when nothing else of that design is on show (e.g. only the selected
+    // branch), it becomes a block of its own so that design still gets a frame
+    for(let i=ports.length-1;i>=0;i--){const r=ports[i];const d=laneKey(r.members[0]).split('|')[0];
+      if(!Object.keys(LN).some(k=>laneDesign(k)===d)){const k=d+'|_none';LN[k]={id:k,o:r.o,items:[r]};ports.splice(i,1);}}
     const order=Object.values(LN).sort((a,b)=>a.o-b.o);const LG=46,TOP=44,SUBG=YG*0.45;
     // 1) each lane on its own: rows by dependency depth, long rows wrap into a small grid
     const built=order.map(l=>{const inL=new Set(l.items.map(r=>r.id));const ll={};l.items.sort((a,b)=>a.o-b.o).forEach(r=>{let d=0;pr[r.id].forEach(s=>{if(inL.has(s)&&ll[s]!=null&&R[s].o<r.o)d=Math.max(d,ll[s]+1);});ll[r.id]=d;});
@@ -3891,7 +3896,7 @@ function renderGraph(fitAfter,centerId){
   // layers, bottom to top: other links, dimmed boxes, links of the selection, boxes of the selection.
   // Links of the selected item run above boxes that are not part of its history.
   const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gBadge,gn);nhAnchor=gBadge;   // hover links: above every other link (and faded boxes), below the boxes
-  reps.forEach(r=>{const p=pos[r.id];const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
+  reps.forEach(r=>{const p=pos[r.id];if(!p)return;const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('width',NW);rect.setAttribute('height',NH);rect.setAttribute('rx',5);
     let label,cat;
     // Groups layout, whole block folded: the block itself stands for the group; inside it only a short note
@@ -4000,6 +4005,8 @@ function focusOn(repIds,dur0,alignTop){const ps=repIds.map(r=>pos[r]).filter(Boo
   const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;ps.forEach(p=>{x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});
+  // the design frames around these boxes (titles, pictures) are part of what is shown
+  if(ps.length>1)designFrames.forEach(f=>{if(ps.some(p=>p.x>=f.x&&p.x<=f.x+f.w&&p.y>=f.y&&p.y<=f.y+f.h)){x0=Math.min(x0,f.x);y0=Math.min(y0,f.y);x1=Math.max(x1,f.x+f.w);y1=Math.max(y1,f.y+f.h);}});
   let k=Math.min(Math.max(T.k,1.2),1.6,(W-80)/(x1-x0||1),(H-140)/(y1-y0||1));k=Math.max(k,0.05);
   const cx=(x0+x1)/2,cy=(y0+y1)/2;const tx=LP+W/2-cx*k,ty=alignTop?70-y0*k:30+H/2-cy*k;
   const s0={x:T.x,y:T.y,k:T.k},t0=performance.now(),dur=dur0||280;if(anim)cancelAnimationFrame(anim);
