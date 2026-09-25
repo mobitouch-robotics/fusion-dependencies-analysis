@@ -441,6 +441,15 @@ class Collector:
             op = _safe(lambda: e.operation)
             if op is not None and t in ('ExtrudeFeature', 'RevolveFeature', 'SweepFeature', 'LoftFeature', 'CombineFeature'):
                 info.append(OP_NAMES.get(op, str(op)))
+            local = None
+            if t == 'Occurrence':
+                # a component made in this design (New Component) or one linked from another file (Insert)
+                local = not _safe(lambda: e.isReferencedComponent, False)
+                if local:
+                    info.append('new component')
+                else:
+                    fname = _safe(lambda: e.component.parentDesign.parentDocument.name)
+                    info.append('linked from ' + fname if fname else 'linked component')
             nid = 'n%d' % i
             cat = CAT_BY_TYPE.get(t, 'other')
             if t in SURFACE_WHEN_NOT_SOLID and _safe(lambda: e.isSolid) is False:
@@ -452,6 +461,8 @@ class Collector:
                     'health': _safe(lambda: it.healthState, 0),
                     'msg': re.sub(r'<[^>]+>', ' ', _safe(lambda: it.errorOrWarningMessage, '') or '').strip()[:400],
                     'info': ', '.join(info)}
+            if local is not None:
+                node['local'] = local
             self.nodes.append(node)
             self.tl2node[i] = nid
             order += 1
@@ -2395,7 +2406,7 @@ TEMPLATE = r'''<!DOCTYPE html>
   --c-body:#993556;--c-body-bg:#fbeaf0;--c-param:#3b6d11;--c-param-bg:#eaf3de;
   --c-other:#444441;--c-other-bg:#ecebe6;--c-group:#444441;--c-group-bg:#e4e2da;
   --supp:#8a8a86;--supp-bg:#dcdcd8;
-  --c-joint:#c2410c;--c-joint-bg:#fdebe0;--c-insert:#be185d;--c-insert-bg:#fce6f0;--c-surface:#0e7490;--c-surface-bg:#dff3f7;
+  --c-joint:#c2410c;--c-joint-bg:#fdebe0;--c-insert:#be185d;--c-insert-bg:#fce6f0;--c-newcomp:#5b6b0c;--c-newcomp-bg:#eef3d2;--c-surface:#0e7490;--c-surface-bg:#dff3f7;
   --c-sheet:#475569;--c-sheet-bg:#e6eaef;--c-component:#9a6700;--c-component-bg:#fdf3d7;--c-form:#a21caf;--c-form-bg:#f8e5fa;--c-mesh:#65730f;--c-mesh-bg:#eff3d8;
 }
 @media (prefers-color-scheme: dark){:root{
@@ -2407,7 +2418,7 @@ TEMPLATE = r'''<!DOCTYPE html>
   --c-body:#f4c0d1;--c-body-bg:#4b1528;--c-param:#c0dd97;--c-param-bg:#173404;
   --c-other:#d3d1c7;--c-other-bg:#2c2c2a;--c-group:#ecebe6;--c-group-bg:#3a3935;
   --supp:#7c7b77;--supp-bg:#3a3a38;
-  --c-joint:#fdba8c;--c-joint-bg:#4a1c06;--c-insert:#f9a8d4;--c-insert-bg:#4a0a2a;--c-surface:#86d8ea;--c-surface-bg:#07313b;
+  --c-joint:#fdba8c;--c-joint-bg:#4a1c06;--c-insert:#f9a8d4;--c-insert-bg:#4a0a2a;--c-newcomp:#d4e46a;--c-newcomp-bg:#2b320a;--c-surface:#86d8ea;--c-surface-bg:#07313b;
   --c-sheet:#cbd5e1;--c-sheet-bg:#27303d;--c-component:#f5c94c;--c-component-bg:#382800;--c-form:#f0abfc;--c-form-bg:#3b0a42;--c-mesh:#d6e48c;--c-mesh-bg:#283005;
 }}
 *{box-sizing:border-box}
@@ -2689,7 +2700,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
 const D = /*__DATA__*/null;
 (function(){
 if(!D){document.body.innerHTML='<p style="padding:20px">No data embedded.</p>';return;}
-const CAT={sketch:'Sketch',construct:'Construction',solid:'Solid feature',finish:'Chamfer / fillet',offset:'Offset / face',hole:'Hole / thread',body:'Body operation',param:'Parameter',component:'Component',surface:'Surface',sheet:'Sheet metal',form:'Form / base',mesh:'Mesh / volumetric',insert:'Insert / derive',joint:'Joint / motion',other:'Other'};
+const CAT={sketch:'Sketch',construct:'Construction',solid:'Solid feature',finish:'Chamfer / fillet',offset:'Offset / face',hole:'Hole / thread',body:'Body operation',param:'Parameter',component:'Component',surface:'Surface',sheet:'Sheet metal',form:'Form / base',mesh:'Mesh / volumetric',insert:'Insert / derive',newcomp:'New component',joint:'Joint / motion',other:'Other'};
 // ---------- icons: one small line icon per kind of item (original drawings, 16x16, current colour) ----------
 const ICONS={
   sketch:'<rect x="2" y="3" width="10" height="10" rx="1" stroke-dasharray="2 1.5"/><path d="M8.5 10.5l5.5-5.5-1.5-1.5-5.5 5.5-.5 2z"/>',
@@ -2776,14 +2787,14 @@ const ICON_BY_TYPE={Sketch:'sketch',ConstructionPlane:'plane',ConstructionAxis:'
   FlangeFeature:'sheet',HemFeature:'sheet',RipFeature:'sheet',CornerClosureFeature:'sheet',FoldFeature:'sheet',UnfoldFeature:'flat',
   RefoldFeature:'sheet',JoinByBendFeature:'sheet',LoftedFlangeFeature:'sheet',SheetMetalChamferFeature:'chamfer',SheetMetalFilletFeature:'fillet',
   FlatPattern:'flat',FormFeature:'form',BaseFeature:'base',Canvas:'canvas',Decal:'canvas',CustomFeature:'custom'};
-const ICON_BY_CAT={sketch:'sketch',construct:'plane',solid:'extrude',finish:'fillet',offset:'offsetface',hole:'hole',body:'combine',
+const ICON_BY_CAT={newcomp:'component',sketch:'sketch',construct:'plane',solid:'extrude',finish:'fillet',offset:'offsetface',hole:'hole',body:'combine',
   param:'param',surface:'surface',sheet:'sheet',form:'form',mesh:'mesh',component:'component',insert:'insert',joint:'joint',group:'group',other:'other'};
 const ICON_CATS={construct:'plane axis point',solid:'extrude revolve sweep loft rib box cylinder sphere torus coil pipe emboss thicken fill',finish:'fillet chamfer',
       offset:'offsetface shell draft deleteface replaceface splitface',hole:'hole thread',body:'scale combine mirror rectpattern circpattern pathpattern move splitbody copy remove',
       param:'param dparam params',component:'component',insert:'insert derive',joint:'joint jointorigin rigid motion contact snapshot arrange',surface:'patch stitch trim extend surface',
       sheet:'sheet flat',form:'form base',mesh:'mesh',sketch:'sketch'};
 function catOfIcon(k){return Object.keys(ICON_CATS).find(c=>ICON_CATS[c].split(' ').includes(k))||'other';}
-function iconName(n){if(!n)return 'other';if(ICON_BY_TYPE[n.type])return ICON_BY_TYPE[n.type];if(/^Mesh|Tessellate|Volumetric/.test(n.type))return 'mesh';return ICON_BY_CAT[n.cat]||'other';}
+function iconName(n){if(!n)return 'other';if(n.cat==='newcomp')return 'component';if(ICON_BY_TYPE[n.type])return ICON_BY_TYPE[n.type];if(/^Mesh|Tessellate|Volumetric/.test(n.type))return 'mesh';return ICON_BY_CAT[n.cat]||'other';}
 // one hidden sprite with every icon; everything else refers to it with <use>
 (function(){const NS='http://www.w3.org/2000/svg';const sp=document.createElementNS(NS,'svg');sp.setAttribute('width','0');sp.setAttribute('height','0');sp.style.position='absolute';
   sp.innerHTML='<defs>'+Object.keys(ICONS).map(k=>'<symbol id="ic-'+k+'" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round">'+ICONS[k]+'</g></symbol>').join('')+'</defs>';
@@ -2795,6 +2806,8 @@ const KIND={sketch:'Sketch',profile:'Profile',plane:'Plane / axis / point',geome
 const nodes=D.nodes, byId={}; nodes.forEach(n=>byId[n.id]=n);
 // graphs made before the split had one "assembly" category
 nodes.forEach(n=>{if(n.cat==='assembly'||(n.cat==='other'&&ICON_BY_TYPE[n.type]&&catOfIcon(ICON_BY_TYPE[n.type])!=='other'))n.cat=catOfIcon(ICON_BY_TYPE[n.type]||'other')==='other'?((n.type==='Occurrence'||n.type==='DeriveFeature')?'insert':'joint'):catOfIcon(ICON_BY_TYPE[n.type]);});
+// a component made in the design itself is not an insert: its own colour (inserts of other files stay pink)
+nodes.forEach(n=>{if(n.type==='Occurrence'&&n.local)n.cat='newcomp';});
 // one common parent for all user parameters (derived parameters stay under their Derive feature)
 {const ups=nodes.filter(n=>n.type==='UserParameter'&&!n.dsg);
   if(ups.length&&!byId['up:all']){const r={id:'up:all',name:'User Parameters',type:'UserParameters',cat:'param',tl:null,o:-2,g:[],supp:false,health:0,msg:'',info:ups.length+' parameter'+(ups.length===1?'':'s')};
@@ -4173,7 +4186,8 @@ const CAT_DESC={sketch:'Sketches.',construct:'Construction planes, axes and poin
   sheet:'Sheet metal: flange, hem, rip, corner closure, fold, unfold/refold, join by bend, lofted flange, flat pattern.',
   form:'T-spline form features and base (direct edit) features.',mesh:'Mesh and volumetric features.',
   component:'A component of the design. Its parent is the item that brought it in (insert, New Component, a feature set to new component, or a Derive feature); its children are the items built inside it.',
-  insert:'Items that bring a component into the design: component inserts, New Component, copy/paste of components, Derive features.',
+  insert:'Items that bring another file into the design: linked component inserts and Derive features.',
+  newcomp:'Components made in the design itself (New Component, or a feature set to create a new component). Nothing outside the design leads into them.',
   joint:'Joints, as-built joints, joint origins, rigid groups, motion links, contact sets, Arrange and captured positions (snapshots).',
   other:'Anything else (canvases, decals, add-in features, items the Fusion API does not describe).'};
 const KIND_DESC={sketch:'uses a sketch (or geometry projected/included into it)',profile:'uses a sketch profile',plane:'built on or references a construction plane, axis or point',
