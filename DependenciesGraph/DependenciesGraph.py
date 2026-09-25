@@ -1966,7 +1966,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
       <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
-      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label></div></div>
+      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label></div></div>
     <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
     <button id="infoBtn" title="How to use, warnings">Info</button>
   </div>
@@ -2229,7 +2229,7 @@ function pseudoOf(n){if(!n||(n.g&&n.g.length))return null;return isUserParam(n)?
 const kindsPresent=[...new Set(D.edges.flatMap(e=>e.k))].filter(k=>KIND[k]);
 const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // every kind is always on; only "Same body, later" can be switched (Display menu)
 // links found by the suppression test are real dependencies: always shown, no toggle
-let showThumbs=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=false, search='';
+let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=false, search='';
 const expanded=new Set(Object.keys(groups)); // graph starts with every group expanded
 const $=id=>document.getElementById(id);
 
@@ -2502,7 +2502,7 @@ function renderDetails(){
 // ---------- graph ----------
 const svg=$('graph'),vp=$('vp');let T={x:20,y:20,k:1},pos={};
 function applyT(){vp.setAttribute('transform','translate('+T.x+','+T.y+') scale('+T.k+')');}
-let nodeEls={},edgeEls=[],graphAnim=null;
+let nodeEls={},edgeEls=[],graphAnim=null,nodeBtnEls={};
 let hovState=null,hovPin=null,routeCache=null,selRelated=[];
 // clicked link: stays highlighted until the mouse really moves (not just the view moving under it)
 window.addEventListener('mousemove',ev=>{if(!hovPin)return;if(Math.hypot(ev.clientX-hovPin.x,ev.clientY-hovPin.y)<5)return;hovPin=null;edgeHover(null,null,null,false);});
@@ -2512,7 +2512,7 @@ function edgeHover(p,s,t,on){
   if(hovState){const h=hovState;if(h.p){h.p.classList.remove('hov');if(h.parent)h.parent.insertBefore(h.p,h.next);}
     h.rings.forEach(r=>{r.style.opacity='0';setTimeout(()=>r.remove(),220);});h.nodes.forEach(g=>g.classList.remove('hov'));hovState=null;}
   if(!on)return;const vpEl=$('vp');const st={p,parent:p?p.parentNode:null,next:p?p.nextSibling:null,rings:[],nodes:[]};
-  if(p){p.classList.add('hov');vpEl.appendChild(p);}    // on top of everything while hovered
+  if(p){p.classList.add('hov');vpEl.insertBefore(p,vpEl.querySelector(':scope > .btnlayer'));}    // on top of the other links while hovered (below the +/- buttons)
   [s,t].forEach(id=>{const g=nodeEls[id];if(!g)return;g.classList.add('hov');st.nodes.push(g);
     const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','hovring');r.setAttribute('x',-6);r.setAttribute('y',-6);r.setAttribute('width',NW+12);r.setAttribute('height',NH+12);r.setAttribute('rx',9);r.style.opacity='0';requestAnimationFrame(()=>requestAnimationFrame(()=>{r.style.opacity='';}));g.appendChild(r);st.rings.push(r);});
   hovState=st;}
@@ -2588,7 +2588,8 @@ function animatedRerender(change,opts){opts=opts||{};
   const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;const cur={};
     if(animT){T.x=TA.x+(T1.x-TA.x)*e;T.y=TA.y+(T1.y-TA.y)*e;T.k=TA.k+(T1.k-TA.k)*e;applyT();}
     Object.keys(pos).forEach(id=>{const s0=start[id],t1=pos[id];const c={x:s0.x+(t1.x-s0.x)*e,y:s0.y+(t1.y-s0.y)*e};cur[id]=c;const el=nodeEls[id];
-      if(el){el.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))el.style.opacity=a<1?String(e):'';}});
+      if(el){el.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))el.style.opacity=a<1?String(e):'';}
+      const bw=nodeBtnEls[id];if(bw){bw.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))bw.style.opacity=a<1?String(e):'';}});
     edgeEls.forEach(x=>{if(cur[x.s]&&cur[x.t]){{const dd=edgeD(cur[x.s],cur[x.t],x.o1,x.o2,x.bow);x.el.setAttribute('d',dd);if(x.hit)x.hit.setAttribute('d',dd);}if(fresh.has(x.s)||fresh.has(x.t)||freshE.has(x))x.el.style.opacity=a<1?String(e):'';}});
     gEdges.forEach(x=>{x.el.style.opacity=String(1-e);});
     if(newLanes)newLanes.style.opacity=a<1?String(e):'';if(oldLanes&&oldLanes!==newLanes){oldLanes.style.opacity=String(1-e);if(a>=1)oldLanes.remove();}
@@ -2720,7 +2721,7 @@ function renderGraph(fitAfter,centerId){
   // unrelated boxes in those rows move aside (rows themselves stay where they are)
   // Groups / Components layouts: boxes stay inside their block, but within each block the related boxes take the
   // places nearest to the selection (each dependency level of a block keeps its own places)
-  if(selSet&&isLanes()&&!focus){const rel=new Set([...selSet,...(up||[]),...(down||[])]);const sx=[...selSet].map(i=>pos[i]).filter(Boolean);
+  if(selSet&&isLanes()&&!focus&&pullTogether){const rel=new Set([...selSet,...(up||[]),...(down||[])]);const sx=[...selSet].map(i=>pos[i]).filter(Boolean);
     if(sx.length&&rel.size>1){const cx=sx.reduce((a,p)=>a+p.x+NW/2,0)/sx.length,cy=sx.reduce((a,p)=>a+p.y+NH/2,0)/sx.length;
       const dist=q=>Math.abs(q.x+NW/2-cx)+0.6*Math.abs(q.y+NH/2-cy);
       laneLevels.forEach(L=>{const ids=L.ids.filter(i=>pos[i]);const inR=ids.filter(i=>rel.has(i));if(!inR.length||inR.length===ids.length)return;
@@ -2730,7 +2731,7 @@ function renderGraph(fitAfter,centerId){
         const others=ids.filter(i=>!rel.has(i));const byKey={};slots.forEach(sl=>{byKey[sl.q.key]=sl;});const wait=[];
         others.forEach(id=>{const sl=byKey[L.home[id]];if(sl&&!taken.has(sl.i)){taken.add(sl.i);pos[id]={x:sl.q.x,y:sl.q.y};}else wait.push(id);});
         const free=slots.filter(sl=>!taken.has(sl.i));wait.forEach((id,k)=>{const sl=free[k];if(sl){pos[id]={x:sl.q.x,y:sl.q.y};}});});}}
-  if(selSet&&!isLanes()&&!focus){const rel=new Set([...selSet,...(up||[]),...(down||[])]);
+  if(selSet&&!isLanes()&&!focus&&pullTogether){const rel=new Set([...selSet,...(up||[]),...(down||[])]);
     const hdrOf={};Object.keys(pos).forEach(id=>{if(id[0]==='h'&&R[id]&&R[id].members.some(m=>rel.has(rep(m))))rel.add(id);});
     const sx=[...selSet].map(i=>pos[i]).filter(Boolean);
     if(sx.length&&rel.size>1){const cx=sx.reduce((a,p)=>a+p.x+NW/2,0)/sx.length;const rows={};
@@ -2743,6 +2744,9 @@ function renderGraph(fitAfter,centerId){
         right.forEach(i=>{const nx=Math.max(pos[i].x,cur);pos[i]={x:nx,y:pos[i].y};cur=nx+NW+XG;});});}}
   const hdrRelated=r=>!!selSet&&r.members.some(m=>{const x=rep(m);return selSet.has(x)||(up&&up.has(x))||(down&&down.has(x))||m.id===selected;});
   const NS='http://www.w3.org/2000/svg';hovState=null;hovPin=null;vp.innerHTML='';
+  // +/- buttons live in a layer above everything, so links never cover them; each box's buttons follow the box
+  const btnLayer=document.createElementNS(NS,'g');btnLayer.setAttribute('class','btnlayer');nodeBtnEls={};
+  const addBtn=(id,bt)=>{let w=nodeBtnEls[id];if(!w){w=document.createElementNS(NS,'g');w.setAttribute('transform','translate('+pos[id].x+','+pos[id].y+')');nodeBtnEls[id]=w;btnLayer.appendChild(w);}w.appendChild(bt);};
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
     const CM=layoutMode==='comps';const noLane=id=>id==='_none'||id==='_root'||(id==='_params'&&!byId['up:all']);
     lanes.forEach(l=>{const col=l.id==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
@@ -2757,7 +2761,7 @@ function renderGraph(fitAfter,centerId){
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
           bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
           l.btn=bt;}}
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);if(l.btn)lg.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')select('up:all');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')select('up:all');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
@@ -2855,11 +2859,14 @@ function renderGraph(fitAfter,centerId){
   reps.forEach(r=>{const p=pos[r.id];const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('width',NW);rect.setAttribute('height',NH);rect.setAttribute('rx',5);
     let label,cat;
-    if(r.isGroup){const gid=r.id.slice(1);label=(r.header?'▾ ':'▸ ')+(groups[gid]?groups[gid].name:'group')+'  ('+r.members.length+')';cat='group';rect.setAttribute('stroke-dasharray','4 3');}
+    // Groups layout, whole block folded: the block itself stands for the group; inside it only a short note
+    const laneFold=r.isGroup&&!r.header&&layoutMode==='lanes'&&laneKey(r.members[0])===r.id.slice(1);
+    if(r.isGroup){const gid=r.id.slice(1);label=laneFold?(r.members.length+' item'+(r.members.length===1?'':'s')+' folded'):(r.header?'▾ ':'▸ ')+(groups[gid]?groups[gid].name:'group')+'  ('+r.members.length+')';cat='group';rect.setAttribute('stroke-dasharray','4 3');}
     else{const n=r.members[0];label=n.name;cat=n.cat;}
     const gsupp=!r.isGroup?isSupp(r.members[0]):!!(simState&&r.members.length&&r.members.every(isSupp));
     if(r.isGroup&&simState){const k=r.members.filter(isSupp).length;if(k){label+=' · '+k+' off';}}
     if(gsupp)cat='supp_';rect.setAttribute('fill',gsupp?'var(--supp-bg)':'var(--c-'+cat+'-bg)');if(gsupp)rect.setAttribute('stroke-dasharray','5 3');rect.setAttribute('stroke',gsupp?'var(--supp)':(!r.isGroup&&r.members[0].health===2)?'var(--err)':(!r.isGroup&&r.members[0].health===1)?'var(--warn)':'var(--c-'+cat+')');
+    if(laneFold){rect.setAttribute('fill','transparent');rect.setAttribute('stroke','transparent');rect.removeAttribute('stroke-dasharray');}
     const bk=r.members.map(brokenKind).filter(Boolean);
     if(bk.length){const est=bk.every(k=>k==='est');rect.setAttribute('stroke','var(--err)');rect.setAttribute('stroke-width','3');rect.setAttribute('stroke-dasharray',est?'6 4':'');
       const bb=document.createElementNS(NS,'g');bb.setAttribute('class','brk'+(est?' est':''));bb.setAttribute('transform','translate('+(NW-3)+',3)');
@@ -2874,25 +2881,27 @@ function renderGraph(fitAfter,centerId){
       if(selRep!=='__group__'||r.header){const gl=document.createElementNS(NS,'rect');gl.setAttribute('class','selglow');gl.setAttribute('x',-9);gl.setAttribute('y',-9);gl.setAttribute('width',NW+18);gl.setAttribute('height',NH+18);gl.setAttribute('rx',12);g.appendChild(gl);}}
     else if(selGroup&&down&&down.has(r.id)){rect.setAttribute('stroke','var(--down)');rect.setAttribute('stroke-width','2.5');}
     else if(selGroup&&up&&up.has(r.id)){rect.setAttribute('stroke','var(--up)');rect.setAttribute('stroke-width','2');}
-    const lastM=r.isGroup?[...r.members].sort((a,b)=>b.o-a.o).find(m=>TH[m.id]):r.members[0];const nth=(gth&&lastM)?TH[lastM.id]:null;const tx0=nth?66:8;
+    const lastM=r.isGroup?[...r.members].sort((a,b)=>b.o-a.o).find(m=>TH[m.id]):r.members[0];const nth=(!laneFold&&gth&&lastM)?TH[lastM.id]:null;const tx0=nth?66:8;
     // action buttons on the right edge of the box (for now: suppress in the preview)
     const acts=[];const gidA=r.isGroup?r.id.slice(1):null;
-    if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
+    if(laneFold){}
+    else if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
     else if(simOn&&!r.isGroup&&canItems&&r.members[0].tl!=null){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · breaks '+(it.fail.name||'a later feature')+', estimated':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
     const maxc=(nth?22:(gth?32:28))-acts.length*(r.isGroup?5:3);
     const icoN=r.isGroup?'group':iconName(r.members[0]);const icoS=gth?18:15;
     const tx=document.createElementNS(NS,'text');tx.setAttribute('x',tx0+icoS+5);tx.setAttribute('y',NH/2+4);tx.setAttribute('style','fill:'+(gsupp?'var(--supp);text-decoration:line-through':'var(--c-'+cat+')')+(r.isGroup?';font-weight:600':''));
     tx.textContent=label.length>maxc?label.slice(0,maxc-1)+'…':label;
+    if(laneFold){tx.setAttribute('x',NW/2);tx.setAttribute('text-anchor','middle');tx.setAttribute('style','fill:var(--muted);font-style:italic'+(gsupp?';text-decoration:line-through':''));}
     const ti=document.createElementNS(NS,'title');ti.textContent=r.isGroup?(label+'\n'+r.members.slice(0,25).map(m=>'• '+m.name).join('\n')+(r.members.length>25?'\n…':'')+'\nClick to expand'):(r.members[0].name+'\n'+r.members[0].type);
     g.append(rect);
-    {const gid=topGroup(r.members[0]);const col=gid?gColor[gid]:null;if(col){const st=document.createElementNS(NS,'rect');st.setAttribute('x',0);st.setAttribute('y',0);st.setAttribute('width',6);st.setAttribute('height',NH);st.setAttribute('rx',3);st.setAttribute('fill',col);
+    {const gid=topGroup(r.members[0]);const col=gid&&!laneFold?gColor[gid]:null;if(col){const st=document.createElementNS(NS,'rect');st.setAttribute('x',0);st.setAttribute('y',0);st.setAttribute('width',6);st.setAttribute('height',NH);st.setAttribute('rx',3);st.setAttribute('fill',col);
       const tt=document.createElementNS(NS,'title');tt.textContent='Timeline group: '+(groups[gid]?groups[gid].name:gid);st.appendChild(tt);g.append(st);}}
     if(nth){const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',4);bg.setAttribute('y',4);bg.setAttribute('width',56);bg.setAttribute('height',NH-8);bg.setAttribute('rx',3);bg.setAttribute('style','fill:var(--panel2)');
       const im=document.createElementNS(NS,'image');im.setAttribute('x',4);im.setAttribute('y',4);im.setAttribute('width',56);im.setAttribute('height',NH-8);im.setAttribute('preserveAspectRatio','xMidYMid meet');im.setAttribute('href',nth);if(gsupp)im.setAttribute('class','suppimg');
       const mid=lastM.id;const hot=document.createElementNS(NS,'rect');hot.setAttribute('x',4);hot.setAttribute('y',4);hot.setAttribute('width',56);hot.setAttribute('height',NH-8);hot.setAttribute('fill','transparent');hot.style.cursor='zoom-in';
       hot.addEventListener('mouseenter',ev=>{if(!drag)peekShow(mid,ev);});hot.addEventListener('mousemove',peekMove);hot.addEventListener('mouseleave',peekHide);
       g.append(bg,im,hot);}
-    g.append(iconUse(icoN,tx0,(NH-icoS)/2,icoS,gsupp?'var(--supp)':'var(--c-'+cat+')'));
+    if(!laneFold)g.append(iconUse(icoN,tx0,(NH-icoS)/2,icoS,gsupp?'var(--supp)':'var(--c-'+cat+')'));
     g.append(tx);if(!nth)g.append(ti);
     brkBadges.filter(x=>x[0]===g).forEach(x=>g.appendChild(x[1]));
     acts.forEach((a,i)=>{const bs=gth?24:18;const bx=NW-6-bs-i*(bs+4),by=(NH-bs)/2;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','act'+(a.on?' on':''));bt.setAttribute('transform','translate('+bx+','+by+')');
@@ -2903,24 +2912,26 @@ function renderGraph(fitAfter,centerId){
       const tt=document.createElementNS(NS,'title');tt.textContent=a.title;bt.append(bg,arc,ln,tt);
       ['mousedown','dblclick'].forEach(ev=>bt.addEventListener(ev,e=>e.stopPropagation()));
       bt.addEventListener('click',e=>{e.stopPropagation();peekHide();a.fn();});g.appendChild(bt);});
-    if(r.isGroup){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
+    if(laneFold){}
+    else if(r.isGroup){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?7:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
       const tt=document.createElementNS(NS,'title');tt.textContent=open?'Collapse this timeline group into one box':'Expand this timeline group to show its items';bt.append(c,t,tt);
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
       bt.addEventListener('click',ev=>{ev.stopPropagation();const newId=(open?'g':'h')+gid;
-        animatedRerender(()=>{if(open){expanded.delete(gid);Object.keys(groups).forEach(x=>{if(groupPath(x).length>1&&groups[x].parent&&(function up(y){let q=groups[y].parent,gd=0;while(q&&gd++<20){if(q===gid)return true;q=groups[q]?groups[q].parent:null;}return false;})(x))expanded.delete(x);});}else expanded.add(gid);},{keepOld:r.id,keepNew:newId});});g.appendChild(bt);}
+        animatedRerender(()=>{if(open){expanded.delete(gid);Object.keys(groups).forEach(x=>{if(groupPath(x).length>1&&groups[x].parent&&(function up(y){let q=groups[y].parent,gd=0;while(q&&gd++<20){if(q===gid)return true;q=groups[q]?groups[q].parent:null;}return false;})(x))expanded.delete(x);});}else expanded.add(gid);},{keepOld:r.id,keepNew:newId});});addBtn(r.id,bt);}
     else if(canCollapse(r.id)){const col=collapsedNodes.has(r.id);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',col?9:7);c.setAttribute('class','ctogc'+(col?' col':''));
       const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=col?'+':'−';
       const tt=document.createElementNS(NS,'title');tt.textContent=col?('Expand: show the '+(hiddenCount[r.id]||0)+' hidden items that depend on this'):(isLanes()?'Collapse: hide what depends on this in the same timeline group':'Collapse: hide everything that depends on this');bt.append(c,t,tt);
       if(col&&hiddenCount[r.id]){const cn=document.createElementNS(NS,'text');cn.setAttribute('x',13);cn.setAttribute('y',4);cn.setAttribute('class','ctogn');cn.textContent=hiddenCount[r.id]+' hidden';bt.appendChild(cn);}
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
-      bt.addEventListener('click',ev=>{ev.stopPropagation();const rid=r.id;animatedRerender(()=>{if(col)collapsedNodes.delete(rid);else collapsedNodes.add(rid);},{keepOld:rid,keepNew:rid});});g.appendChild(bt);}
+      bt.addEventListener('click',ev=>{ev.stopPropagation();const rid=r.id;animatedRerender(()=>{if(col)collapsedNodes.delete(rid);else collapsedNodes.add(rid);},{keepOld:rid,keepNew:rid});});addBtn(r.id,bt);}
     if(selSet&&!selSet.has(r.id)&&!up.has(r.id)&&!down.has(r.id)&&!(r.header&&hdrRelated(r)))g.classList.add('dim');
     if(hitReps){if(hitReps.has(r.id)){rect.setAttribute('stroke','var(--sel)');rect.setAttribute('stroke-width','3');if(r.id===graphHits[hitIdx]){rect.setAttribute('stroke','var(--down)');rect.setAttribute('stroke-width','4');}}else if(!selSet)g.classList.add('dim');}
 
     g.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(simOn&&(ev.shiftKey||ev.altKey)){if(r.isGroup)simToggleGroup(r.id.slice(1));else if(canItems)simToggleItem(r.members[0].id);else{const gg=(r.members[0].g||[]);if(gg.length)simToggleGroup(gg[gg.length-1]);}return;}if(r.isGroup){selectGroup(r.id.slice(1));}else select(r.members[0].id);});
-    (selSet&&g.classList.contains('dim')?gnDim:gn).appendChild(g);});
+    (selSet&&g.classList.contains('dim')?gnDim:gn).appendChild(g);if(nodeBtnEls[r.id]&&g.classList.contains('dim'))nodeBtnEls[r.id].classList.add('dim');});
+  vp.appendChild(btnLayer);
   if(fitAfter)fit(centerId?rep(byId[centerId]):null);
 }
 function fit(centerRep,only){const ids=(only&&only.length?only:Object.keys(pos)).filter(i=>pos[i]);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;
@@ -3227,6 +3238,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.cl
 $('gpToggle').onclick=()=>{const m=$('gpanel').classList.toggle('min');$('gpToggle').textContent=m?'+':'–';};
 $('showThumbs').onchange=e=>{const v=e.target.checked;const ch=()=>{showThumbs=v;document.body.classList.toggle('nothumbs',!showThumbs);peekHide();renderDetails();};
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(ch,{fit:'fit',dur:480});else{ch();if(view==='graph')renderGraph(true);}};
+$('pullTog').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{pullTogether=v;},{dur:450});else pullTogether=v;};
 $('focus').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{focus=v;},{fit:'fit'});else{focus=v;renderGraph(true,selected);}};
 $('expAll').onclick=()=>{setLevel('items');};
 $('colAll').onclick=()=>{collapseEverything=true;setLevel('groups');};

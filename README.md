@@ -31,6 +31,8 @@ timeline groups, components, parameters and optional suppression tests.
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
 - **Back / forward** through selections, restoring the zoom and position you had.
 - **Legend** explaining every colour, icon, outline, marker and line.
+- **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
+  and "Same body, later" links.
 
 ### History playback
 Select an item (or a group, or nothing for the whole design) and press **Play** (or `P`) to animate how
