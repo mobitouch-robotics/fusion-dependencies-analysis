@@ -1866,6 +1866,11 @@ body.simon #simBar{display:flex}
 #details ul{list-style:none;padding:0;margin:0}
 #details li{padding:2px 0;font-size:13px;display:flex;gap:6px;align-items:baseline}
 #details li .k{font-size:11px;color:var(--muted)}
+#details .rsec{margin-top:10px;padding:2px 10px 10px;border-left:3px solid var(--route);background:var(--panel2);border-radius:0 6px 6px 0}
+#details .rsec h3{color:var(--route)}
+#details .rpath{font-size:12.5px;line-height:1.6;margin-top:4px}#details .rpath .rno{color:var(--muted);margin-right:4px}
+#details .rpath .name{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;overflow-wrap:normal}
+#details .rpath .rar{color:var(--route);margin:0 4px}#details .rpath .rsel,#details .rpath .rend{font-weight:700;color:var(--sel)}#details .rpath .rsel{cursor:default;text-decoration:none}
 #details .msg{font-size:12px;color:var(--err);white-space:pre-wrap;margin-top:6px}
 .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .hint{font-size:12px;color:var(--muted);margin-top:10px}
@@ -1896,15 +1901,21 @@ svg .edge.hov{stroke-width:3.4!important;stroke-opacity:1!important;opacity:1!im
 svg .edge.hov{stroke:var(--hov)!important}   /* hovered link: gold, same colour as the rings on its ends */
 svg .nd.hov{opacity:1!important}
 /* hovered box: its direct parents and children stay bright, everything else fades */
-svg.nhov .nd:not(.nhc):not(.nhr){opacity:.22}
-svg.nhov .edge:not(.nhl){opacity:.1}
 svg.nhov .nd.nhc,svg.nhov .nd.nhr{opacity:1!important}
 svg .nhov-ov{pointer-events:none}
+/* All links off (Display menu): plain grey links are hidden, except during playback */
+svg.quiet:not(.playing) .edge.plain:not(.hov),svg.quiet:not(.playing) .ehit.plain,svg.quiet:not(.playing) .ecount.plain{display:none}
 /* routes between the selection and another item */
 svg .edge.route{stroke:var(--route);stroke-width:2.6;stroke-opacity:1}
 svg .rbtn{cursor:pointer}svg .rbtn circle{fill:var(--panel);stroke:var(--route);stroke-width:1.2}
 svg .rbtn path{fill:none;stroke:var(--route);stroke-width:1.6;stroke-linecap:round}svg .rbtn .rdot{fill:var(--route);stroke:none}
 svg .rbtn:hover circle{stroke-width:2}svg .rbtn.on circle{fill:var(--route)}svg .rbtn.on path{stroke:var(--panel)}svg .rbtn.on .rdot{fill:var(--panel)}
+svg .edge.rpv{stroke:var(--route);stroke-opacity:1;opacity:1}svg .edge.rpv.band{stroke-width:6;stroke-opacity:.3}
+svg .edge.rpv.flow{stroke-width:2.2;stroke-dasharray:7 5;animation:nhflow .7s linear infinite}
+@media (prefers-reduced-motion:reduce){svg .edge.rpv.flow{animation:none}}
+/* while a route preview is shown, everything off the routes is slightly dimmed (opacity: Safari ignores CSS filters on SVG) */
+svg.rpvon .nd:not(.rpin):not(.dim){opacity:.5}svg.rpvon .edge:not(.rpv):not(.dim),svg.rpvon .ecount:not(.dim){opacity:.4}
+svg .rpring{fill:none;stroke:var(--route);stroke-width:2.5;stroke-dasharray:6 4;pointer-events:none}svg .rpring.end{stroke-width:4;stroke-dasharray:none}
 svg .rbtn .rcount{font-size:11px;font-weight:700;fill:var(--route);stroke:none}
 svg.playing .rbtn{display:none}
 /* number of items a joined link leads to inside a collapsed box */
@@ -1913,16 +1924,21 @@ svg .ecount text{font-size:10.5px;font-weight:700;fill:var(--muted);text-anchor:
 svg .ecount.up rect{stroke:var(--up)}svg .ecount.up text{fill:var(--up)}
 svg .ecount.down rect{stroke:var(--down)}svg .ecount.down text{fill:var(--down)}
 svg .ecount.dim{opacity:.18}svg .ecount{transition:opacity .2s ease}
-svg.nhov .ecount:not(.nhl){opacity:.1}
+svg .ecount.nhl rect{stroke:var(--hov);stroke-width:1.8}svg .ecount.nhl text{fill:var(--hov)}
 svg.playing .ecount{display:none}
-svg .edge.nhl{stroke-width:2.6;stroke-opacity:1;opacity:1}
-svg .edge.nhl.up{stroke:var(--up)}svg .edge.nhl.down{stroke:var(--down)}
-svg .hovring.up{stroke:var(--up);stroke-width:4}svg .hovring.down{stroke:var(--down);stroke-width:4}
+/* hovered box: gold. Its links get a soft gold band with gold dashes flowing in the link's direction;
+   the boxes it uses have a dashed ring, the boxes that use it a dotted ring. Nothing else changes. */
+svg .edge.nhl{stroke:var(--hov);stroke-opacity:1;opacity:1}
+svg .edge.nhl.band{stroke-width:6;stroke-opacity:.28}
+svg .edge.nhl.flow{stroke-width:2.2;stroke-dasharray:7 5;animation:nhflow .7s linear infinite}
+@keyframes nhflow{to{stroke-dashoffset:-12}}
+@media (prefers-reduced-motion:reduce){svg .edge.nhl.flow{animation:none}}
+svg .hovring.up{stroke-width:3;stroke-dasharray:8 4}svg .hovring.down{stroke-width:3;stroke-dasharray:2 3}
 svg .hovring{fill:none;stroke:var(--hov);stroke-width:5;pointer-events:none;transition:opacity .2s ease}
 svg .edge{transition:stroke .2s ease,stroke-width .2s ease,stroke-opacity .2s ease,opacity .2s ease}
 svg .nd{transition:opacity .2s ease}
 svg .selglow{fill:var(--sel);fill-opacity:.2;stroke:var(--sel);stroke-opacity:.75;stroke-width:3;pointer-events:none}
-svg .ctog{cursor:pointer}
+svg .ctog{cursor:pointer}svg .ctog.off{opacity:.3;cursor:not-allowed}
 svg .act{cursor:pointer}
 svg .act rect{fill:var(--panel);stroke:var(--border);stroke-width:1}
 svg .act path{fill:none;stroke:var(--muted);stroke-width:1.8;stroke-linecap:round}
@@ -1990,7 +2006,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
       <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
-      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus"> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn" checked> What uses it</label><label class="chk sub" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label></div></div>
+      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus" checked> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><label class="chk" title="Hovering a box rings it in gold, with its direct parents and children and the links between them"><input type="checkbox" id="hovRel" checked> Highlight parents and children on hover</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn" checked> What uses it</label><label class="chk sub" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label><label class="chk" title="Show every link all the time. When off, only the links of the selection, of the hovered box, and the lines joining a group box to its items are drawn."><input type="checkbox" id="allLinks"> All links (grey)</label></div></div>
     <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
     <button id="infoBtn" title="How to use, warnings">Info</button>
   </div>
@@ -2007,7 +2023,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
       <div class="gtools">
         <button id="expAll" title="Expand all timeline groups">Expand all</button><button id="colAll" title="Collapse all timeline groups">Collapse all</button><span class="sep"></span><button id="pbStart" title="Play the whole history of the design (P)">▶ Play</button><span class="sep"></span><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it">Fit</button>
       </div>
-      <div id="pbCard"><img alt=""><div class="cap"></div></div><div id="pbBar"><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Skip to the next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
+      <div id="pbCard"><img alt=""><div class="cap"></div></div><div id="pbBar"><button id="pbPrev" title="Back one step (←)">⏮</button><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
     </div>
   </div>
   <aside id="details"></aside>
@@ -2253,7 +2269,7 @@ function pseudoOf(n){if(!n||(n.g&&n.g.length))return null;return isUserParam(n)?
 const kindsPresent=[...new Set(D.edges.flatMap(e=>e.k))].filter(k=>KIND[k]);
 const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // every kind is always on; only "Same body, later" can be switched (Display menu)
 // links found by the suppression test are real dependencies: always shown, no toggle
-let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=false, search='';
+let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=true, search='';
 const expanded=new Set(Object.keys(groups)); // graph starts with every group expanded
 const $=id=>document.getElementById(id);
 
@@ -2407,9 +2423,9 @@ function renderTree(){
 
 // ---------- back / forward: selection and suppression-preview history ----------
 const hist=[];let hIdx=-1,hMute=false;
-function snap(){return {sel:selected,grp:selGroup,items:[...sim.items].sort(),groups:[...sim.groups].sort(),un:[...sim.un].sort()};}
+function snap(){return {sel:selected,grp:selGroup,rt:(route&&route.sel===selected)?[...route.items].sort():null,items:[...sim.items].sort(),groups:[...sim.groups].sort(),un:[...sim.un].sort()};}
 // each history step also remembers the graph's zoom and position while it was the current one
-const histKey=o=>JSON.stringify({sel:o.sel,grp:o.grp,items:o.items,groups:o.groups,un:o.un});
+const histKey=o=>JSON.stringify({sel:o.sel,grp:o.grp,rt:o.rt||null,items:o.items,groups:o.groups,un:o.un});
 function saveView(){if(hMute||hIdx<0||!hist[hIdx]||view!=='graph'||!Object.keys(pos).length)return;hist[hIdx].view={x:T.x,y:T.y,k:T.k,layout:layoutMode};}
 function pushHist(){if(hMute)return;const st=snap();if(hIdx>=0&&histKey(hist[hIdx])===histKey(st))return;
   hist.splice(hIdx+1);hist.push(st);if(hist.length>300)hist.shift();hIdx=hist.length-1;updHistBtns();}
@@ -2419,13 +2435,14 @@ function viewTo(v,dur){if(!v)return;if(anim)cancelAnimationFrame(anim);const s0=
 function updHistBtns(){const b=$('hBack'),n=$('hNext');if(b)b.disabled=hIdx<=0;if(n)n.disabled=hIdx>=hist.length-1;}
 function goHist(d){const j=hIdx+d;if(j<0||j>=hist.length)return;saveView();hIdx=j;const st=hist[j];hMute=true;
   try{sim.items=new Set(st.items);sim.groups=new Set(st.groups);sim.un=new Set(st.un);simCompute();renderSimBar();paintTree();renderGroupPanel();
+    route=(st.sel&&st.rt)?{sel:st.sel,items:st.rt}:null;
     if(st.sel&&byId[st.sel])select(st.sel);else if(st.grp&&groups[st.grp])selectGroup(st.grp);else clearSel();}
   finally{hMute=false;}updHistBtns();
   // back where we were: the zoom and position from then (after the selection's own zoom has started)
   const v=st.view;if(v&&view==='graph'&&v.layout===layoutMode)requestAnimationFrame(()=>requestAnimationFrame(()=>viewTo(v,480)));}
-function select(id){saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn([rep(byId[id])]));}}
-function selectGroup(gid){saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&r.dataset.gid===gid));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn([...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
-function clearSel(){saveView();setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
+function select(id){if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn([rep(byId[id])]));}}
+function selectGroup(gid){if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&r.dataset.gid===gid));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn([...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
+function clearSel(){if(!hMute)route=null;saveView();setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
 function groupUpIds(gid){const mem=groupMembers(gid);const mset=new Set(mem.map(n=>n.id));
   const links=mem.flatMap(n=>[...closure(n.id,'up')]);
   const test=D.meta.gtest?D.groups.filter(o=>o.id!==gid&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).flatMap(o=>groupMembers(o.id).map(n=>n.id)):[];
@@ -2479,7 +2496,7 @@ function setInfo(open){if(open&&document.body.classList.contains('legendopen'))s
 function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.createElement('div');cols.className='cols';
   const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details. Click empty space in the graph to deselect.</div>';
   const lg=document.createElement('div');lg.className='legend';Object.keys(CAT).forEach(c=>{if(!nodes.some(n=>n.cat===c))return;const s=document.createElement('span');s.className='pill';s.textContent=CAT[c];s.style.color='var(--c-'+c+')';s.style.background='var(--c-'+c+'-bg)';lg.appendChild(s);});c1.appendChild(lg);
-  const h=document.createElement('div');h.className='hint';h.innerHTML='Graph: drag to pan, scroll to zoom, click a grey group box to expand it. Blue links lead to what the selection depends on, green links to what depends on it. <b>▶ Play</b> (or P) animates how the selected item was built from its dependencies, or the whole history when nothing is selected: Space pauses, → skips to the next step, Esc stops.'+(D.meta.exact||D.meta.gtest?'':'<br>Links come from references the add-in could read (sketches, profiles, planes, faces/edges, bodies, parameters). Turn on <b>Deep analysis</b> in the add-in to get Fusion\'s real dependencies and the suppression preview.');c1.appendChild(h);
+  const h=document.createElement('div');h.className='hint';h.innerHTML='Graph: drag to pan, scroll to zoom, click a grey group box to expand it. Blue links lead to what the selection depends on, green links to what depends on it. <b>▶ Play</b> (or P) animates how the selected item was built from its dependencies, or the whole history when nothing is selected: Space pauses, → goes one step forward and ← one step back (while paused, one step at a time), Esc stops.'+(D.meta.exact||D.meta.gtest?'':'<br>Links come from references the add-in could read (sketches, profiles, planes, faces/edges, bodies, parameters). Turn on <b>Deep analysis</b> in the add-in to get Fusion\'s real dependencies and the suppression preview.');c1.appendChild(h);
   if(canGroups){const x=document.createElement('div');x.className='hint';x.innerHTML='<b>Suppression preview:</b> use the on/off buttons (groups panel, tree, details) or Shift+click a box in the graph'+(canItems?'':' (switches its whole group - this page has the group test only)')+'. The preview bar appears as soon as something is switched off.'+
       '<br><b>How exact it is:</b> one item switched off'+(D.meta.gtest?', or one whole timeline group,':'')+' shows exactly what Fusion did in the suppression test. '+
       'With several things switched off at once, the preview adds up their single results. Features that fail or switch off only when those things are off <i>together</i> are not shown, so treat that result as an estimate.';c1.appendChild(x);}
@@ -2499,6 +2516,27 @@ function renderDetails(){
   [n.type+(n.info?' · '+n.info:''),n.tl!=null?'Timeline position '+(n.tl+1):'',isSupp(n)?'Suppressed':(isBroken(n)?brokenText(n):warnKind(n)?warnText(n):'OK')].filter(Boolean).forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});
   if(!(n.g&&n.g.length)){const gl=document.createElement('div');gl.textContent='Not in a timeline group';kv.insertBefore(gl,kv.children[1]||null);}
   d.appendChild(kv);
+  // routes to the other end (route button in the graph)
+  {const RT=routeCompute();if(RT){const sec=document.createElement('div');sec.className='rsec';
+    const ends=route.items.map(i=>byId[i]).filter(Boolean);const endName=ends.length===1?ends[0].name:(ends.length+' items: '+ends.slice(0,3).map(x=>x.name).join(', ')+(ends.length>3?'…':''));
+    // routes run the way the links do: from the other end when the selection depends on it, else to it
+    const fromEnd=route.items.some(i=>RT.up.has(i));
+    const h3=document.createElement('h3');h3.textContent=(fromEnd?'Routes from ':'Routes to ')+endName;sec.appendChild(h3);
+    const k=document.createElement('div');k.className='kv';const np=RT.paths>=1e6?'over a million':String(RT.paths);
+    const mid=RT.items.size-1-ends.length,usesIt=fromEnd;
+    k.textContent=np+' route'+(RT.paths===1?'':'s')+' · '+mid+' item'+(mid===1?'':'s')+' in between · '+(usesIt?'the selection depends on it':'it depends on the selection');sec.appendChild(k);
+    const P=routePaths(RT,12);
+    if(!P.more){P.paths.forEach((pth,i)=>{const row=document.createElement('div');row.className='rpath';
+      const no=document.createElement('span');no.className='rno';no.textContent=(i+1)+'.';row.appendChild(no);
+      pth.forEach((id,j)=>{const x=byId[id];if(!x)return;if(j){const ar=document.createElement('span');ar.className='rar';ar.textContent='→';row.appendChild(ar);}
+        const a=document.createElement('span');a.className='name '+stateCls(x)+(id===selected?' rsel':route.items.includes(id)?' rend':'');a.textContent=x.name;
+        if(id!==selected)a.onclick=()=>select(id);row.appendChild(a);});sec.appendChild(row);});}
+    else{const w=document.createElement('div');w.className='kv';w.style.marginTop='6px';w.textContent='Too many to list one by one. Items on the routes:';sec.appendChild(w);
+      sec.appendChild(itemList([...RT.items].filter(i=>i!==selected&&byId[i]).sort((a,b)=>byId[a].o-byId[b].o)));}
+    const bb=document.createElement('div');bb.style.cssText='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap';
+    const b1=document.createElement('button');b1.textContent='Show routes in graph';b1.onclick=()=>showInGraph(()=>[...new Set([...RT.items].filter(i=>byId[i]).map(i=>rep(byId[i])))]);
+    const b2=document.createElement('button');b2.textContent='Hide routes';b2.title='Hide the routes (Esc). Back returns to them.';b2.onclick=()=>setRoute(null);
+    bb.append(b1,b2);sec.appendChild(bb);d.appendChild(sec);}}
   if(simOn&&n.tl!=null&&!canItems&&isSupp(n)){const x=document.createElement('div');x.className='kv';x.style.margin='8px 0';x.textContent='Suppressed: '+whyText(n);d.appendChild(x);}
   if(simOn&&n.tl!=null&&canItems){const box=document.createElement('div');box.style.margin='8px 0';box.style.display='flex';box.style.gap='8px';box.style.alignItems='center';box.style.flexWrap='wrap';
     const b=document.createElement('button');const ex=isExplicit(n);b.textContent=ex?'Switch back on (simulation)':'Suppress (simulation)';b.onclick=()=>simToggleItem(n.id);box.appendChild(b);
@@ -2546,17 +2584,17 @@ function edgeHover(p,s,t,on){
     const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','hovring');r.setAttribute('x',-6);r.setAttribute('y',-6);r.setAttribute('width',NW+12);r.setAttribute('height',NH+12);r.setAttribute('rx',9);r.style.opacity='0';requestAnimationFrame(()=>requestAnimationFrame(()=>{r.style.opacity='';}));g.appendChild(r);st.rings.push(r);});
   hovState=st;}
 // hovering a box highlights it (gold ring), its direct parents (blue) and children (green) and the links
-// between them; the rest of the graph fades. The links are copied into a layer under the boxes.
-let nhState=null,nhAnchor=null;
+// between them. The links are copied into a layer above all other links, just under the boxes.
+let nhState=null,nhAnchor=null,hoverRel=true;
 function nodeHoverClear(){const h=nhState;nhState=null;svg.classList.remove('nhov');if(!h)return;
   h.ov.remove();h.rings.forEach(r=>r.remove());h.nodes.forEach(g=>g.classList.remove('nhc','nhr'));(h.badgeCls||[]).forEach(([b,c])=>b.setAttribute('class',c));}
 function nodeHover(id,on){
-  nodeHoverClear();if(!on||PB||drag||hovPin||!nodeEls[id])return;
+  nodeHoverClear();if(!on||!hoverRel||PB||drag||hovPin||!nodeEls[id])return;
   const NS='http://www.w3.org/2000/svg';const ov=document.createElementNS(NS,'g');ov.setAttribute('class','nhov-ov');
   const st={ov,rings:[],nodes:[],badgeCls:[]};const kin={};
   edgeEls.forEach(x=>{if(x.s===x.t)return;let dir=null,o=null;if(x.t===id){dir='up';o=x.s;}else if(x.s===id){dir='down';o=x.t;}if(!dir||!nodeEls[o])return;
     const c=x.el.cloneNode(true);c.querySelectorAll('title').forEach(t=>t.remove());c.removeAttribute('style');
-    c.setAttribute('class','edge nhl '+dir+(x.el.classList.contains('bridge')?' bridge':''));ov.appendChild(c);
+    c.setAttribute('class','edge nhl band');const f=c.cloneNode(true);f.setAttribute('class','edge nhl flow');ov.append(c,f);
     if(x.badge){st.badgeCls.push([x.badge,x.badge.getAttribute('class')]);x.badge.setAttribute('class','ecount nhl '+dir);}
     if(!kin[o])kin[o]=dir;else if(kin[o]!==dir)kin[o]='both';});
   const ring=(g,cls)=>{const r=document.createElementNS(NS,'rect');r.setAttribute('class','hovring'+(cls?' '+cls:''));r.setAttribute('x',-6);r.setAttribute('y',-6);r.setAttribute('width',NW+12);r.setAttribute('height',NH+12);r.setAttribute('rx',9);g.appendChild(r);st.rings.push(r);};
@@ -2649,19 +2687,44 @@ function animatedRerender(change,opts){opts=opts||{};
     if(a<1)graphAnim=requestAnimationFrame(step);else{graphAnim=null;gl.remove();}};
   graphAnim=requestAnimationFrame(step);}
 // Routes: with an item selected, every other item of its tree (what it depends on, or what uses it, at any
-// distance) gets a small button; clicking it highlights every route between the two. route = {sel, rep, items}.
+// distance) gets a small button; clicking it highlights every route between the two. route = {sel, items} (items: the other end).
+// Showing or hiding routes is a step in the Back / Forward history; the other end looks selected too.
 let route=null;
 function routeCompute(){if(!route||!selected||route.sel!==selected){route=null;return null;}
-  const S=selected,aS=closure(S,'up'),dS=closure(S,'down'),ri=new Set([S]);let nPaths=0;
+  const RT=routeFor(selected,route.items);if(!RT)route=null;return RT;}
+function routeFor(S,items){
+  const aS=closure(S,'up'),dS=closure(S,'down'),ri=new Set([S]);let nPaths=0;
   const count=(from,to,memo)=>{if(from===to)return 1;if(memo.has(from))return memo.get(from);let n=0;
     for(const e of succs[from]){if(ri.has(e.t))n+=count(e.t,to,memo);if(n>1e6)break;}memo.set(from,n);return n;};
   const pairs=[];
-  route.items.forEach(t=>{if(aS.has(t)){const dT=closure(t,'down');aS.forEach(x=>{if(dT.has(x))ri.add(x);});ri.add(t);pairs.push([t,S]);}
+  items.forEach(t=>{if(aS.has(t)){const dT=closure(t,'down');aS.forEach(x=>{if(dT.has(x))ri.add(x);});ri.add(t);pairs.push([t,S]);}
     else if(dS.has(t)){const aT=closure(t,'up');dS.forEach(x=>{if(aT.has(x))ri.add(x);});ri.add(t);pairs.push([S,t]);}});
-  if(ri.size<2){route=null;return null;}
+  if(ri.size<2)return null;
   pairs.forEach(([a,b])=>{nPaths+=count(a,b,new Map());});
-  return {items:ri,up:new Set([...ri].filter(i=>aS.has(i))),down:new Set([...ri].filter(i=>dS.has(i))),paths:nPaths};}
-let searchOpen=new Set();let layoutMode='lanes',lanes=[];const collapsedNodes=new Set();let collapseEverything=false;
+  return {pairs,items:ri,up:new Set([...ri].filter(i=>aS.has(i))),down:new Set([...ri].filter(i=>dS.has(i))),paths:nPaths};}
+// the routes themselves, as lists of item ids (at most `limit`; more=true when there are more)
+function routePaths(RT,limit){const out=[];let more=false;
+  const walk=(x,to,path)=>{if(out.length>=limit){more=true;return;}if(x===to){out.push(path.slice());return;}
+    for(const e of succs[x]){if(!RT.items.has(e.t))continue;path.push(e.t);walk(e.t,to,path);path.pop();if(more)return;}};
+  RT.pairs.forEach(([a,b])=>{if(!more)walk(a,b,[a]);});return {paths:out,more};}
+// hovering a route button previews its routes: orange flowing links and rings, nothing else changes
+let rpState=null,lastVisRep=x=>x;
+function routePreviewClear(){const h=rpState;rpState=null;svg.classList.remove('rpvon');if(!h)return;h.ov.remove();h.rings.forEach(r=>r.remove());h.nodes.forEach(g=>g.classList.remove('rpin'));}
+function routePreview(items,on,tt){routePreviewClear();if(!on||PB||drag||!selected)return null;nodeHoverClear();
+  const RT=routeFor(selected,items);if(!RT)return null;const NS='http://www.w3.org/2000/svg';
+  const repsOf=ids=>new Set([...ids].filter(i=>byId[i]).map(i=>lastVisRep(rep(byId[i]))));const rr=repsOf(RT.items),tr=repsOf(items);
+  const ov=document.createElementNS(NS,'g');ov.setAttribute('class','nhov-ov');const st={ov,rings:[],nodes:[]};
+  edgeEls.forEach(x=>{if(x.s===x.t||!rr.has(x.s)||!rr.has(x.t)||!(x.src||[]).some(q=>RT.items.has(q.s)&&RT.items.has(q.t)))return;
+    const c=x.el.cloneNode(true);c.querySelectorAll('title').forEach(t=>t.remove());c.removeAttribute('style');c.setAttribute('class','edge rpv band');
+    const f=c.cloneNode(true);f.setAttribute('class','edge rpv flow');ov.append(c,f);});
+  const selR=lastVisRep(rep(byId[selected]));[selR,...rr].forEach(id=>{const g=nodeEls[id];if(g&&!g.classList.contains('rpin')){g.classList.add('rpin');st.nodes.push(g);}});
+  rr.forEach(id=>{const g=nodeEls[id];if(!g||id===selR)return;const r=document.createElementNS(NS,'rect');r.setAttribute('class','rpring'+(tr.has(id)?' end':''));r.setAttribute('x',-6);r.setAttribute('y',-6);r.setAttribute('width',NW+12);r.setAttribute('height',NH+12);r.setAttribute('rx',9);g.appendChild(r);st.rings.push(r);});
+  const vpEl=$('vp');if(nhAnchor&&nhAnchor.parentNode===vpEl)vpEl.insertBefore(ov,nhAnchor);else vpEl.appendChild(ov);rpState=st;svg.classList.add('rpvon');
+  if(tt)tt.textContent='Show the '+(RT.paths>=1e6?'over a million':RT.paths)+' route'+(RT.paths===1?'':'s')+' ('+(RT.items.size-1-items.length)+' items in between) between the selection and this';
+  return RT;}
+function setRoute(items){routePreviewClear();saveView();route=items?{sel:selected,items}:null;setTimeout(pushHist,0);renderDetails();
+  if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{},focus?{fit:'fit'}:{dur:450});}
+let searchOpen=new Set();let layoutMode='lanes',lanes=[],laneEls={};const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
 const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
 const compOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component')compOf[e.t]=e.s;});
@@ -2672,15 +2735,17 @@ const dparamOf={};D.edges.forEach(e=>{if(byId[e.t]&&byId[e.t].type==='DerivedPar
 function laneKey(n){if(!n)return null;if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
   if(n.type==='DerivedParameter'&&dparamOf[n.id])return laneKey(byId[dparamOf[n.id]]);
   if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
+// while searching, the fold (−) buttons are switched off; unfolding (+) still works
+function offFold(bt,tt){bt.classList.add('off');tt.textContent='Clear the search to fold';bt.addEventListener('click',ev=>{ev.stopImmediatePropagation();ev.stopPropagation();});}
 function rep(n){const gp=n.g||[];for(const g of gp){if(!expanded.has(g)&&!searchOpen.has(g))return 'g'+g;}
   const ps=pseudoOf(n);if(ps&&groups[ps]&&!expanded.has(ps)&&!searchOpen.has(ps))return 'g'+ps;return n.id;}
 let NW=210,NH=26;const XG=18,YG=64;// top-down: XG = gap between boxes in a row, YG = gap between rows
 function renderGraph(fitAfter,centerId){
   if(PB)stopPlay();   // a re-render replaces the boxes the playback is animating
-  nodeHoverClear();const RT=routeCompute();
+  nodeHoverClear();routePreviewClear();const RT=routeCompute();
   const gth=hasThumbs&&showThumbs;NW=gth?240:210;NH=gth?50:26;
   searchOpen=new Set();let hitReps=null;
-  if(search){nodes.filter(n=>visibleNode(n)&&matches(n)).forEach(n=>{(n.g||[]).forEach(g=>searchOpen.add(g));const ps=pseudoOf(n);if(ps)searchOpen.add(ps);});}
+  // searching does not open folded groups: a folded group (or collapsed box) holding matches is itself marked as a hit
   // the Groups and Components layouts give user parameters a block of their own, so the common
   // "User Parameters" parent box is left out there
   const vis=nodes.filter(n=>visibleNode(n)&&!(isLanes()&&n.id==='up:all'));
@@ -2713,6 +2778,11 @@ function renderGraph(fitAfter,centerId){
   const hiddenCount={};collapsedNodes.forEach(c=>{hiddenCount[c]=0;});Object.keys(hiddenBy).forEach(x=>hiddenBy[x].forEach(c=>hiddenCount[c]++));
   Object.keys(hiddenBy).forEach(x=>{if(collapsedNodes.has(x)&&hiddenBy[x].every(c=>c===x))delete hiddenBy[x];});
   reps=reps.filter(r=>!hiddenBy[r.id]);
+  // a box folded away by a collapse is represented by the collapsed box that hides it (the joined line ends there)
+  const visRep=x=>{if(!hiddenBy[x])return x;const c=hiddenBy[x].find(c=>!hiddenBy[c]);return c||x;};lastVisRep=visRep;
+  const hitCount={};
+  if(hitReps){hitReps=new Set([...hitReps].map(visRep));nodes.forEach(n=>{if(!visibleNode(n)||!matches(n))return;const x=visRep(rep(n));hitCount[x]=(hitCount[x]||0)+1;});
+    const ordR={};reps.forEach(r=>ordR[r.id]=r.o);graphHits=[...hitReps].filter(id=>ordR[id]!=null).sort((a,b)=>ordR[a]-ordR[b]);if(hitIdx>=graphHits.length)hitIdx=0;}
   // links touching a hidden box are kept and attached to the collapsed box that hides it, so what is still
   // on screen keeps its dependency (merged with any link that already joins the same two boxes)
   {const vis=x=>{if(!hiddenBy[x])return x;const c=hiddenBy[x].find(c=>!hiddenBy[c]);return c||null;};const m={};const out=[];
@@ -2786,10 +2856,13 @@ function renderGraph(fitAfter,centerId){
     down=new Set(dn.filter(i=>byId[i]&&visibleNode(byId[i])).map(i=>rep(byId[i])));
     const upIds=!relShow.up?[]:relShow.upAll?groupUpIds(selGroup):[...new Set(mem.flatMap(n=>[...relOf(n.id,'up')]))].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));
     up=new Set(upIds.filter(i=>byId[i]).map(i=>rep(byId[i])));selSet.forEach(r=>{up.delete(r);down.delete(r);});}
+  // direct parents / children folded into a collapsed box: the collapsed box counts as the direct parent / child
+  if(selSet){if(up)up=new Set([...up].map(visRep));if(down)down=new Set([...down].map(visRep));selSet.forEach(r=>{if(up)up.delete(r);if(down)down.delete(r);});}
   let routeReps=null,treeIds=null;
   if(selected&&byId[selected])treeIds=new Set([...closure(selected,'up'),...closure(selected,'down')]);
-  if(RT&&selSet){routeReps=new Set([...RT.items].filter(i=>byId[i]).map(i=>rep(byId[i])));
-    up=new Set([...RT.up].map(i=>rep(byId[i])));down=new Set([...RT.down].map(i=>rep(byId[i])));selSet.forEach(r=>{up.delete(r);down.delete(r);});}
+  let tReps=new Set();if(RT)tReps=new Set(route.items.filter(i=>byId[i]).map(i=>visRep(rep(byId[i]))));
+  if(RT&&selSet){routeReps=new Set([...RT.items].filter(i=>byId[i]).map(i=>visRep(rep(byId[i]))));
+    up=new Set([...RT.up].map(i=>visRep(rep(byId[i]))));down=new Set([...RT.down].map(i=>visRep(rep(byId[i]))));selSet.forEach(r=>{up.delete(r);down.delete(r);});}
   if(selSet)selRelated=[...new Set([...selSet,...(up||[]),...(down||[])])].filter(r=>r!=='__group__');
   // selection: pull the related boxes together in each row, centred under the selection;
   // unrelated boxes in those rows move aside (rows themselves stay where they are)
@@ -2823,6 +2896,7 @@ function renderGraph(fitAfter,centerId){
   const addBtn=(id,bt)=>{let w=nodeBtnEls[id];if(!w){w=document.createElementNS(NS,'g');w.setAttribute('transform','translate('+pos[id].x+','+pos[id].y+')');nodeBtnEls[id]=w;btnLayer.appendChild(w);
     // the box's +/- button counts as part of the box for the hover highlight
     w.addEventListener('mouseenter',()=>nodeHover(id,true));w.addEventListener('mouseleave',()=>{if(nhState)nodeHover(id,false);});}w.appendChild(bt);};
+  laneEls={};
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
     const CM=layoutMode==='comps';const noLane=id=>id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);
     lanes.forEach(l=>{const col=l.id==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
@@ -2833,11 +2907,11 @@ function renderGraph(fitAfter,centerId){
         const can=(gk&&groups[gk])||(cidL&&canCollapse(cidL))||(cidL&&collapsedNodes.has(cidL));
         if(can){const open=cidL?!collapsedNodes.has(cidL):(expanded.has(gk)||searchOpen.has(gk));const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(l.x+l.w/2)+','+(l.y1+1)+')');   // bottom centre, like the boxes' buttons
           const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?8:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
-          const tt=document.createElementNS(NS,'title');tt.textContent=open?(cidL?'Fold this component into its box':'Fold this whole group into one box'):(cidL?'Show what is in this component':'Show the items of this group');bt.append(c,t,tt);
+          const tt=document.createElementNS(NS,'title');tt.textContent=open?(cidL?'Fold this component into its box':'Fold this whole group into one box'):(cidL?'Show what is in this component':'Show the items of this group');bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
           bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
           l.btn=bt;}}
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');const gBadge=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
@@ -2912,7 +2986,7 @@ function renderGraph(fitAfter,centerId){
 
   redges.forEach(e=>{const a=pos[e.s],b=pos[e.t];if(!a||!b)return;const p=document.createElementNS(NS,'path');
     const pm=port.get(e)||{};const bow=bowOf.get(e)||0;
-    const d=edgeD(a,b,pm.o1,pm.o2,bow);edgeEls.push({el:p,s:e.s,t:e.t,o1:pm.o1,o2:pm.o2,bow});
+    const d=edgeD(a,b,pm.o1,pm.o2,bow);edgeEls.push({el:p,s:e.s,t:e.t,o1:pm.o1,o2:pm.o2,bow,src:e.src});
     p.setAttribute('d',d);let cls=e.contain?'edge contain':'edge'+(e.src.every(x=>x.k.every(k=>k==='order'||(k!=='suppress'&&!kindOn[k])))?' order':'')+(!e.contain&&(e.via||e.src.length&&e.src.every(x=>x.via))?' bridge':'');
     if(e.contain){const gc=colorOfGroup(e.s.slice(1));if(gc)p.setAttribute('style','stroke:'+gc);}
     if(selRep&&e.contain){if(!(selSet.has(e.s)||selSet.has(e.t)||up.has(e.t)||down.has(e.t)))cls+=' dim';}
@@ -2924,17 +2998,22 @@ function renderGraph(fitAfter,centerId){
       else if(!/\bdim\b/.test(cls))cls+=' dim';}
     p.setAttribute('class',cls);const lift=/ (up|down|insel|route)\b/.test(cls);
     const t=document.createElementNS(NS,'title');t.textContent=e.contain?'Part of timeline group '+(groups[e.s.slice(1)]?groups[e.s.slice(1)].name:''):[...new Set(e.src.flatMap(x=>x.k))].map(x=>KIND[x]||x).join(', ')+(e.n>1?' ('+e.n+' links)':'');if(!e.contain&&e.via)t.textContent+=' (through collapsed items)';else if(!e.contain&&/ bridge/.test(cls))t.textContent+=' (through hidden items)';p.appendChild(t);const layer=lift?geHi:ge;layer.appendChild(p);
-    // a link joined into a collapsed box (a folded group, or a box that hides what depends on it): show how many
-    // of the items folded into that box the link actually leads to
-    {const br=R[e.t];const tIds=e.contain?[]:[...new Set(e.src.map(x=>x.t).filter(i=>byId[i]))];
-      const intoFold=br&&!e.contain&&tIds.length&&((br.isGroup&&!br.header)||(e.via&&collapsedNodes.has(e.t)&&tIds.some(i=>i!==e.t)));
-      if(intoFold){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':''));
-        const txt=String(tIds.length),w=Math.max(18,8+txt.length*7);const rc=document.createElementNS(NS,'rect');rc.setAttribute('x',-w/2);rc.setAttribute('y',-8);rc.setAttribute('width',w);rc.setAttribute('height',16);rc.setAttribute('rx',8);
+    // a link joined to a collapsed box (a folded group or block, or a box that hides what depends on it), at
+    // either end: show how many of the items folded into that box the link comes from / leads to
+    {const folded=(id,ids)=>{const r=R[id];return !!r&&ids.length>0&&((r.isGroup&&!r.header)||(e.via&&collapsedNodes.has(id)&&ids.some(i=>i!==id)));};
+      const sIds=e.contain?[]:[...new Set(e.src.map(x=>x.s).filter(i=>byId[i]))],tIds=e.contain?[]:[...new Set(e.src.map(x=>x.t).filter(i=>byId[i]))];
+      const fromF=!e.contain&&folded(e.s,sIds),intoF=!e.contain&&folded(e.t,tIds);
+      // not a link to the whole box but to some of the items folded into it: drawn dotted, like other indirect links
+      if(fromF||intoF){if(!p.classList.contains('bridge')){p.classList.add('bridge');const pt=p.querySelector('title');if(pt&&!/\(through /.test(pt.textContent))pt.textContent+=' (to or from items inside a collapsed box)';}}
+      if(fromF||intoF){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':''));
+        const txt=fromF&&intoF?sIds.length+'→'+tIds.length:String(fromF?sIds.length:tIds.length),w=Math.max(18,8+txt.length*7);const rc=document.createElementNS(NS,'rect');rc.setAttribute('x',-w/2);rc.setAttribute('y',-8);rc.setAttribute('width',w);rc.setAttribute('height',16);rc.setAttribute('rx',8);
         const tx=document.createElementNS(NS,'text');tx.setAttribute('y',3.8);tx.textContent=txt;
-        const tt=document.createElementNS(NS,'title');tt.textContent='Leads to '+tIds.length+' item'+(tIds.length===1?'':'s')+' inside the collapsed box:\n'+tIds.slice(0,20).map(i=>'• '+byId[i].name).join('\n')+(tIds.length>20?'\n…':'');
-        bg.append(rc,tx,tt);gBadge.appendChild(bg);const x=edgeEls[edgeEls.length-1];x.badge=bg;placeBadge(x,a,b);}}
+        const lst=ids=>ids.slice(0,20).map(i=>'• '+byId[i].name).join('\n')+(ids.length>20?'\n…':'');
+        const tt=document.createElementNS(NS,'title');tt.textContent=[fromF?'Comes from '+sIds.length+' item'+(sIds.length===1?'':'s')+' inside the collapsed box:\n'+lst(sIds):'',intoF?'Leads to '+tIds.length+' item'+(tIds.length===1?'':'s')+' inside the collapsed box:\n'+lst(tIds):''].filter(Boolean).join('\n\n');
+        bg.append(rc,tx,tt);gBadge.appendChild(bg);const x=edgeEls[edgeEls.length-1];x.badge=bg;p.badge=bg;placeBadge(x,a,b);}}
     // wide invisible twin that catches the mouse; hovering shows the link bold and rings both ends
-    const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
+    const plain=!e.contain&&!/ (up|down|insel|route)\b/.test(cls);if(plain)p.classList.add('plain');if(p.badge)p.badge.classList.add('plain');
+    const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':'')+(plain?' plain':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
     edgeEls[edgeEls.length-1].hit=h;const es=e.s,et=e.t;
     h.addEventListener('mouseenter',()=>{if(drag||hovPin)return;edgeHover(p,es,et,true);});
     // click: zoom to show both boxes, keep the link highlighted until the mouse moves
@@ -2942,7 +3021,7 @@ function renderGraph(fitAfter,centerId){
     h.addEventListener('mouseleave',()=>edgeHover(p,es,et,false));});
   // layers, bottom to top: other links, dimmed boxes, links of the selection, boxes of the selection.
   // Links of the selected item run above boxes that are not part of its history.
-  const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gBadge,gn);nhAnchor=gnDim;
+  const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gBadge,gn);nhAnchor=gBadge;   // hover links: above every other link (and faded boxes), below the boxes
   reps.forEach(r=>{const p=pos[r.id];const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('width',NW);rect.setAttribute('height',NH);rect.setAttribute('rx',5);
     let label,cat;
@@ -2952,6 +3031,7 @@ function renderGraph(fitAfter,centerId){
     else{const n=r.members[0];label=n.name;cat=n.cat;}
     const gsupp=!r.isGroup?isSupp(r.members[0]):!!(simState&&r.members.length&&r.members.every(isSupp));
     if(r.isGroup&&simState){const k=r.members.filter(isSupp).length;if(k){label+=' · '+k+' off';}}
+    if(r.isGroup&&!r.header&&hitCount[r.id])label=label.startsWith('▸ ')?'▸ '+hitCount[r.id]+' found · '+label.slice(2):label+' · '+hitCount[r.id]+' found';   // first, so it is not cut off
     if(gsupp)cat='supp_';rect.setAttribute('fill',gsupp?'var(--supp-bg)':'var(--c-'+cat+'-bg)');if(gsupp)rect.setAttribute('stroke-dasharray','5 3');rect.setAttribute('stroke',gsupp?'var(--supp)':(!r.isGroup&&r.members[0].health===2)?'var(--err)':(!r.isGroup&&r.members[0].health===1)?'var(--warn)':'var(--c-'+cat+')');
     if(laneFold){rect.setAttribute('fill','transparent');rect.setAttribute('stroke','transparent');rect.removeAttribute('stroke-dasharray');}
     const bk=r.members.map(brokenKind).filter(Boolean);
@@ -3002,22 +3082,24 @@ function renderGraph(fitAfter,centerId){
     if(laneFold){}
     else if(r.isGroup){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?7:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
-      const tt=document.createElementNS(NS,'title');tt.textContent=open?'Collapse this timeline group into one box':'Expand this timeline group to show its items';bt.append(c,t,tt);
+      const tt=document.createElementNS(NS,'title');tt.textContent=open?'Collapse this timeline group into one box':'Expand this timeline group to show its items';bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
       bt.addEventListener('click',ev=>{ev.stopPropagation();const newId=(open?'g':'h')+gid;
         animatedRerender(()=>{if(open){expanded.delete(gid);Object.keys(groups).forEach(x=>{if(groupPath(x).length>1&&groups[x].parent&&(function up(y){let q=groups[y].parent,gd=0;while(q&&gd++<20){if(q===gid)return true;q=groups[q]?groups[q].parent:null;}return false;})(x))expanded.delete(x);});}else expanded.add(gid);},{keepOld:r.id,keepNew:newId});});addBtn(r.id,bt);}
     else if(canCollapse(r.id)){const col=collapsedNodes.has(r.id);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',col?9:7);c.setAttribute('class','ctogc'+(col?' col':''));
       const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=col?'+':'−';
-      const tt=document.createElementNS(NS,'title');tt.textContent=col?('Expand: show the '+(hiddenCount[r.id]||0)+' hidden items that depend on this'):(isLanes()?'Collapse: hide what depends on this in the same timeline group':'Collapse: hide everything that depends on this');bt.append(c,t,tt);
-      if(col&&hiddenCount[r.id]){const cn=document.createElementNS(NS,'text');cn.setAttribute('x',13);cn.setAttribute('y',4);cn.setAttribute('class','ctogn');cn.textContent=hiddenCount[r.id]+' hidden';bt.appendChild(cn);}
+      const tt=document.createElementNS(NS,'title');tt.textContent=col?('Expand: show the '+(hiddenCount[r.id]||0)+' hidden items that depend on this'):(isLanes()?'Collapse: hide what depends on this in the same timeline group':'Collapse: hide everything that depends on this');bt.append(c,t,tt);if(search&&!col)offFold(bt,tt);
+      if(col&&hiddenCount[r.id]){const cn=document.createElementNS(NS,'text');cn.setAttribute('x',13);cn.setAttribute('y',4);cn.setAttribute('class','ctogn');const inner=(hitCount[r.id]||0)-(matches(r.members[0])?1:0);cn.textContent=hiddenCount[r.id]+' hidden'+(search&&inner>0?' · '+inner+' found':'');bt.appendChild(cn);}
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
       bt.addEventListener('click',ev=>{ev.stopPropagation();const rid=r.id;animatedRerender(()=>{if(col)collapsedNodes.delete(rid);else collapsedNodes.add(rid);},{keepOld:rid,keepNew:rid});});addBtn(r.id,bt);}
     if(selSet&&!selSet.has(r.id)&&!up.has(r.id)&&!down.has(r.id)&&!(r.header&&hdrRelated(r)))g.classList.add('dim');
-    if(routeReps){if(routeReps.has(r.id)&&!r.header){g.classList.remove('dim');if(!selSet.has(r.id)){rect.setAttribute('stroke','var(--route)');rect.setAttribute('stroke-width',route.rep===r.id?'3.5':'2.2');}}else g.classList.add('dim');}
+    if(routeReps){if(routeReps.has(r.id)&&!r.header){g.classList.remove('dim');if(tReps.has(r.id)){rect.setAttribute('stroke','var(--sel)');rect.setAttribute('stroke-width','3.5');
+        const gl=document.createElementNS(NS,'rect');gl.setAttribute('class','selglow');gl.setAttribute('x',-9);gl.setAttribute('y',-9);gl.setAttribute('width',NW+18);gl.setAttribute('height',NH+18);gl.setAttribute('rx',12);g.insertBefore(gl,g.firstChild);}
+      else if(!selSet.has(r.id)){rect.setAttribute('stroke','var(--route)');rect.setAttribute('stroke-width','2.2');}}else g.classList.add('dim');}
     // route button: on every other box of the selected item's tree
     if(treeIds&&!laneFold&&!r.header&&!selSet.has(r.id)){const tItems=r.members.filter(m=>treeIds.has(m.id)).map(m=>m.id);
-      if(tItems.length){const on=!!(RT&&route.rep===r.id);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','rbtn'+(on?' on':''));bt.setAttribute('transform','translate('+(NW-14)+','+(NH+1)+')');
+      if(tItems.length){const on=!!(RT&&tReps.has(r.id));const bt=document.createElementNS(NS,'g');bt.setAttribute('class','rbtn'+(on?' on':''));bt.setAttribute('transform','translate('+(NW-14)+','+(NH+1)+')');
         const c=document.createElementNS(NS,'circle');c.setAttribute('r',8);
         const pa=document.createElementNS(NS,'path');pa.setAttribute('d','M-4,3.5 C-4,-1 4,1 4,-3.5');
         const d1=document.createElementNS(NS,'circle');d1.setAttribute('class','rdot');d1.setAttribute('cx',-4);d1.setAttribute('cy',3.5);d1.setAttribute('r',1.8);
@@ -3026,8 +3108,8 @@ function renderGraph(fitAfter,centerId){
         bt.append(c,pa,d1,d2,tt);
         if(on){const n=document.createElementNS(NS,'text');n.setAttribute('class','rcount');n.setAttribute('x',-12);n.setAttribute('y',4);n.setAttribute('text-anchor','end');n.textContent=(RT.paths>=1e6?'1M+':RT.paths)+' route'+(RT.paths===1?'':'s');bt.appendChild(n);}
         ['mousedown','dblclick'].forEach(ev=>bt.addEventListener(ev,e=>e.stopPropagation()));
-        const rid=r.id,sel=selected;bt.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;
-          animatedRerender(()=>{route=on?null:{sel,rep:rid,items:tItems};},focus?{fit:'fit'}:{dur:450});});
+        bt.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;setRoute(on?null:tItems);});
+        if(!on){bt.addEventListener('mouseenter',()=>routePreview(tItems,true,tt));bt.addEventListener('mouseleave',()=>routePreviewClear());}
         addBtn(r.id,bt);}}
     if(hitReps){if(hitReps.has(r.id)){rect.setAttribute('stroke','var(--sel)');rect.setAttribute('stroke-width','3');if(r.id===graphHits[hitIdx]){rect.setAttribute('stroke','var(--down)');rect.setAttribute('stroke-width','4');}}else if(!selSet)g.classList.add('dim');}
 
@@ -3128,25 +3210,33 @@ function pbBegin(){let order;const grp=!selected&&selGroup&&groups[selGroup]?sel
     const ord={};const setR=new Set(up.map(i=>rep(byId[i])).filter(r=>pos[r]));setR.delete(selR);
     nodes.forEach(n=>{const r=rep(n);if(r===selR||setR.has(r))ord[r]=Math.min(ord[r]==null?1e9:ord[r],n.o);});
     order=[...setR].sort((a,b)=>ord[a]-ord[b]);order.push(selR);}
+  // open timeline groups (their header boxes in the Depth layout) are the parents of their items: each header
+  // appears right before the first of its items, outer groups before inner ones
+  {const anc=r=>{if(r[0]==='g'||r[0]==='h'){const out=[];let q=groups[r.slice(1)]?groups[r.slice(1)].parent:null,gd=0;while(q&&gd++<20){out.unshift(q);q=groups[q]?groups[q].parent:null;}return out;}
+      const n=byId[r];if(!n)return [];if(n.g&&n.g.length)return n.g;const ps=pseudoOf(n);return ps?[ps]:[];};
+    const seen=new Set(order),out=[];order.forEach(r=>{anc(r).forEach(gid=>{const h='h'+gid;if(pos[h]&&!seen.has(h)){seen.add(h);out.push(h);}});out.push(r);});order=out;}
   const S=new Set(order);const idx={};order.forEach((r,i)=>idx[r]=i);
   const edges=edgeEls.filter(x=>S.has(x.s)&&S.has(x.t)&&x.s!==x.t);
   const steps=order.map((r,i)=>({id:r,inc:edges.filter(x=>x.t===r&&idx[x.s]<i)}));
   const ov=document.createElementNS('http://www.w3.org/2000/svg','g');ov.setAttribute('class','pbov');vp.appendChild(ov);
   const lits=document.createElementNS('http://www.w3.org/2000/svg','g');ov.appendChild(lits);
   edgeHover(null,null,null,false);hovPin=null;if(hovState)edgeHover(null,null,null,false);nodeHoverClear();
-  PB={whole,grp,order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1800,speed:PB_speed,paused:false,
+  // Groups / Components layouts: a block appears (with a ring around it) when its first item is built
+  const laneAt=r=>{const q=pos[r];if(!q)return null;const l=lanes.find(l=>q.x>=l.x-1&&q.x+NW<=l.x+l.w+1&&q.y>=l.y0-1&&q.y+NH<=l.y1+1);return l?l.id:null;};
+  const laneFirst={};if(isLanes())order.forEach((r,i)=>{const l=laneAt(r);if(l!=null&&laneEls[l]&&laneFirst[l]==null)laneFirst[l]=i;});
+  PB={laneFirst,laneShown:new Set(),lalpha:{},whole,grp,order,S,idx,edges,steps,k:-1,phase:'intro',vt:0,ph0:0,dur:1800,speed:PB_speed,paused:false,
     alpha:{},ealpha:new Map(),ov,lits,fading:[],dots:[],pulses:[],userCam:false,last:performance.now(),raf:0,shown:new Set()};
   Object.keys(nodeEls).forEach(id=>PB.alpha[id]=1);edgeEls.forEach(x=>PB.ealpha.set(x,1));
   svg.classList.add('playing');document.body.classList.add('pbon');document.body.classList.toggle('pbthumbs',hasThumbs&&showThumbs);pbUI();
   PB.raf=requestAnimationFrame(pbFrame);}
 let PB_speed=1;
 function stopPlay(){if(!PB)return;cancelAnimationFrame(PB.raf);PB.ov.remove();
-  Object.values(nodeEls).forEach(g=>{g.style.opacity='';});edgeEls.forEach(x=>{x.el.style.opacity='';});
+  Object.values(nodeEls).forEach(g=>{g.style.opacity='';});edgeEls.forEach(x=>{x.el.style.opacity='';});Object.values(laneEls).forEach(L=>{L.g.style.opacity='';});
   PB=null;svg.classList.remove('playing');document.body.classList.remove('pbon','pbthumbs');$('pbCard').dataset.id='';pbUI();}
 function pbUI(){const bar=$('pbBar');if(!bar)return;bar.style.display=PB?'flex':'none';pbSync();if(!PB)return;
   $('pbPlay').textContent=PB.phase==='done'?'↺':(PB.paused?'▶':'❚❚');
   $('pbPlay').title=PB.phase==='done'?'Replay':(PB.paused?'Resume (Space)':'Pause (Space)');
-  $('pbNext').disabled=PB.phase==='done';$('pbSpeed').textContent=PB.speed+'×';
+  $('pbNext').disabled=PB.phase==='done';$('pbPrev').disabled=PB.phase==='intro'||pbLastShown()<0;$('pbSpeed').textContent=PB.speed+'×';
   const n=PB.order.length;let t;
   if(PB.phase==='intro')t=PB.whole?'Whole history · <b>'+n+'</b> step'+(n===1?'':'s'):PB.grp?'<b>'+n+'</b> step'+(n===1?'':'s')+' to build group <b>'+esc(groups[PB.grp]?groups[PB.grp].name:'')+'</b>':'<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
   else if(PB.phase==='done')t='Done · '+n+' step'+(n===1?'':'s');
@@ -3167,6 +3257,7 @@ function pbName(r){if(byId[r])return byId[r].name;const g=groups[r.slice(1)];ret
 function pbSetPhase(ph,dur){PB.phase=ph;PB.ph0=PB.vt;PB.dur=dur;}
 function pbStep(k){PB.k=k;PB.userCam=false;pbDropDots();if(PB.steps[k])PB.steps[k].pulsed=false;
   if(k>=PB.order.length){pbSetPhase('done',1600);pbUI();return;}   // shows the whole result briefly, then closes
+  Object.keys(PB.laneFirst).forEach(l=>{if(PB.laneFirst[l]===k&&!PB.laneShown.has(l)){PB.laneShown.add(l);pbLanePulse(l);}});
   const st=PB.steps[k];
   if(st.inc.length){let mx=0;st.inc.forEach(x=>{const pp=pbPath(x);mx=Math.max(mx,pp.len);
       const NS2='http://www.w3.org/2000/svg';const d0=edgeCurve(pos[x.s],pos[x.t],x.o1,x.o2,x.bow);
@@ -3184,13 +3275,32 @@ function pbStep(k){PB.k=k;PB.userCam=false;pbDropDots();if(PB.steps[k])PB.steps[
 function pbDash(d,on,w){const L=d.ll;if(!d.dotted)return on+' '+(L+10);const step=w*2.4;const n=Math.floor(on/step);
   let a=[];for(let i=0;i<n;i++)a.push('0.01',String(step-0.01));const r=on-n*step;if(r>0)a.push('0.01',String(r));a.push('0',String(L+10));return a.join(' ');}
 function pbDropDots(){PB.dots.forEach(d=>{d.el.remove();const L=d.ll,w=4.5/T.k;d.lt.setAttribute('stroke-dasharray',pbDash(d,L,w));d.lg.setAttribute('stroke-dasharray',pbDash(d,L,w));PB.fading.push({el:d.lit,t0:PB.vt});});PB.dots=[];}
+function pbLanePulse(lid){const L=laneEls[lid];if(!L)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',14);
+  r.style.stroke=L.col;PB.ov.appendChild(r);PB.pulses.push({el:r,lane:L.l,t0:PB.vt});}
 function pbPulse(id){const p=pos[id];if(!p)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',9);PB.ov.appendChild(r);PB.pulses.push({el:r,id,t0:PB.vt});}
 // finish the running step at once (Next)
+// the last step whose item is built (-1: none yet)
+function pbLastShown(){if(!PB)return -1;const k=Math.min(PB.k,PB.order.length-1);if(k>=0&&PB.shown.has(PB.order[k]))return k;return k-1;}
+// Next: while playing, finish the running step at once and go on; while paused, animate exactly one step and stay paused
+function pbNextStep(){if(!PB||PB.phase==='done')return;
+  if(!PB.paused){pbSkip();return;}
+  if(PB.phase==='back'){PB.ph0=PB.vt-PB.dur;return;}   // finish the step back first
+  PB.userCam=false;
+  if(PB.phase==='intro')pbStep(0);
+  else if(PB.phase==='hold'&&PB.shown.has(PB.order[PB.k]))pbStep(PB.k+1);
+  PB.stepOnce=PB.phase!=='done';}
+// Back: take the last built step back (animated); playing goes on from there, paused stays paused
+function pbBackStep(){if(!PB||PB.phase==='intro')return;
+  if(PB.phase==='back'){// a second press: finish the running one at once, then take the next one back
+    const j=PB.backK,st=PB.steps[j];PB.shown.delete(st.id);Object.keys(PB.laneFirst).forEach(l=>{if(PB.laneFirst[l]===j)PB.laneShown.delete(l);});PB.k=j;}
+  const j=pbLastShown();if(j<0)return;
+  pbDropDots();   // a step still running (item not built yet) is dropped
+  PB.k=j;PB.backK=j;PB.stepOnce=false;PB.userCam=false;pbSetPhase('back',700);pbUI();}
 function pbSkip(){if(!PB||PB.phase==='done')return;
   if(PB.phase==='intro'){pbStep(0);return;}
   const r=PB.order[PB.k];PB.shown.add(r);PB.steps[PB.k].inc.forEach(x=>PB.ealpha.set(x,1));PB.alpha[r]=1;pbPulse(r);pbStep(PB.k+1);}
 function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=now;
-  if(!PB.paused)PB.vt+=dt*PB.speed;
+  if(!PB.paused||PB.stepOnce||PB.phase==='back')PB.vt+=dt*PB.speed;
   const p=(PB.vt-PB.ph0)/PB.dur,e=pbEase(p);const tau=Math.max(120,480/Math.sqrt(PB.speed));
   // target opacities
   const na={},ea=new Map();
@@ -3212,32 +3322,45 @@ function pbFrame(now){if(!PB)return;const dt=Math.min(80,now-PB.last);PB.last=no
     camIds=[st.id];if(p>=1){pbDropDots();pbPulse(st.id);pbSetPhase('fade',1000);}}
   else if(PB.phase==='fade'){const st=PB.steps[PB.k];na[st.id]=PB_A.pre+(1-PB_A.pre)*e;st.inc.forEach(x=>ea.set(x,1));
     camIds=[st.id];kmax=1.3;if(!st.inc.length&&!st.pulsed&&p>0.15){st.pulsed=true;pbPulse(st.id);}
-    if(p>=1){PB.shown.add(st.id);pbSetPhase('hold',st.inc.length?500:650);}}
-  else if(PB.phase==='hold'){camIds=[PB.order[PB.k]];kmax=1.3;if(p>=1)pbStep(PB.k+1);}
+    if(p>=1){PB.shown.add(st.id);pbSetPhase('hold',st.inc.length?500:650);pbUI();}}
+  else if(PB.phase==='hold'){camIds=[PB.order[PB.k]];kmax=1.3;if(p>=1){if(!PB.paused)pbStep(PB.k+1);else PB.stepOnce=false;}}
+  else if(PB.phase==='back'){// a step taken back: its box and links fade back, the camera returns to the step before
+    const j=PB.backK,st=PB.steps[j];na[st.id]=1-(1-PB_A.pre)*e;st.inc.forEach(x=>ea.set(x,1-(1-PB_A.edgePre)*e));
+    camIds=[j>0?PB.order[j-1]:st.id];kmax=1.3;
+    if(p>=1){PB.shown.delete(st.id);Object.keys(PB.laneFirst).forEach(l=>{if(PB.laneFirst[l]===j)PB.laneShown.delete(l);});PB.stepOnce=false;pbStep(j);}}
   else if(PB.phase==='done'){camIds=PB.order;kmin=0.02;kmax=1.1;pad=60;if(p>=1){stopPlay();return;}}
+  // blocks (Groups / Components layouts): dim until their first item is built, then fade in
+  {const k=Math.min(1,dt*PB.speed/Math.max(200,tau));Object.keys(laneEls).forEach(l=>{const L=laneEls[l];
+    let v=PB.laneFirst[l]==null?0.15:(PB.laneShown.has(l)||PB.phase==='done'?1:0.35);
+    if(PB.phase==='intro')v=1+(v-1)*e;const cur=PB.lalpha[l]==null?1:PB.lalpha[l];let nv=PB.phase==='intro'?v:cur+(v-cur)*k;if(Math.abs(v-nv)<0.03)nv=v;
+    if(Math.abs(nv-cur)>0.002||PB.lalpha[l]==null){PB.lalpha[l]=nv;L.g.style.opacity=String(nv);}});}
   // apply opacities
   Object.keys(nodeEls).forEach(id=>{const g=nodeEls[id];const v=na[id];if(PB.alpha[id]!==v){PB.alpha[id]=v;g.style.opacity=String(v);}});
   edgeEls.forEach(x=>{const v=ea.get(x);if(PB.ealpha.get(x)!==v){PB.ealpha.set(x,v);x.el.style.opacity=String(v);}});
   PB.fading=PB.fading.filter(q=>{const a=(PB.vt-q.t0)/900;if(a>=1){q.el.remove();return false;}q.el.style.opacity=String(1-pbEase(a));return true;});
   // arrival pulses: a ring that grows out of the box and fades
-  PB.pulses=PB.pulses.filter(q=>{const a=(PB.vt-q.t0)/1100;const pp=pos[q.id];if(a>=1||!pp){q.el.remove();return false;}
+  PB.pulses=PB.pulses.filter(q=>{if(q.lane){const a=(PB.vt-q.t0)/1400,L=q.lane;if(a>=1){q.el.remove();return false;}
+      const g=4+30*pbEase(a);q.el.setAttribute('x',L.x-g);q.el.setAttribute('y',L.y0-g);q.el.setAttribute('width',L.w+2*g);q.el.setAttribute('height',L.y1-L.y0+2*g);q.el.style.opacity=String(1-a);return true;}
+    const a=(PB.vt-q.t0)/1100;const pp=pos[q.id];if(a>=1||!pp){q.el.remove();return false;}
     const g=6+22*pbEase(a);q.el.setAttribute('x',pp.x-g);q.el.setAttribute('y',pp.y-g);q.el.setAttribute('width',NW+2*g);q.el.setAttribute('height',NH+2*g);q.el.style.opacity=String(1-a);return true;});
   // camera: follow the dots and the box being built
-  if(!PB.userCam&&!PB.paused){const b=pbBox(camIds,camPts);if(b)pbCam(pbView(b,kmin,kmax,pad),dt,PB.phase==='intro'||PB.phase==='done'?tau*1.6:tau);}
+  if(!PB.userCam&&(!PB.paused||PB.stepOnce||PB.phase==='back')){const b=pbBox(camIds,camPts);if(b)pbCam(pbView(b,kmin,kmax,pad),dt,PB.phase==='intro'||PB.phase==='done'?tau*1.6:tau);}
   PB.raf=requestAnimationFrame(pbFrame);}
 svg.addEventListener('mousedown',()=>{if(PB)PB.userCam=true;},true);
 svg.addEventListener('click',e=>{if(PB){e.stopImmediatePropagation();}},true);
 svg.addEventListener('wheel',()=>{if(PB)PB.userCam=true;},{capture:true,passive:true});
 $('pbStart').onclick=()=>playHistory();
 $('pbStop').onclick=()=>stopPlay();
-$('pbNext').onclick=()=>{if(PB){PB.paused=false;pbSkip();pbUI();}};
-$('pbPlay').onclick=()=>{if(!PB)return;if(PB.phase==='done'){playHistory();return;}PB.paused=!PB.paused;PB.userCam=false;pbUI();};
+$('pbNext').onclick=()=>{if(PB){pbNextStep();pbUI();}};
+$('pbPrev').onclick=()=>{if(PB){pbBackStep();pbUI();}};
+$('pbPlay').onclick=()=>{if(!PB)return;if(PB.phase==='done'){playHistory();return;}PB.paused=!PB.paused;PB.stepOnce=false;PB.userCam=false;pbUI();};
 $('pbSpeed').onclick=()=>{PB_speed=PBS[(PBS.indexOf(PB_speed)+1)%PBS.length];if(PB)PB.speed=PB_speed;pbUI();};
 window.addEventListener('keydown',e=>{if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'||e.target.tagName==='TEXTAREA'))return;
   if(!PB){if((e.key==='p'||e.key==='P')&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&view==='graph'){e.preventDefault();playHistory();}return;}
   if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();stopPlay();}
   else if(e.key===' '){e.preventDefault();$('pbPlay').onclick();}
-  else if(e.key==='ArrowRight'&&!e.altKey){e.preventDefault();$('pbNext').onclick();}},true);
+  else if(e.key==='ArrowRight'&&!e.altKey){e.preventDefault();$('pbNext').onclick();}
+  else if(e.key==='ArrowLeft'&&!e.altKey){e.preventDefault();$('pbPrev').onclick();}},true);
 // ---------- legend: what the colours, outlines, markers and lines mean ----------
 const CAT_DESC={sketch:'Sketches.',construct:'Construction planes, axes and points.',
   solid:'Features that create or add solid material: extrude, revolve, sweep, loft, rib, web, emboss, coil, pipe, boss, primitives, thicken, boundary fill.',
@@ -3290,7 +3413,7 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     row(sv('<g class="act"><rect x="22" y="4" width="22" height="22" rx="5"/><path d="M28.5,11.5 A5.5,5.5 0 1 0 37.5,11.5"/><path d="M33,8.5 L33,14.5"/></g>'),'Power button','Suppress / switch back on in the suppression preview (never changes the design). Red when switched off.'),
   ]);
   h+=sec('Lines (links)',[
-    row(line(''),'Grey line','A link: the lower item uses the upper one. Arrows point from what is used to what uses it.'),
+    row(line(''),'Grey line','A link: the lower item uses the upper one. Arrows point from what is used to what uses it. Grey links are hidden unless Display > All links is on; the links of the selection and of the hovered box always show.'),
     row(line('up'),'Blue, thick','A direct parent of the selection: the selected item uses it directly.'),
     row(line('up ind'),'Blue, faint','A further ancestor: a link between two items the selection depends on.'),
     row(line('down'),'Green, thick','A direct child: it uses the selected item directly.'),
@@ -3298,20 +3421,21 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     row(line('insel'),'Purple','A link inside the selection (between items of the selected timeline group).'),
     row(line('dim'),'Very faint','Not related to the selection.'),
     row(line('hov'),'Gold, thick','The link under the mouse, or the one you clicked (stays until the mouse moves). Both its ends get a gold ring.'),
+    row(sv('<path d="M4,15 L64,15" fill="none" style="stroke:var(--hov);stroke-width:6;stroke-opacity:.28"/><path d="M4,15 L64,15" fill="none" style="stroke:var(--hov);stroke-width:2.2;stroke-dasharray:7 5"/>'),'Gold, dashed (hover)','Hovering a box rings it in gold and marks its links with moving gold dashes (they move in the link\'s direction). The boxes it uses get a dashed gold ring, the boxes that use it a dotted one. Nothing else changes. Can be switched off in the Display menu.'),
     row(line('order'),'Dashed','"Same body, later": only timeline order on the same body, not a real reference. Off by default (Display menu).'),
     row(sv('<path d="M4,15 L60,15" fill="none" stroke="'+G+'" stroke-width="2.4" stroke-opacity=".85" stroke-linecap="round"/>'),'Thick coloured line','Joins a group header to the group\'s items (Depth layout).'),
-    row(line('bridge'),'Dotted','Not a direct link: it goes through items that are hidden by the Filter menu or folded into a collapsed box ("N hidden"). The chain continues through them.'),
-    row(sv('<path class="edge" d="M4,15 L64,15"/><rect x="24" y="7" width="22" height="16" rx="8" style="fill:var(--panel);stroke:var(--edge);stroke-width:1.2"/><text x="35" y="19" style="font-size:10.5px;font-weight:700;fill:var(--muted);text-anchor:middle">3</text>'),'Number on a line','The line goes into a collapsed box (a folded group, or a box hiding what depends on it): the number is how many of the items folded into that box it leads to. Hover it to see their names.'),
-    row(sv('<path d="M4,15 L64,15" fill="none" style="stroke:var(--route);stroke-width:2.6"/><g transform="translate(34,15)"><circle r="8" style="fill:var(--panel);stroke:var(--route);stroke-width:1.2"/><path d="M-4,3.5 C-4,-1 4,1 4,-3.5" style="fill:none;stroke:var(--route);stroke-width:1.6"/></g>'),'Orange / route button','With an item selected, every other box of its tree (what it depends on or what uses it, at any distance) gets a small route button at its lower right. Click it to show, in orange, every route between the selection and that box, with the number of routes; everything else fades. Click it again (or press Esc) to hide them.'),
+    row(line('bridge'),'Dotted','Not a direct link: it goes through items that are hidden by the Filter menu or folded into a collapsed box ("N hidden"), or it starts or ends at a folded group or block and so really links only some of the items inside it (see the number on the line).'),
+    row(sv('<path class="edge" d="M4,15 L64,15"/><rect x="24" y="7" width="22" height="16" rx="8" style="fill:var(--panel);stroke:var(--edge);stroke-width:1.2"/><text x="35" y="19" style="font-size:10.5px;font-weight:700;fill:var(--muted);text-anchor:middle">3</text>'),'Number on a line','The line starts or ends at a collapsed box (a folded group or block, or a box hiding what depends on it): the number is how many of the items folded into that box it comes from or leads to ("3→2" when both ends are collapsed). Hover it to see their names.'),
+    row(sv('<path d="M4,15 L64,15" fill="none" style="stroke:var(--route);stroke-width:2.6"/><g transform="translate(34,15)"><circle r="8" style="fill:var(--panel);stroke:var(--route);stroke-width:1.2"/><path d="M-4,3.5 C-4,-1 4,1 4,-3.5" style="fill:none;stroke:var(--route);stroke-width:1.6"/></g>'),'Orange / route button','With an item selected, every other box of its tree (what it depends on or what uses it, at any distance) gets a small route button at its lower right. Hover it to preview the routes (orange moving dashes), without changing anything. Click it to show, in orange, every route between the selection and that box; the box then looks selected too and the side panel lists the routes. Everything else fades. Click it again, press Esc or Hide routes to hide them; Back returns to the previous state.'),
     row(sv('<path class="edge" d="M4,24 C22,24 20,6 38,6 S60,6 64,6"/>'),'Curves and bends','Only routing: long links bend sideways so they do not lie on top of each other. The shape means nothing.'),
   ],'Each line may stand for several references between the same two items; hover it to see which kinds.');
   h+=sec('Link kinds',Object.keys(KIND).filter(k=>KIND_DESC[k]).map(k=>row('<span class="pill lgk">'+KIND[k]+'</span>',KIND[k],KIND_DESC[k])),
     'Why the lower item uses the upper one. All kinds are always shown, except "Same body, later" (Display menu).');
   h+=sec('History playback',[
     row(sv('<path class="pblit base" d="M4,15 L60,15" style="stroke-width:3"/><path class="pblit trail" d="M4,15 L36,15" style="stroke-width:4.5"/><circle cx="36" cy="15" r="9" class="pbhalo"/><circle cx="36" cy="15" r="5" class="pbcore"/>'),'Blue dot and gold line','Travels from items already built to the next one; the link it follows lights up in gold.'),
-    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="0" y="1" width="70" height="28" rx="8" class="pbpulse" style="stroke-width:2.5"/>'}),'Blue ring','An item appears (fades in to full colour).'),
+    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="0" y="1" width="70" height="28" rx="8" class="pbpulse" style="stroke-width:2.5"/>'}),'Blue ring','An item appears (fades in to full colour). An open timeline group box appears just before its first item. In the Groups and Components layouts a whole block fades in, with a ring in its colour around it, when its first item is built.'),
     row(sv('<rect x="10" y="2" width="50" height="26" rx="4" fill="var(--panel)" stroke="var(--border)"/><rect x="14" y="5" width="42" height="14" rx="2" fill="var(--panel2)"/><rect x="14" y="21" width="16" height="5" rx="2" fill="var(--c-solid-bg)"/>'),'Card (bottom right)','Thumbnail, type and name of the item being built.'),
-  ],'▶ Play (or P) with an item selected plays how it was built; with a group selected, how the group was built; with nothing selected, the whole history. Space pauses, → skips, Esc stops.');
+  ],'▶ Play (or P) with an item selected plays how it was built; with a group selected, how the group was built; with nothing selected, the whole history. Space pauses, → / ← step forward / back, Esc stops.');
   h+=sec('Header, panels and tree',[
     row('<button class="lgbtn hb"><span class="ic">!</span>2 broken</button>','Broken chip','Items that fail to compute now (in the design, or in the suppression preview), plus how many may fail (estimated). Click to step through them.'),
     row('<button class="lgbtn hw"><span class="ic"></span>1 warning</button>','Warning chip','Items with warnings. Click to step through them.'),
@@ -3335,11 +3459,11 @@ renderCatFilter();
 $('catAll').onclick=()=>{Object.keys(catOn).forEach(c=>catOn[c]=true);renderCatFilter();filterChanged();};
 $('catNone').onclick=()=>{Object.keys(catOn).forEach(c=>catOn[c]=false);renderCatFilter();filterChanged();};
 $('showOrder').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{kindOn.order=v;buildAdj();renderDetails();},{dur:420});else{kindOn.order=v;refresh();}};
-if(!kindsPresent.includes('order')){const l=$('showOrder').parentNode;l.style.display='none';if(l.previousElementSibling)l.previousElementSibling.style.display='none';}
+if(!kindsPresent.includes('order')){const l=$('showOrder').parentNode;l.style.display='none';}
 if(hasThumbs)$('thumbCtrl').style.display='';
 $('infoBtn').onclick=()=>{const open=!document.body.classList.contains('infoopen');if(open){renderInfo();}setInfo(open);};
 $('infoClose').onclick=()=>setInfo(false);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.classList.contains('infoopen'))setInfo(false);else if(route&&view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{route=null;},{dur:450});else if(selected||selGroup)clearSel();}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.classList.contains('infoopen'))setInfo(false);else if(route&&route.sel===selected)setRoute(null);else if(selected||selGroup)clearSel();}});
 $('gpToggle').onclick=()=>{const m=$('gpanel').classList.toggle('min');$('gpToggle').textContent=m?'+':'–';};
 $('showThumbs').onchange=e=>{const v=e.target.checked;const ch=()=>{showThumbs=v;document.body.classList.toggle('nothumbs',!showThumbs);peekHide();renderDetails();};
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(ch,{fit:'fit',dur:480});else{ch();if(view==='graph')renderGraph(true);}};
@@ -3348,6 +3472,9 @@ $('pullTog').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.key
   const set=()=>{relShow[k]=v;$('relUpAllL').classList.toggle('off',!relShow.up);$('relDnAllL').classList.toggle('off',!relShow.dn);
     $('relUpAll').disabled=!relShow.up;$('relDnAll').disabled=!relShow.dn;};
   if(view==='graph'&&Object.keys(pos).length&&(selected||selGroup))animatedRerender(set,focus?{fit:'fit'}:{dur:450});else{set();if(view==='graph')renderGraph(false);}};});
+let showAllLinks=false;svg.classList.toggle('quiet',!showAllLinks);
+$('allLinks').onchange=e=>{showAllLinks=e.target.checked;svg.classList.toggle('quiet',!showAllLinks);};
+$('hovRel').onchange=e=>{hoverRel=e.target.checked;if(!hoverRel)nodeHoverClear();};
 $('focus').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{focus=v;},{fit:'fit'});else{focus=v;renderGraph(true,selected);}};
 $('expAll').onclick=()=>{setLevel('items');};
 $('colAll').onclick=()=>{collapseEverything=true;setLevel('groups');};
@@ -3373,7 +3500,7 @@ function updateSearchNav(){const nav=$('sNav');const n=view==='graph'?graphHits.
   nav.style.display=search?'inline-flex':'none';$('sCount').textContent=search?(n?(view==='graph'&&n?(hitIdx+1)+'/'+n:n+' match'+(n===1?'':'es')):'no matches'):'';
   $('sPrev').style.display=$('sNext').style.display=(view==='graph'&&n>1)?'':'none';}
 function goHit(step){if(view!=='graph'||!graphHits.length)return;hitIdx=(hitIdx+step+graphHits.length)%graphHits.length;renderGraph(false);const id=graphHits[hitIdx];if(pos[id]){const W=svg.clientWidth||800,H=svg.clientHeight||600;T.k=Math.max(T.k,1);T.x=W/2-(pos[id].x+NW/2)*T.k;T.y=H/2-(pos[id].y+NH/2)*T.k;applyT();}updateSearchNav();}
-let st;$('search').oninput=e=>{clearTimeout(st);st=setTimeout(()=>{search=e.target.value.trim().toLowerCase();hitIdx=0;if(view==='tree')renderTree();else{renderGraph(false);if(graphHits.length)goHit(0);}updateSearchNav();},150);};
+let st;$('search').oninput=e=>{clearTimeout(st);st=setTimeout(()=>{search=e.target.value.trim().toLowerCase();hitIdx=0;$('colAll').disabled=!!search;$('colAll').title=search?'Clear the search to fold':'';if(view==='tree')renderTree();else{renderGraph(false);if(graphHits.length)goHit(0);}updateSearchNav();},150);};
 $('search').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();goHit(e.shiftKey?-1:1);}});
 $('sPrev').onclick=()=>goHit(-1);$('sNext').onclick=()=>goHit(1);
 if(canGroups){simOn=true;simCompute();renderSimBar();}

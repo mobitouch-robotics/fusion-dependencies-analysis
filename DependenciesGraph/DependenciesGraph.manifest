@@ -6,7 +6,7 @@
  "description": {
   "": "Dependencies Graph: interactive dependency graph of the timeline, with thumbnails and suppression tests."
  },
- "version": "2.0.3",
+ "version": "2.0.4",
  "runOnStartup": true,
  "supportedOS": "windows|mac",
  "editEnabled": true,

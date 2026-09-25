@@ -30,19 +30,22 @@ timeline groups, components, parameters and optional suppression tests.
   joined through to the items they connect (dotted lines).
 - **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
-- **Hover** a box to highlight it with its direct parents (blue) and children (green); the rest fades.
+- **Hover** a box to highlight it in gold with its direct parents and children and the links between them
+  (can be switched off in the Display menu).
 - **Routes**: with an item selected, every other box of its tree gets a small route button; click it to
   highlight every route between the two (orange), with the number of routes. `Esc` hides them.
 - **Back / forward** through selections, restoring the zoom and position you had.
 - **Legend** explaining every colour, icon, outline, marker and line.
 - **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
   what the selection highlights around itself (what it depends on / what uses it, each either direct only
-  or the whole chain), and "Same body, later" links.
+  or the whole chain), all links (off by default: only the links of the selection and of the hovered box
+  are drawn) and "Same body, later" links.
 
 ### History playback
 Select an item (or a group, or nothing for the whole design) and press **Play** (or `P`) to animate how
 it was built: a dot travels along the links to each next item, which fades in, while the view follows.
-`Space` pauses, the right arrow skips to the next step, `Esc` stops; speed 0.5x / 1x / 2x / 4x.
+`Space` pauses, the right / left arrows (or the buttons) go one step forward / back (animated; while
+paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 4x.
 
 ### Suppression tests and health
 - Optional tests run in Fusion: *Whole groups* and *Every item* record what really gets suppressed or
