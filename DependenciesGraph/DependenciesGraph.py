@@ -18,6 +18,7 @@ Two ways to collect dependencies:
     restores it afterwards; save a version before using it.
 """
 import adsk.core, adsk.fusion, traceback, json, os, re, time, webbrowser, datetime, tempfile, pathlib, base64
+import threading, secrets, http.server
 
 _app = None
 _ui = None
@@ -446,6 +447,7 @@ class Collector:
                 cat = 'surface'
                 info.append('surface')
             node = {'id': nid, 'name': it.name, 'type': t, 'cat': cat, 'tl': i, 'o': order,
+                    'tok': _safe(lambda: e.entityToken) or '',   # to select it in Fusion from the page
                     'g': path, 'supp': bool(_safe(lambda: it.isSuppressed, False)),
                     'health': _safe(lambda: it.healthState, 0),
                     'msg': re.sub(r'<[^>]+>', ' ', _safe(lambda: it.errorOrWarningMessage, '') or '').strip()[:400],
@@ -989,7 +991,8 @@ class Collector:
             if n_occ and n_occ > 1:
                 info.append('%d instances' % n_occ)
             self.nodes.append({'id': ent['id'], 'name': _safe(lambda: c.name, 'Component'), 'type': 'Component', 'cat': 'component',
-                               'tl': None, 'o': o, 'g': [], 'supp': False, 'health': 0, 'msg': '', 'info': ' · '.join(info)})
+                               'tl': None, 'o': o, 'g': [], 'supp': False, 'health': 0, 'msg': '', 'info': ' · '.join(info),
+                               'occ': (_safe(lambda: occ.fullPathName) or '') if occ is not None else ''})
             if ent['creator']:
                 self.add_edge(ent['creator'], ent['id'], 'component')
             elif ent.get('parent'):
@@ -1448,6 +1451,8 @@ def generate(mode='both', thumbs=True):
         progress_dlg.hide()
         progress_dlg = None
 
+        if _sel_info.get('port'):
+            data['meta']['sel'] = {'port': _sel_info['port'], 'token': _sel_info['token']}
         html = TEMPLATE.replace('/*__DATA__*/null', json.dumps(data).replace('</', '<\\/'))
         with open(path, 'w', encoding='utf-8') as f:
             f.write(html)
@@ -1459,6 +1464,184 @@ def generate(mode='both', thumbs=True):
         if _ui:
             _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
 
+
+
+# ---------------------------------------------------- select in Fusion ---
+# The graph page (a local file in the browser) asks the add-in to select items in Fusion through a small
+# HTTP server on 127.0.0.1. Every generated page carries the port and a secret token; requests without the
+# token are refused. The server thread only queues the request; the selection itself runs on Fusion's main
+# thread through a custom event.
+SEL_EVENT_ID = 'claudeDesignGraphSelect'
+SEL_PORT = 47391                 # preferred port, so pages made earlier keep working after a restart
+_sel_info = {'port': None, 'token': None}
+_sel_server = None
+_sel_event = None
+_sel_jobs = []
+_sel_lock = threading.Lock()
+
+
+def _sel_token():
+    """A secret that stays the same between Fusion sessions (so older pages still work)."""
+    d = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph')
+    f = os.path.join(d, '.select_token')
+    try:
+        with open(f, encoding='utf-8') as h:
+            t = h.read().strip()
+        if len(t) >= 20:
+            return t
+    except Exception:
+        pass
+    t = secrets.token_urlsafe(24)
+    try:
+        os.makedirs(d, exist_ok=True)
+        with open(f, 'w', encoding='utf-8') as h:
+            h.write(t)
+    except Exception:
+        pass
+    return t
+
+
+class _SelRequest(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _head(self, code, body=b''):
+        self.send_response(code)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Private-Network', 'true')
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        if body:
+            self.wfile.write(body)
+
+    def do_OPTIONS(self):
+        self._head(204)
+
+    def do_GET(self):
+        ok = self.path.startswith('/ping') and ('token=' + (_sel_info['token'] or '-')) in self.path
+        self._head(200 if ok else 403, json.dumps({'ok': ok}).encode())
+
+    def do_POST(self):
+        try:
+            n = int(self.headers.get('Content-Length') or 0)
+            req = json.loads(self.rfile.read(min(n, 2000000)).decode('utf-8') or '{}')
+        except Exception:
+            self._head(400, b'{"ok":false,"error":"bad request"}')
+            return
+        if self.path != '/select' or req.get('token') != _sel_info['token']:
+            self._head(403, b'{"ok":false,"error":"not allowed"}')
+            return
+        job = {'req': req, 'done': threading.Event(), 'res': None}
+        with _sel_lock:
+            _sel_jobs.append(job)
+        _safe(lambda: _app.fireCustomEvent(SEL_EVENT_ID, ''))
+        if not job['done'].wait(15):
+            self._head(200, b'{"ok":false,"error":"Fusion did not answer (busy?). Try again."}')
+            return
+        self._head(200, json.dumps(job['res']).encode())
+
+
+def _sel_start():
+    global _sel_server
+    if _sel_server is not None:
+        return
+    _sel_info['token'] = _sel_token()
+    for port in (SEL_PORT, 0):
+        try:
+            srv = http.server.ThreadingHTTPServer(('127.0.0.1', port), _SelRequest)
+            break
+        except Exception:
+            srv = None
+    if srv is None:
+        return
+    srv.daemon_threads = True
+    _sel_server = srv
+    _sel_info['port'] = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+
+def _sel_stop():
+    global _sel_server
+    srv, _sel_server = _sel_server, None
+    if srv is not None:
+        _safe(srv.shutdown)
+        _safe(srv.server_close)
+    _sel_info['port'] = None
+
+
+def _flat_timeline(tl):
+    """Timeline objects in the order the scan numbered them (every group opened), without changing the timeline."""
+    out = []
+    def walk(coll, depth=0):
+        for k in range(_safe(lambda: coll.count, 0) or 0):
+            it = _safe(lambda: coll.item(k))
+            if it is None:
+                continue
+            if _safe(lambda: it.isGroup) and depth < 20:
+                walk(adsk.fusion.TimelineGroup.cast(it), depth + 1)
+            else:
+                out.append(it)
+    walk(tl)
+    return out
+
+
+def _do_select(req):
+    des = adsk.fusion.Design.cast(_safe(lambda: _app.activeProduct))
+    doc = _safe(lambda: _app.activeDocument)
+    want = re.sub(r'\s+v\d+$', '', req.get('doc') or '')
+    have = re.sub(r'\s+v\d+$', '', _safe(lambda: doc.name, '') or '')
+    if des is None or (want and want != have):
+        return {'ok': False, 'error': 'Open "%s" in Fusion (Design workspace) first.' % (want or 'the design')}
+    flat = _flat_timeline(des.timeline)
+    root = des.rootComponent
+    occs = None
+    ents, missing = [], 0
+    for it in req.get('items') or []:
+        e = None
+        if it.get('tl') is not None:
+            i = it['tl']
+            if 0 <= i < len(flat) and _safe(lambda: flat[i].name) == it.get('name'):
+                e = _safe(lambda: flat[i].entity)
+            if e is None and it.get('tok'):
+                found = _safe(lambda: des.findEntityByToken(it['tok'])) or []
+                e = found[0] if len(found) else None
+        elif it.get('occ'):
+            if occs is None:
+                occs = _safe(lambda: list(root.allOccurrences)) or []
+            e = next((o for o in occs if _safe(lambda: o.fullPathName) == it['occ']), None)
+        if e is None:
+            missing += 1
+        else:
+            ents.append(e)
+    sel = _ui.activeSelections
+    if not req.get('add'):
+        _safe(sel.clear)
+    n = 0
+    for e in ents:
+        try:
+            sel.add(e)
+            n += 1
+        except Exception:
+            missing += 1
+    _safe(lambda: _app.activeViewport.refresh())
+    return {'ok': True, 'selected': n, 'missing': missing}
+
+
+class _SelHandler(adsk.core.CustomEventHandler):
+    def notify(self, args):
+        while True:
+            with _sel_lock:
+                job = _sel_jobs.pop(0) if _sel_jobs else None
+            if job is None:
+                break
+            try:
+                job['res'] = _do_select(job['req'])
+            except Exception as ex:
+                job['res'] = {'ok': False, 'error': 'Selecting failed: %s' % ex}
+            job['done'].set()
 
 
 # ------------------------------------------------------------ add-in UI ---
@@ -1600,13 +1783,11 @@ class _InputChangedHandler(adsk.core.InputChangedEventHandler):
         if args.input.id == 'hgQuick':
             if _unsaved_reason():
                 return
-            # same as pressing the OK button, but the run uses references only
-            _run_mode['mode'] = 'off'
-            cmd = _safe(lambda: args.input.parentCommand) or _safe(lambda: args.firingEvent.sender)
-            if not (cmd and _safe(lambda: cmd.doExecute(True), False)):
-                _run_mode.clear()
-                _ui.messageBox('Could not start the quick estimate from here. Use Full analysis, or try again.',
-                               'Dependencies graph')
+            # Fusion does not let a command end itself from its own events, so ask for the run through the
+            # custom event: its handler closes this dialog first, then runs with references only
+            ti = args.inputs.itemById('hgThumbs')
+            _app.fireCustomEvent(EVENT_ID, json.dumps({'mode': 'off', 'thumbs': bool(ti.value) if ti else True,
+                                                       'closeDialog': True}))
 
 
 class _ValidateHandler(adsk.core.ValidateInputsEventHandler):
@@ -1630,6 +1811,21 @@ class _RunHandler(adsk.core.CustomEventHandler):
         except Exception:
             opts = {}
         try:
+            if opts.get('closeDialog'):
+                # started from the Quick estimate button: close the still open dialog (discarding its preview)
+                _safe(lambda: _ui.terminateActiveCommand(), False)
+                if _safe(lambda: _ui.activeCommand, '') == CMD_ID:
+                    _ui.messageBox('Could not close the dialog to start the quick estimate. Close it and try again.',
+                                   'Dependencies graph')
+                    return
+                r = _safe(lambda: _ui.messageBox(
+                    'Quick estimate uses only what each feature references (sketches, planes, bodies, faces, '
+                    'parameters). The dependencies it finds might not be very precise: some real dependencies can be '
+                    'missing and a few links may be wrong.\n\nUse Full analysis for exact results.\n\nContinue with the quick estimate?',
+                    'Dependencies graph - Quick estimate', adsk.core.MessageBoxButtonTypes.OKCancelButtonType,
+                    adsk.core.MessageBoxIconTypes.WarningIconType))
+                if r == adsk.core.DialogResults.DialogCancel:
+                    return
             if _unsaved_reason():
                 return
             doc = _app.activeDocument
@@ -1712,6 +1908,13 @@ def _build_ui():
     on_run = _RunHandler()
     _custom_event.add(on_run)
     _handlers.append(on_run)
+    global _sel_event
+    _safe(lambda: _app.unregisterCustomEvent(SEL_EVENT_ID))
+    _sel_event = _app.registerCustomEvent(SEL_EVENT_ID)
+    on_sel = _SelHandler()
+    _sel_event.add(on_sel)
+    _handlers.append(on_sel)
+    _safe(_sel_start)
     panel = _panel(create=True)
     if panel:
         ctrl = panel.controls.addCommand(cd)
@@ -1737,6 +1940,8 @@ def stop(context):
         if _custom_event:
             _safe(lambda: _app.unregisterCustomEvent(EVENT_ID))
             _custom_event = None
+        _safe(_sel_stop)
+        _safe(lambda: _app.unregisterCustomEvent(SEL_EVENT_ID))
         _handlers.clear()
     except Exception:
         pass
@@ -1751,7 +1956,7 @@ TEMPLATE = r'''<!DOCTYPE html>
 <style>
 :root{
   --bg:#f7f7f5;--panel:#ffffff;--panel2:#f1efe8;--text:#1f1f1d;--muted:#6b6a64;--border:#d9d7cf;--accent:#185fa5;
-  --up:#185fa5;--down:#1f8a4c;--sel:#7a3fd1;--hov:#c9950c;--route:#d9480f;--err:#c0392b;--warn:#b7791f;--edge:#b4b2a9;
+  --up:#185fa5;--down:#1f8a4c;--sel:#d19a00;--hov:#c9950c;--route:#d9480f;--err:#c0392b;--warn:#b7791f;--edge:#b4b2a9;
   --c-sketch:#0f6e56;--c-sketch-bg:#e1f5ee;--c-construct:#5f5e5a;--c-construct-bg:#f1efe8;
   --c-solid:#185fa5;--c-solid-bg:#e6f1fb;--c-finish:#854f0b;--c-finish-bg:#faeeda;
   --c-offset:#534ab7;--c-offset-bg:#eeedfe;--c-hole:#993c1d;--c-hole-bg:#faece7;
@@ -1763,7 +1968,7 @@ TEMPLATE = r'''<!DOCTYPE html>
 }
 @media (prefers-color-scheme: dark){:root{
   --bg:#1b1b1a;--panel:#242422;--panel2:#2d2d2a;--text:#ecebe6;--muted:#a3a19a;--border:#3d3c38;--accent:#85b7eb;
-  --up:#85b7eb;--down:#6fd39a;--sel:#afa9ec;--hov:#f2c14e;--route:#ff8f5a;--err:#f09595;--warn:#ef9f27;--edge:#5f5e5a;
+  --up:#85b7eb;--down:#6fd39a;--sel:#ffc83d;--hov:#f2c14e;--route:#ff8f5a;--err:#f09595;--warn:#ef9f27;--edge:#5f5e5a;
   --c-sketch:#9fe1cb;--c-sketch-bg:#08352c;--c-construct:#d3d1c7;--c-construct-bg:#34332f;
   --c-solid:#b5d4f4;--c-solid-bg:#0c2f52;--c-finish:#fac775;--c-finish-bg:#3d2a07;
   --c-offset:#cecbf6;--c-offset-bg:#26215c;--c-hole:#f5c4b3;--c-hole-bg:#4a1b0c;
@@ -1911,6 +2116,8 @@ svg .nd.hov{opacity:1!important}
 /* hovered box: its direct parents and children stay bright, everything else fades */
 svg.nhov .nd.nhc,svg.nhov .nd.nhr{opacity:1!important}
 svg .nhov-ov{pointer-events:none}
+/* while a box is hovered, the other links step back a little (their layers at 80%) */
+svg .elayer{transition:opacity .2s ease}svg.nhov .elayer{opacity:.8}
 svg .edge.nhsrc{visibility:hidden}   /* a link shown in the hover / route-preview layer is hidden underneath */
 /* All links off (Display menu): plain grey links are hidden, except during playback */
 svg.quiet:not(.playing) .edge.plain:not(.hov),svg.quiet:not(.playing) .ehit.plain,svg.quiet:not(.playing) .ecount.plain{display:none}
@@ -1949,7 +2156,11 @@ svg .ecount.nhl.up rect{stroke:var(--up)}svg .ecount.nhl.up text{fill:var(--up)}
 svg .hovring{fill:none;stroke:var(--hov);stroke-width:5;pointer-events:none;transition:opacity .2s ease}
 svg .edge{transition:stroke .2s ease,stroke-width .2s ease,stroke-opacity .2s ease,opacity .2s ease}
 svg .nd{transition:opacity .2s ease}
-svg .selglow{fill:var(--sel);fill-opacity:.2;stroke:var(--sel);stroke-opacity:.75;stroke-width:3;pointer-events:none}
+/* selection: a gold frame with dashes running round it and a softly pulsing glow */
+svg .selglow{fill:var(--sel);fill-opacity:.12;stroke:var(--sel);stroke-opacity:1;stroke-width:3;stroke-dasharray:10 6;pointer-events:none;animation:selMarch 1.1s linear infinite,selPulse 1.8s ease-in-out infinite}
+@keyframes selMarch{to{stroke-dashoffset:-16}}@keyframes selPulse{50%{fill-opacity:.3}}
+@media (prefers-reduced-motion:reduce){svg .selglow{animation:none}}
+svg.playing .selglow{animation:none}
 svg .ctog{cursor:pointer}svg .ctog.off{opacity:.3;cursor:not-allowed}
 svg .act{cursor:pointer}
 svg .act rect{fill:var(--panel);stroke:var(--border);stroke-width:1}
@@ -2018,7 +2229,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
       <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
-      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus" checked> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><label class="chk" title="Hovering a box rings it in gold, with its direct parents and children and the links between them"><input type="checkbox" id="hovRel" checked> Highlight parents and children on hover</label><label class="chk" title="Timeline layout: moving the mouse close to the left or right edge of the graph scrolls the row that way (faster the closer you get)"><input type="checkbox" id="edgeScroll" checked> Scroll at the left / right edge (Timeline)</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn" checked> What uses it</label><label class="chk sub" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label><label class="chk" title="Show every link all the time. When off, only the links of the selection, of the hovered box, and the lines joining a group box to its items are drawn."><input type="checkbox" id="allLinks"> All links (grey)</label></div></div>
+      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus" checked> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="chk" style="display:flex;gap:10px;align-items:center;padding:3px 0;font-size:13px" title="Where the view goes when you select something">Zoom to<label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomObj"> selected object</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomTree" checked> selected tree</label></div><label class="chk" title="Hovering a box rings it in gold, with its direct parents and children and the links between them"><input type="checkbox" id="hovRel" checked> Highlight parents and children on hover</label><label class="chk" title="Timeline layout: moving the mouse close to the left or right edge of the graph scrolls the row that way (faster the closer you get)"><input type="checkbox" id="edgeScroll" checked> Scroll at the left / right edge (Timeline)</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn"> What uses it</label><label class="chk sub off" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked disabled> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label><label class="chk" title="Show every link all the time. When off, only the links of the selection, of the hovered box, and the lines joining a group box to its items are drawn."><input type="checkbox" id="allLinks"> All links (grey)</label></div></div>
     <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
     <button id="infoBtn" title="How to use, warnings">Info</button>
   </div>
@@ -2319,7 +2530,7 @@ function buildAdj(){computeEff();preds={};succs={};nodes.forEach(n=>{preds[n.id]
 function closure(id,dir){const seen=new Set(),st=[id];while(st.length){const x=st.pop();for(const e of (dir==='up'?preds[x]:succs[x])){const y=dir==='up'?e.s:e.t;if(!seen.has(y)){seen.add(y);st.push(y);}}}return seen;}
 // what the selection highlights around itself (Display menu): what it depends on / what uses it, each either
 // only the direct neighbours or the whole chain. The whole chain needs the direct level switched on.
-const relShow={up:true,upAll:true,dn:true,dnAll:true};
+const relShow={up:true,upAll:true,dn:false,dnAll:true};   // "What uses it" is off by default
 function relOf(id,dir){const on=dir==='up'?relShow.up:relShow.dn,all=dir==='up'?relShow.upAll:relShow.dnAll;
   if(!on)return new Set();if(all)return closure(id,dir);return new Set((dir==='up'?preds[id]:succs[id]).map(e=>dir==='up'?e.s:e.t));}
 
@@ -2435,9 +2646,9 @@ function renderTree(){
 
 // ---------- back / forward: selection and suppression-preview history ----------
 const hist=[];let hIdx=-1,hMute=false;
-function snap(){return {sel:selected,grp:selGroup,rt:(route&&route.sel===selected)?[...route.items].sort():null,items:[...sim.items].sort(),groups:[...sim.groups].sort(),un:[...sim.un].sort()};}
+function snap(){return {sel:selected,grp:selGroup,ms:selGroup==='_sel'?multi.slice():null,rt:(route&&route.sel===selected)?[...route.items].sort():null,items:[...sim.items].sort(),groups:[...sim.groups].sort(),un:[...sim.un].sort()};}
 // each history step also remembers the graph's zoom and position while it was the current one
-const histKey=o=>JSON.stringify({sel:o.sel,grp:o.grp,rt:o.rt||null,items:o.items,groups:o.groups,un:o.un});
+const histKey=o=>JSON.stringify({sel:o.sel,grp:o.grp,ms:o.ms||null,rt:o.rt||null,items:o.items,groups:o.groups,un:o.un});
 function saveView(){if(hMute||hIdx<0||!hist[hIdx]||view!=='graph'||!Object.keys(pos).length)return;hist[hIdx].view={x:T.x,y:T.y,k:T.k,layout:layoutMode};}
 function pushHist(){if(hMute)return;const st=snap();if(hIdx>=0&&histKey(hist[hIdx])===histKey(st))return;
   hist.splice(hIdx+1);hist.push(st);if(hist.length>300)hist.shift();hIdx=hist.length-1;updHistBtns();}
@@ -2448,18 +2659,29 @@ function updHistBtns(){const b=$('hBack'),n=$('hNext');if(b)b.disabled=hIdx<=0;i
 function goHist(d){const j=hIdx+d;if(j<0||j>=hist.length)return;saveView();hIdx=j;const st=hist[j];hMute=true;
   try{sim.items=new Set(st.items);sim.groups=new Set(st.groups);sim.un=new Set(st.un);simCompute();renderSimBar();paintTree();renderGroupPanel();
     route=(st.sel&&st.rt)?{sel:st.sel,items:st.rt}:null;
+    if(st.grp==='_sel'&&st.ms){multi=st.ms.slice();groups._sel={id:'_sel',name:multi.length+' items selected',parent:null,multi:true};}
     if(st.sel&&byId[st.sel])select(st.sel);else if(st.grp&&groups[st.grp])selectGroup(st.grp);else clearSel();}
   finally{hMute=false;}updHistBtns();
   // back where we were: the zoom and position from then (after the selection's own zoom has started)
   const v=st.view;if(v&&view==='graph'&&v.layout===layoutMode)requestAnimationFrame(()=>requestAnimationFrame(()=>viewTo(v,480)));}
-function select(id){if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn([rep(byId[id])]));}}
-function selectGroup(gid){if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&r.dataset.gid===gid));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn([...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
+// Multiple selection: Cmd+click (Mac) / Ctrl+click adds or removes items. Several selected items act as an ad-hoc
+// group '_sel' (highlight, only-the-branch, playback work as for a timeline group); one item is a normal selection.
+let multi=[],clickMod=false;
+window.addEventListener('mousedown',e=>{clickMod=!!(e.metaKey||e.ctrlKey);},true);
+window.addEventListener('click',e=>{clickMod=!!(e.metaKey||e.ctrlKey);setTimeout(()=>{clickMod=false;},0);},true);
+function curSelItems(){if(selGroup==='_sel')return multi.slice();if(selected)return [selected];return [];}
+function setMulti(list){clickMod=false;list=[...new Set(list)].filter(i=>byId[i]);
+  if(!list.length){clearSel();return;}if(list.length===1){select(list[0]);return;}
+  multi=list;groups._sel={id:'_sel',name:list.length+' items selected',parent:null,multi:true};selectGroup('_sel');}
+function toggleMulti(ids){const cur=curSelItems();const all=ids.length&&ids.every(i=>cur.includes(i));setMulti(all?cur.filter(i=>!ids.includes(i)):[...cur,...ids]);}
+function select(id){if(clickMod&&!hMute&&byId[id]){toggleMulti([id]);return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[rep(byId[id])]));}}
+function selectGroup(gid){if(clickMod&&!hMute&&gid!=='_sel'&&groups[gid]){toggleMulti(groupMembers(gid).filter(visibleNode).map(n=>n.id));return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&(r.dataset.gid===gid||(gid==='_sel'&&multi.includes(r.dataset.id)))));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
 function clearSel(){if(!hMute)route=null;saveView();setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
 function groupUpIds(gid){const mem=groupMembers(gid);const mset=new Set(mem.map(n=>n.id));
   const links=mem.flatMap(n=>[...closure(n.id,'up')]);
   const test=D.meta.gtest?D.groups.filter(o=>o.id!==gid&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).flatMap(o=>groupMembers(o.id).map(n=>n.id)):[];
   return [...new Set([...links,...test])].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));}
-function groupMembers(gid){if(groups[gid]&&groups[gid].pseudo)return nodes.filter(n=>pseudoOf(n)===gid);return nodes.filter(n=>(n.g||[]).includes(gid));}
+function groupMembers(gid){if(gid==='_sel')return multi.map(i=>byId[i]).filter(Boolean);if(groups[gid]&&groups[gid].pseudo)return nodes.filter(n=>pseudoOf(n)===gid);return nodes.filter(n=>(n.g||[]).includes(gid));}
 function groupPath(gid){const out=[];let g=groups[gid];let guard=0;while(g&&guard++<20){out.unshift(g.name);g=groups[g.parent];}return out;}
 function groupsSuppressing(id){return D.groups.filter(g=>g.dsupp&&g.dsupp.includes(id));}
 function itemList(ids){const ul=document.createElement('ul');if(!ids.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
@@ -2467,7 +2689,7 @@ function itemList(ids){const ul=document.createElement('ul');if(!ids.length){ul.
     ul.appendChild(li);});return ul;}
 function groupLinks(list){const ul=document.createElement('ul');if(!list.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
   list.forEach(([gid,cnt])=>{const g=groups[gid];const li=document.createElement('li');const a=document.createElement('span');{const gm=g?groupMembers(gid):[];a.className='name grp'+(gm.length&&gm.every(isSupp)?' st-sup':'');}a.textContent=g?g.name:gid;a.onclick=()=>selectGroup(gid);li.appendChild(a);if(cnt!=null){const k=document.createElement('span');k.className='k';k.textContent=cnt+' item'+(cnt===1?'':'s');li.appendChild(k);}ul.appendChild(li);});return ul;}
-function renderGroupDetails(d){
+function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);return;}
   const g=groups[selGroup];const mem=groupMembers(selGroup);const mset=new Set(mem.map(n=>n.id));
   const h=document.createElement('h2');h.textContent=g.name;h.insertAdjacentHTML('afterbegin','<span class="icw">'+iconHTML('group','group',18)+'</span>');d.appendChild(h);
   {const last=[...mem].sort((a,b)=>b.o-a.o).find(n=>TH[n.id]);if(last&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[last.id];im.alt='Model after '+last.name;im.title='Model after the last item in the group: '+last.name;d.appendChild(im);}}
@@ -2502,11 +2724,34 @@ function renderGroupDetails(d){
   const bp=document.createElement('button');bp.textContent='▶ Play history';bp.title='Animate how this group was built from its dependencies (P)';bp.onclick=()=>playHistory();b.appendChild(bp);
   const bx=document.createElement('button');bx.textContent='Clear selection';bx.onclick=clearSel;b.appendChild(bx);d.appendChild(b);
 }
+// side panel for several selected items
+function renderMultiDetails(d){const mem=groupMembers('_sel');const mset=new Set(mem.map(n=>n.id));
+  // hovering an item in these lists highlights its box in the graph (with its parents and children)
+  // the usual hover highlight, limited to boxes of the selected tree (what is highlighted around the selection)
+  const hov=(el,id)=>{el.addEventListener('mouseenter',()=>{if(view==='graph'&&byId[id]){const r=lastVisRep(rep(byId[id]));const tree=new Set(selRelated);tree.delete(r);nodeHover(r,true,tree);}});el.addEventListener('mouseleave',()=>nodeHoverClear());};
+  const h=document.createElement('h2');h.textContent=mem.length+' items selected';d.appendChild(h);
+  const kv=document.createElement('div');kv.className='kv';kv.textContent=(/Mac/.test(navigator.platform)?'Cmd':'Ctrl')+'+click items to add or remove them.';d.appendChild(kv);
+  const ul=document.createElement('ul');ul.style.marginTop='8px';
+  [...mem].sort((a,b)=>a.o-b.o).forEach(n=>{const li=document.createElement('li');li.appendChild(pill(n));const a=document.createElement('span');a.className='name '+stateCls(n);a.textContent=n.name;a.title='Select only this';a.onclick=()=>{clickMod=false;select(n.id);};li.appendChild(a);
+    const x=document.createElement('span');x.className='k';x.textContent='✕';x.title='Remove from the selection';x.style.cursor='pointer';x.style.marginLeft='auto';x.onclick=()=>setMulti(multi.filter(i=>i!==n.id));li.appendChild(x);hov(li,n.id);ul.appendChild(li);});
+  d.appendChild(ul);
+  // two items where one depends on the other: their routes
+  if(mem.length===2){const [p,q]=mem;const up=closure(q.id,'up');const a=up.has(p.id)?p:(closure(p.id,'up').has(q.id)?q:null);
+    const w=document.createElement('div');w.className='kv';w.style.marginTop='10px';
+    if(a){const b=a===p?q:p;const bt=document.createElement('button');bt.textContent='Show the routes from '+a.name+' to '+b.name;bt.onclick=()=>{clickMod=false;select(a.id);setRoute([b.id]);};d.appendChild(bt);bt.style.marginTop='10px';}
+    else{w.textContent='Neither depends on the other, so there is no route between them.';d.appendChild(w);}}
+  const upIds=groupUpIds('_sel'),dnIds=[...new Set(mem.flatMap(n=>[...closure(n.id,'down')]))].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));
+  const sec=(t,ids)=>{const det=document.createElement('details');det.style.marginTop='10px';const sm=document.createElement('summary');sm.textContent=t+' ('+ids.length+')';const sorted=[...ids].filter(i=>byId[i]).sort((a,b)=>byId[a].o-byId[b].o);const il=itemList(sorted);[...il.children].forEach((li,k)=>{if(sorted[k])hov(li,sorted[k]);});det.appendChild(sm);det.appendChild(il);d.appendChild(det);};
+  sec('Together they depend on',upIds);sec('Used by any of them',dnIds);
+  const b=document.createElement('div');b.style.cssText='margin-top:12px;display:flex;gap:6px;flex-wrap:wrap';
+  const bg=document.createElement('button');bg.textContent='Show in graph';bg.onclick=()=>showInGraph(()=>groupMembers('_sel').filter(visibleNode).map(rep));b.appendChild(bg);
+  const bp=document.createElement('button');bp.textContent='▶ Play history';bp.title='Animate how these items were built from their dependencies (P)';bp.onclick=()=>playHistory();b.appendChild(bp);
+  const bx=document.createElement('button');bx.textContent='Clear selection';bx.onclick=clearSel;b.appendChild(bx);d.appendChild(b);}
 function linkList(list,dir){const ul=document.createElement('ul');if(!list.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
   list.forEach(e=>{const n=byId[dir==='up'?e.s:e.t];const li=document.createElement('li');li.appendChild(pill(n));const a=document.createElement('span');a.className='name '+stateCls(n);a.textContent=n.name;a.onclick=()=>select(n.id);li.appendChild(a);const k=document.createElement('span');k.className='k';k.textContent=e.k.map(x=>KIND[x]||x).join(', ');li.appendChild(k);li.addEventListener('mouseenter',()=>panelLinkHover(e.s,e.t,true));li.addEventListener('mouseleave',()=>panelLinkHover(e.s,e.t,false));ul.appendChild(li);});return ul;}
 function setInfo(open){if(open&&document.body.classList.contains('legendopen'))setLegend(false);document.body.classList.toggle('infoopen',!!open);$('infoBtn').classList.toggle('on',!!open);}
 function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.createElement('div');cols.className='cols';
-  const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details. Click empty space in the graph to deselect.</div>';
+  const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details; Cmd+click (Mac) or Ctrl+click adds or removes items to select several. Click empty space in the graph to deselect.</div>';
   const lg=document.createElement('div');lg.className='legend';Object.keys(CAT).forEach(c=>{if(!nodes.some(n=>n.cat===c))return;const s=document.createElement('span');s.className='pill';s.textContent=CAT[c];s.style.color='var(--c-'+c+')';s.style.background='var(--c-'+c+'-bg)';lg.appendChild(s);});c1.appendChild(lg);
   const h=document.createElement('div');h.className='hint';h.innerHTML='Graph: drag to pan, scroll to zoom, click a grey group box to expand it. Blue links lead to what the selection depends on, green links to what depends on it. <b>▶ Play</b> (or P) animates how the selected item was built from its dependencies, or the whole history when nothing is selected: Space pauses, → goes one step forward and ← one step back (while paused, one step at a time), Esc stops.'+(D.meta.exact||D.meta.gtest?'':'<br>Links come from references the add-in could read (sketches, profiles, planes, faces/edges, bodies, parameters). Use <b>Full analysis</b> in the add-in to get Fusion\'s real dependencies and the suppression preview.');c1.appendChild(h);
   if(canGroups){const x=document.createElement('div');x.className='hint';x.innerHTML='<b>Suppression preview:</b> use the on/off buttons (groups panel, tree, details) or Shift+click a box in the graph'+(canItems?'':' (switches its whole group - this page has the group test only)')+'. The preview bar appears as soon as something is switched off.'+
@@ -2515,9 +2760,32 @@ function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.c
   cols.appendChild(c1);
   if(D.meta.warnings&&D.meta.warnings.length){const c2=document.createElement('div');c2.innerHTML='<h2>Warnings</h2>';const w=document.createElement('div');w.className='msg';w.textContent=D.meta.warnings.join('\n');c2.appendChild(w);cols.appendChild(c2);}
   b.appendChild(cols);}
+// ---------- select in Fusion ----------
+// The add-in listens on 127.0.0.1 (port and secret token are written into the page when it is generated).
+// Timeline items are selected through their timeline entry, components through their occurrence; parameters
+// cannot be selected in Fusion.
+const FSEL=(D.meta&&D.meta.sel)||null;
+function fusionSpec(id){const n=byId[id];if(!n)return null;if(n.tl!=null)return {tl:n.tl,name:n.name,tok:n.tok||''};if(n.occ)return {occ:n.occ};return null;}
+// the selection with what it highlights around itself (Display > Around the selection)
+function branchIds(base){const out=new Set(base);base.forEach(id=>{relOf(id,'up').forEach(i=>out.add(i));relOf(id,'down').forEach(i=>out.add(i));});return [...out].filter(i=>byId[i]&&byId[i].type!=='UserParameters');}
+function selectInFusion(ids,st){const say=(t,bad)=>{st.textContent=t;st.style.color=bad?'var(--err)':'';};
+  if(!FSEL){say('This page was made by an older add-in. Generate it again to select in Fusion.',true);return;}
+  const items=[];let skipped=0;[...new Set(ids)].forEach(i=>{const x=fusionSpec(i);if(x)items.push(x);else if(byId[i])skipped++;});
+  const sk=skipped?' · '+skipped+' parameter'+(skipped===1?'':'s')+' cannot be selected':'';
+  if(!items.length){say('Nothing here can be selected in Fusion'+(skipped?' (parameters cannot be selected)':'')+'.',true);return;}
+  say('Selecting '+items.length+' in Fusion…');
+  const ctl=typeof AbortController!=='undefined'?new AbortController():null;if(ctl)setTimeout(()=>ctl.abort(),20000);
+  fetch('http://127.0.0.1:'+FSEL.port+'/select',{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({token:FSEL.token,doc:D.meta.doc,items}),signal:ctl?ctl.signal:undefined})
+    .then(r=>r.json()).then(r=>{if(!r.ok)say(r.error||'Fusion refused the selection.',true);else say('Selected '+r.selected+' in Fusion'+(r.missing?' · '+r.missing+' not found in the design':'')+sk+'.');})
+    .catch(()=>say('Could not reach Fusion. Is Fusion running with the Dependencies Graph add-in?',true));}
+function fusionRow(d,ids){const w=document.createElement('div');w.style.cssText='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap';
+  const st=document.createElement('div');st.className='kv';st.style.marginTop='4px';
+  const b1=document.createElement('button');b1.textContent='Select in Fusion';b1.title='Select '+(ids.length===1?'this item':'these '+ids.length+' items')+' in Fusion (timeline or browser)';b1.onclick=()=>selectInFusion(ids,st);
+  const b2=document.createElement('button');b2.textContent='Select branch in Fusion';b2.title='Also select what is highlighted around the selection (Display > Around the selection)';b2.onclick=()=>selectInFusion(branchIds(ids),st);
+  w.append(b1,b2);d.append(w,st);}
 function renderDetails(){
   pbSync();const d=$('details');d.innerHTML='';
-  if(selGroup&&groups[selGroup]){document.body.classList.remove('nosel');setInfo(false);renderGroupDetails(d);return;}
+  if(selGroup&&groups[selGroup]){document.body.classList.remove('nosel');setInfo(false);renderGroupDetails(d);fusionRow(d,groupMembers(selGroup).filter(visibleNode).map(x=>x.id));return;}
   document.body.classList.toggle('nosel',!selected);
   if(!selected){renderInfo();return;}
   setInfo(false);
@@ -2575,7 +2843,7 @@ function renderDetails(){
   if(n.g&&n.g.length&&view==='graph'){const bc=document.createElement('button');bc.textContent='Collapse group';bc.onclick=()=>{expanded.delete(n.g[n.g.length-1]);renderGraph(false);};b.appendChild(bc);}
   const bp=document.createElement('button');bp.textContent='▶ Play history';bp.title='Animate how this item was built from its dependencies (P)';bp.onclick=()=>playHistory();b.appendChild(bp);
   const bx=document.createElement('button');bx.textContent='Clear selection';bx.onclick=clearSel;b.appendChild(bx);
-  d.appendChild(b);
+  d.appendChild(b);fusionRow(d,[n.id]);
 }
 
 // ---------- graph ----------
@@ -2600,11 +2868,12 @@ function edgeHover(p,s,t,on){
 let nhState=null,nhAnchor=null,hoverRel=true;
 function nodeHoverClear(){const h=nhState;nhState=null;svg.classList.remove('nhov');if(!h)return;
   h.ov.remove();h.rings.forEach(r=>r.remove());h.nodes.forEach(g=>g.classList.remove('nhc','nhr'));h.srcs.forEach(el=>el.classList.remove('nhsrc'));(h.badgeCls||[]).forEach(([b,c])=>b.setAttribute('class',c));}
-function nodeHover(id,on){
-  nodeHoverClear();if(!on||!hoverRel||PB||drag||hovPin||!nodeEls[id])return;
+// only: when given, a set of boxes; just the links between the hovered box and those boxes are shown
+function nodeHover(id,on,only){
+  nodeHoverClear();if(!on||(!hoverRel&&!only)||PB||drag||hovPin||!nodeEls[id])return;
   const NS='http://www.w3.org/2000/svg';const ov=document.createElementNS(NS,'g');ov.setAttribute('class','nhov-ov');
   const st={ov,rings:[],nodes:[],badgeCls:[],srcs:[]};const kin={};
-  edgeEls.forEach(x=>{if(x.s===x.t)return;let dir=null,o=null;if(x.t===id){dir='up';o=x.s;}else if(x.s===id){dir='down';o=x.t;}if(!dir||!nodeEls[o])return;
+  edgeEls.forEach(x=>{if(x.s===x.t)return;let dir=null,o=null;if(x.t===id){dir='up';o=x.s;}else if(x.s===id){dir='down';o=x.t;}if(!dir||!nodeEls[o]||(only&&!only.has(o)))return;
     const c=x.el.cloneNode(true);c.querySelectorAll('title').forEach(t=>t.remove());c.removeAttribute('style');
     c.setAttribute('class','edge nhl band '+dir);const f=c.cloneNode(true);f.setAttribute('class','edge nhl flow '+dir);ov.append(c,f);
     x.el.classList.add('nhsrc');st.srcs.push(x.el);   // the link itself is hidden meanwhile, so the two do not show through each other
@@ -2944,7 +3213,7 @@ function renderGraph(fitAfter,centerId){
           bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
           l.btn=bt;}}
       const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM)select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
-  const ge=document.createElementNS(NS,'g');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');const gBadge=document.createElementNS(NS,'g');
+  const ge=document.createElementNS(NS,'g');ge.setAttribute('class','elayer');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');geHi.setAttribute('class','elayer');const gBadge=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
   // remembered and reused when a re-render (a click, a hover list, the preview) leaves every box in place.
@@ -3078,7 +3347,7 @@ function renderGraph(fitAfter,centerId){
         const tri=document.createElementNS(NS,'path');tri.setAttribute('d','M0,-10 L10,8 L-10,8 Z');const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',6);t.textContent='!';
         const tt=document.createElementNS(NS,'title');tt.textContent=r.isGroup?(wk.length+' item'+(wk.length===1?'':'s')+' in this group with warnings'):warnText(r.members[0]);bb.append(tri,t,tt);brkBadges.push([g,bb]);}}
     if(selSet&&selSet.has(r.id)){rect.setAttribute('stroke','var(--sel)');rect.setAttribute('stroke-width','3.5');
-      if(selRep!=='__group__'||r.header){const gl=document.createElementNS(NS,'rect');gl.setAttribute('class','selglow');gl.setAttribute('x',-9);gl.setAttribute('y',-9);gl.setAttribute('width',NW+18);gl.setAttribute('height',NH+18);gl.setAttribute('rx',12);g.appendChild(gl);}}
+      if(selRep!=='__group__'||r.header||selGroup==='_sel'){const gl=document.createElementNS(NS,'rect');gl.setAttribute('class','selglow');gl.setAttribute('x',-9);gl.setAttribute('y',-9);gl.setAttribute('width',NW+18);gl.setAttribute('height',NH+18);gl.setAttribute('rx',12);g.appendChild(gl);}}
     else if(selGroup&&down&&down.has(r.id)){rect.setAttribute('stroke','var(--down)');rect.setAttribute('stroke-width','2.5');}
     else if(selGroup&&up&&up.has(r.id)){rect.setAttribute('stroke','var(--up)');rect.setAttribute('stroke-width','2');}
     const lastM=r.isGroup?[...r.members].sort((a,b)=>b.o-a.o).find(m=>TH[m.id]):r.members[0];const nth=(!laneFold&&gth&&lastM)?TH[lastM.id]:null;const tx0=nth?66:8;
@@ -3203,7 +3472,7 @@ let PB=null;const PBS=[0.5,1,2,4];
 const PB_A={pre:0.3,other:0.06,edgePre:0.16,edgeOther:0.03};
 function pbLP(){const gp=$('gpanel');return (gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;}
 function pbSync(){const b=$('pbStart');if(!b)return;const ok=!!(selected&&byId[selected]);b.disabled=false;
-  if(!ok&&selGroup&&groups[selGroup]){b.title='Play how this timeline group was built from its dependencies (P)';return;}
+  if(!ok&&selGroup&&groups[selGroup]){b.title=selGroup==='_sel'?'Play how the selected items were built from their dependencies (P)':'Play how this timeline group was built from its dependencies (P)';return;}
   b.title=ok?'Play how the selected item was built from its dependencies (P)':'Play the whole history of the design (P). Select an item first to play only how that item was built.';}
 // a link as a polyline with its cumulative length, so a dot can move along it at constant speed
 function pbPath(x){const P=edgeSamples(pos[x.s],pos[x.t],x.o1,x.o2,x.bow,48);const L=[0];
@@ -3278,7 +3547,7 @@ function pbUI(){const bar=$('pbBar');if(!bar)return;bar.style.display=PB?'flex':
   $('pbPlay').title=PB.phase==='done'?'Replay':(PB.paused?'Resume (Space)':'Pause (Space)');
   $('pbNext').disabled=PB.phase==='done';$('pbPrev').disabled=PB.phase==='intro'||pbLastShown()<0;$('pbSpeed').textContent=PB.speed+'×';
   const n=PB.order.length;let t;
-  if(PB.phase==='intro')t=PB.whole?'Whole history · <b>'+n+'</b> step'+(n===1?'':'s'):PB.grp?'<b>'+n+'</b> step'+(n===1?'':'s')+' to build group <b>'+esc(groups[PB.grp]?groups[PB.grp].name:'')+'</b>':'<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
+  if(PB.phase==='intro')t=PB.whole?'Whole history · <b>'+n+'</b> step'+(n===1?'':'s'):PB.grp==='_sel'?'<b>'+n+'</b> step'+(n===1?'':'s')+' to build the <b>'+multi.length+' selected items</b>':PB.grp?'<b>'+n+'</b> step'+(n===1?'':'s')+' to build group <b>'+esc(groups[PB.grp]?groups[PB.grp].name:'')+'</b>':'<b>'+n+'</b> step'+(n===1?'':'s')+' to build <b>'+esc(byId[selected]?byId[selected].name:'')+'</b>';
   else if(PB.phase==='done')t='Done · '+n+' step'+(n===1?'':'s');
   else{t='Step <b>'+(PB.k+1)+'</b> / '+n;}
   $('pbInfo').innerHTML=t;
@@ -3455,7 +3724,7 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     row(box('var(--c-group-bg)','var(--c-group)',{dash:'4 3',extra:'<text x="9" y="19" style="font-size:10px;font-weight:600">▾ Group</text>'}),'Group header (expanded)','Depth layout: sits above the items of an open timeline group, as their parent. Thick coloured lines join it to the group\'s first items; its − folds the group into one box.'),
     row(sv('<rect x="3" y="3" width="64" height="24" rx="7" style="fill:'+G+';fill-opacity:.07;stroke:'+G+';stroke-opacity:.45;stroke-width:1.5"/><text x="9" y="15" style="font-size:9px;font-weight:700;fill:'+G+'">Name</text>'),'Coloured block','Groups layout: one block per top-level timeline group. Components layout: one block per component (items outside components sit in "Root component"). In both, user parameters have a block of their own. Click the block title to select the group, component or User Parameters.'),
     row(sv('<circle cx="22" cy="15" r="8" class="ctogc col"/><text x="22" y="19" text-anchor="middle" class="ctogt">+</text><circle cx="48" cy="15" r="7" class="ctogc"/><text x="48" y="19" text-anchor="middle" class="ctogt">−</text>'),'+ / − under a box','Expand a group, or collapse/expand everything that depends on this box. A collapsed box shows how many items it hides.'),
-    row(box('var(--c-solid-bg)','var(--sel)',{w:3,extra:'<rect x="-1" y="0" width="72" height="30" rx="8" class="selglow" style="stroke-width:2"/>'}),'Selected','Purple outline with a glow. With a timeline group selected, all its boxes get the purple outline.'),
+    row(box('var(--c-solid-bg)','var(--sel)',{w:3,extra:'<rect x="-1" y="0" width="72" height="30" rx="8" class="selglow" style="stroke-width:2"/>'}),'Selected','Gold outline with a glow and dashes running round it. With a timeline group selected, all its boxes get the purple outline.'),
     row(box('var(--c-solid-bg)','var(--up)',{w:2}),'What the selected group depends on','Blue outline (when a whole group is selected).'),
     row(box('var(--c-solid-bg)','var(--down)',{w:2.5}),'What depends on the selected group','Green outline (when a whole group is selected).'),
     row(box('var(--c-solid-bg)','var(--c-solid)',{op:.25}),'Faded box','Not related to the selection (or not a search match). During playback: not built yet (a little faded) or not part of the history being played (very faded).'),
@@ -3472,7 +3741,7 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     row(line('up ind'),'Blue, faint','A further ancestor: a link between two items the selection depends on.'),
     row(line('down'),'Green, thick','A direct child: it uses the selected item directly.'),
     row(line('down ind'),'Green, faint','A further descendant: a link between two items that depend on the selection.'),
-    row(line('insel'),'Purple','A link inside the selection (between items of the selected timeline group).'),
+    row(line('insel'),'Gold','A link inside the selection (between items of the selected timeline group).'),
     row(line('dim'),'Very faint','Not related to the selection.'),
     row(line('hov'),'Gold, thick','The link under the mouse, or the one you clicked (stays until the mouse moves). Both its ends get a gold ring.'),
     row(sv('<path d="M4,15 L64,15" fill="none" style="stroke:var(--hov);stroke-width:6;stroke-opacity:.28"/><path d="M4,15 L64,15" fill="none" style="stroke:var(--hov);stroke-width:2.2;stroke-dasharray:7 5"/>'),'Gold, dashed (hover)','Hovering a box rings it in gold and marks its links with moving dashes (they move in the link\'s direction): blue to the boxes it uses (dashed blue ring), green to the boxes that use it (dotted green ring). Nothing else changes. Can be switched off in the Display menu.'),
@@ -3544,6 +3813,8 @@ svg.addEventListener('mousemove',ev=>{if(!edgeScroll||layoutMode!=='time'||view!
   if(asDir&&!asRaf){asLast=performance.now();asRaf=requestAnimationFrame(asFrame);}});
 svg.addEventListener('mouseleave',asStop);
 $('edgeScroll').onchange=e=>{edgeScroll=e.target.checked;if(!edgeScroll)asStop();};
+// when selecting: zoom to the selected object or to its whole tree (default) (what is highlighted around it)
+let zoomTree=true;$('zoomObj').onchange=()=>{zoomTree=false;};$('zoomTree').onchange=()=>{zoomTree=true;};
 $('hovRel').onchange=e=>{hoverRel=e.target.checked;if(!hoverRel)nodeHoverClear();};
 $('focus').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{focus=v;},{fit:'fit'});else{focus=v;renderGraph(true,selected);}};
 $('expAll').onclick=()=>{setLevel('items');};

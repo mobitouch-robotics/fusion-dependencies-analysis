@@ -31,10 +31,16 @@ timeline groups, components, parameters and optional suppression tests.
   joined through to the items they connect (dotted lines).
 - **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
+- **Multiple selection**: Cmd+click (Mac) / Ctrl+click adds or removes items; several selected items are
+  highlighted and played back together, and for two related items the side panel offers their routes.
 - **Hover** a box to highlight it in gold with its direct parents and children and the links between them
   (can be switched off in the Display menu).
 - **Routes**: with an item selected, every other box of its tree gets a small route button; click it to
   highlight every route between the two (orange), with the number of routes. `Esc` hides them.
+- **Select in Fusion**: the side panel can select the item(s) in Fusion (timeline entry or browser), or the
+  whole branch highlighted around the selection. The page talks to the add-in on 127.0.0.1 with a secret key
+  written into the page when it is generated; parameters cannot be selected in Fusion.
+- **Zoom on select**: to the selected object or to its whole tree (Display menu).
 - **Back / forward** through selections, restoring the zoom and position you had.
 - **Legend** explaining every colour, icon, outline, marker and line.
 - **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
