@@ -538,8 +538,17 @@ class Collector:
         self._cam0 = _safe(lambda: self._vp.camera)
         self._hidden = []  # bodies we switched off for the current picture
         self._changed = []  # (object, attribute, old value) switched on for the current picture
-        self._thumb_file = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', '_thumb.png')
+        self._thumb_file = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', '_thumb.jpg')   # JPEG: a fraction of PNG's size
         os.makedirs(os.path.dirname(self._thumb_file), exist_ok=True)
+
+    def _shot(self, iw, ih):
+        """The viewport as a data URI: JPEG (much smaller), PNG when this Fusion cannot write JPEG."""
+        for path, mime in ((self._thumb_file, 'image/jpeg'), (self._thumb_file[:-4] + '.png', 'image/png')):
+            _safe(lambda: os.remove(path))
+            if _safe(lambda: self._vp.saveAsImageFile(path, iw, ih), False) and os.path.exists(path):
+                with open(path, 'rb') as f:
+                    return 'data:%s;base64,%s' % (mime, base64.b64encode(f.read()).decode('ascii'))
+        return None
 
     def thumbs_end(self):
         if not self.want_thumbs:
@@ -896,10 +905,9 @@ class Collector:
                         _safe(lambda: sels.add(f))
             self._vp.camera = cam
             adsk.doEvents()
-            ok = _safe(lambda: self._vp.saveAsImageFile(self._thumb_file, iw, ih), False)
-            if ok and os.path.exists(self._thumb_file):
-                with open(self._thumb_file, 'rb') as f:
-                    self.thumbs[nid] = 'data:image/png;base64,' + base64.b64encode(f.read()).decode('ascii')
+            data = self._shot(iw, ih)
+            if data:
+                self.thumbs[nid] = data
         except Exception as ex:
             if len(self.warnings) < 50:
                 self.warnings.append('No thumbnail for %s: %s' % (_safe(lambda: it.name, '?'), ex))
@@ -1055,10 +1063,8 @@ class Collector:
                     _safe(lambda: app.userInterface.activeSelections.clear())
                     self._vp.camera = cam
                     adsk.doEvents()
-                    ok = _safe(lambda: self._vp.saveAsImageFile(self._thumb_file, iw, ih), False)
-                    if ok and os.path.exists(self._thumb_file):
-                        with open(self._thumb_file, 'rb') as f:
-                            data = 'data:image/png;base64,' + base64.b64encode(f.read()).decode('ascii')
+                    data = self._shot(iw, ih)
+                    if data:
                         self.thumbs[ent['id']] = data
                         cr = ent.get('creator')
                         crn = next((n for n in self.nodes if n['id'] == cr), None) if cr else None
@@ -1159,7 +1165,19 @@ class Collector:
             raise first
         return True
 
+    def _leaf_candidates(self, items):
+        """Items the reference scan found nothing built on (no link out of them): likely leaves. Only a hint for
+        how to group the tests; every result still comes from Fusion."""
+        has_out = set(sa for (sa, _t_), k in self.edges.items() if k - {'order'})
+        return [i for i in items if self.tl2node.get(i) not in has_out]
+
     def suppression_test(self, progress, cancelled):
+        """Suppress each item and record what Fusion suppresses, breaks or warns about with it.
+
+        Likely leaves are tested in batches first: suppressing a batch that makes nothing outside it change proves
+        every item in it has no effect (suppression effects add up), with one recompute instead of two per item.
+        A batch where something reacts is split in halves; single items that react are tested on their own, like
+        every other item."""
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -1170,18 +1188,88 @@ class Collector:
         desc = {}
         brk = {}
         fails = {}
+        wrn = {}
         ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
         WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
-        err0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == ERR)
-        warn0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == WARN)
-        wrn = {}
+        st0 = self._state(orig)
+        err0 = set(i for i in orig if st0[i][1] == ERR)
+        warn0 = set(i for i in orig if st0[i][1] == WARN)
         items = [i for i in orig if not orig[i]]
-        for k, i in enumerate(items):
+        total = len(items)
+        done = [0]
+
+        def effects(tested):
+            """Items outside `tested` that Fusion suppressed, broke or warned about (one read of the timeline)."""
+            st = self._state(orig)
+            casc = [j for j in orig if j not in tested and not orig[j] and st[j][0]]
+            broke = [j for j in orig if j not in tested and not orig[j] and j not in err0 and not st[j][0] and st[j][1] == ERR]
+            warned = [j for j in orig if j not in tested and not orig[j] and j not in warn0 and not st[j][0] and st[j][1] == WARN]
+            return st, casc, broke, warned
+
+        # --- 1. likely leaves, in batches (the tail of the timeline has nothing after it, so it is among them)
+        singles = []
+        batch_hits = 0
+
+        def batch(idxs):
+            """Suppress the batch; if nothing outside it reacts, switch its items back on one at a time from the
+            last: an item that comes back clean (not suppressed, no new error or warning) is not affected by the
+            earlier items still off, and it affects nothing later (those came back clean while it was off) and
+            nothing outside. So every item proven this way has no effect at all, exactly as its own test would
+            show, for one recompute each instead of two."""
+            nonlocal batch_hits
+            idxs = sorted(idxs)
+            if cancelled() or len(idxs) < 2:
+                singles.extend(idxs)
+                return
+            progress('%d items at once' % len(idxs), done[0], total)
+            try:
+                self._set_suppressed([tl.item(i) for i in idxs], True)
+            except Exception:
+                pass
+            st, casc, broke, warned = effects(set(idxs))
+            if not (all(st[i][0] for i in idxs) and not casc and not broke and not warned):
+                # something outside reacts: find which items with a few halvings, small groups go one by one
+                self._restore_checked(orig, err0, None, '%d items' % len(idxs))
+                if len(idxs) <= 6:
+                    singles.extend(idxs)
+                    return
+                h = len(idxs) // 2
+                batch(idxs[:h])
+                batch(idxs[h:])
+                return
+            for k in range(len(idxs) - 1, -1, -1):
+                i = idxs[k]
+                try:
+                    self._set_suppressed([tl.item(i)], False)
+                except Exception:
+                    pass
+                s1 = self._state([i])[i]
+                nid = self.tl2node.get(i)
+                if nid:
+                    desc[nid], brk[nid], wrn[nid] = [], [], []
+                done[0] += 1
+                batch_hits += 1
+                if s1[0] or (s1[1] == ERR and i not in err0) or (s1[1] == WARN and i not in warn0):
+                    # an earlier item of the batch affects this one: those are tested again, without it
+                    self._restore_checked(orig, err0, None, '%d items' % len(idxs))
+                    singles.extend(idxs[:k])
+                    return
+            self._restore_checked(orig, err0, None, '%d items' % len(idxs))
+
+        cands = self._leaf_candidates(items)
+        for c in range(0, len(cands), 12):
+            batch(cands[c:c + 12])
+            tl = self.tl
+        rest = sorted(set(items) - set(cands) | set(singles))
+
+        # --- 2. every other item on its own
+        for i in rest:
             if cancelled():
                 self.warnings.append('Suppression test was cancelled; results are partial.')
                 break
             it = tl.item(i)
-            progress(it.name, k, len(items))
+            progress(it.name, done[0], total)
+            done[0] += 1
             fail_msg = None
             try:
                 self._set_suppressed([it], True)
@@ -1189,17 +1277,13 @@ class Collector:
                 # Fusion raises when later features fail to compute, but usually suppresses anyway
                 fail_msg = str(ex)
             nid = self.tl2node.get(i)
-            if not _safe(lambda: tl.item(i).isSuppressed, False):
+            st, casc, broke, warned = effects({i})
+            if not st[i][0]:
                 if nid:
                     fails[nid] = self._parse_fail(fail_msg)
                 self._restore_checked(orig, err0, None, it.name)
                 tl = self.tl
                 continue
-            casc = [j for j in orig if j != i and not orig[j] and _safe(lambda: tl.item(j).isSuppressed, False)]
-            broke = [j for j in orig if j != i and not orig[j] and j not in err0 and j not in casc
-                     and _safe(lambda: tl.item(j).healthState, 0) == ERR]
-            warned = [j for j in orig if j != i and not orig[j] and j not in warn0 and j not in casc
-                      and _safe(lambda: tl.item(j).healthState, 0) == WARN]
             if nid:
                 desc[nid] = [self.tl2node[j] for j in casc if j in self.tl2node]
                 brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
@@ -1207,24 +1291,25 @@ class Collector:
             name = _safe(lambda: it.name, '')
             self._restore_checked(orig, err0, i, name)
             tl = self.tl
+        self.batched = batch_hits
         vol1 = self.body_signature()
         if vol0 != vol1:
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
         # direct edges via transitive reduction
         anc = {}
-        for s, ds in desc.items():
+        for s_, ds in desc.items():
             for d in ds:
-                anc.setdefault(d, set()).add(s)
+                anc.setdefault(d, set()).add(s_)
         for d, ancs in anc.items():
-            for s in ancs:
+            for s_ in ancs:
                 # s -> d is direct if no other ancestor k of d has s as its ancestor
-                if not any((s in anc.get(k, ())) for k in ancs if k != s):
-                    self.add_edge(s, d, 'suppress')
+                if not any((s_ in anc.get(k, ())) for k in ancs if k != s_):
+                    self.add_edge(s_, d, 'suppress')
         byid = {n['id']: n for n in self.nodes}
-        for nid_, b in brk.items():
-            if nid_ in byid:
-                byid[nid_]['dbreak'] = b
+        for nid_, b_ in brk.items():
+            if nid_ in byid and b_:
+                byid[nid_]['dbreak'] = b_
         for nid_, w in wrn.items():
             if nid_ in byid and w:
                 byid[nid_]['dwarn'] = w
@@ -1234,9 +1319,19 @@ class Collector:
         tested = len(desc) + len(fails)
         if tested < len(items):
             self.warnings.append('Item suppression test: %d of %d items could not be tested.' % (len(items) - tested, len(items)))
-        for s, ds in desc.items():
-            if s in byid:
-                byid[s]['dsupp'] = ds
+        for s_, ds in desc.items():
+            if s_ in byid:
+                byid[s_]['dsupp'] = ds
+
+    def _state(self, idxs):
+        """Suppressed flag and health of the given timeline items, read once each (a table instead of a read per
+        question)."""
+        tl = self.tl
+        out = {}
+        for i in idxs:
+            it = _safe(lambda: tl.item(i))
+            out[i] = (bool(_safe(lambda: it.isSuppressed, False)), _safe(lambda: it.healthState, 0)) if it is not None else (False, 0)
+        return out
 
     def _restore(self, orig, tested=None):
         """Put every item back to its state in orig. Switching the tested item (or group) back on
@@ -1261,12 +1356,13 @@ class Collector:
 
     def _clean(self, orig, err0):
         """True when every item is back in its original state and nothing new fails to compute."""
-        tl = self.tl
         ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
+        st = self._state(orig)
         for i in orig:
-            if _safe(lambda: tl.item(i).isSuppressed, orig[i]) != orig[i]:
+            sup, h = st[i]
+            if sup != orig[i]:
                 return False
-            if i not in err0 and not orig[i] and _safe(lambda: tl.item(i).healthState, 0) == ERR:
+            if i not in err0 and not orig[i] and h == ERR:
                 return False
         return True
 
@@ -1379,16 +1475,16 @@ class Collector:
                     tl = self.tl
                     tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
                     continue
-            casc = [i for i in orig if i not in inside and not orig[i] and _safe(lambda: tl.item(i).isSuppressed)]
+            st = self._state(orig)      # one read of the whole timeline
+            ERR_ = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
+            casc = [i for i in orig if i not in inside and not orig[i] and st[i][0]]
             broke = [i for i in orig if i not in inside and not orig[i] and i not in err0
-                     and not _safe(lambda: tl.item(i).isSuppressed, True)
-                     and _safe(lambda: tl.item(i).healthState, 0) == adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState]
+                     and not st[i][0] and st[i][1] == ERR_]
             if gid in byg:
                 byg[gid]['dsupp'] = [self.tl2node[i] for i in casc if i in self.tl2node]
                 byg[gid]['dbreak'] = [self.tl2node[i] for i in broke if i in self.tl2node]
                 warned = [i for i in orig if i not in inside and not orig[i] and i not in warn0
-                          and not _safe(lambda: tl.item(i).isSuppressed, True)
-                          and _safe(lambda: tl.item(i).healthState, 0) == WARN]
+                          and not st[i][0] and st[i][1] == WARN]
                 if warned:
                     byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
@@ -1558,6 +1654,77 @@ def _open_version(sd):
     return doc, mine
 
 
+# ------------------------------------------------------------ result cache ---
+# A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
+# (or another assembly using the same part) takes it from here instead of opening and testing the design again.
+CACHE_VERSION = 1
+
+
+def _cache_dir():
+    d = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'cache')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _cache_path(kind, file_id, ver):
+    safe = re.sub(r'[^\w\-]+', '_', str(file_id))[-80:]
+    return os.path.join(_cache_dir(), '%s_%s_v%s.json' % (kind, safe, ver))
+
+
+def _cache_load(kind, file_id, ver):
+    if not file_id or ver is None or not _settings().get('reuse', True):
+        return None
+    try:
+        with open(_cache_path(kind, file_id, ver), 'r', encoding='utf-8') as f:
+            d = json.load(f)
+        return d if d.get('cv') == CACHE_VERSION else None
+    except Exception:
+        return None
+
+
+def _cache_save(kind, file_id, ver, d):
+    if not file_id or ver is None:
+        return
+    old = _cache_load(kind, file_id, ver)
+    if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'pics')):
+        return          # never replace a more complete result (e.g. a Full analysis) with a lesser one
+    try:
+        d = dict(d)
+        d['cv'] = CACHE_VERSION
+        tmp = _cache_path(kind, file_id, ver) + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(d, f)
+        os.replace(tmp, _cache_path(kind, file_id, ver))
+    except Exception:
+        pass
+
+
+class _CachedDesign:
+    """A linked design as read (and tested) in an earlier run: plain data only, nothing is opened."""
+    def __init__(self, d):
+        self.nodes = d.get('nodes') or []
+        self.groups = d.get('groups') or []
+        self.edges = {(a, b): set(k) for a, b, k in (d.get('edges') or [])}
+        self.warnings = list(d.get('warnings') or [])
+        self.by_tlname = d.get('by_tlname') or {}
+        self.body_owner = d.get('body_owner') or {}
+        self.comp_owner = d.get('comp_owner') or {}
+        self.tl2node = {int(k): v for k, v in (d.get('tl2node') or {}).items()}
+        self.gtested = d.get('gtested', False)
+
+    def restore_groups(self):
+        pass
+
+
+def _design_data(col):
+    """The plain data of a read design, as the cache keeps it."""
+    return {'nodes': col.nodes, 'groups': col.groups, 'edges': [[a, b, sorted(k)] for (a, b), k in col.edges.items()],
+            'warnings': list(col.warnings), 'by_tlname': getattr(col, 'by_tlname', {}) or {},
+            'body_owner': getattr(col, 'body_owner', {}) or {}, 'comp_owner': getattr(col, 'comp_owner', {}) or {},
+            'tl2node': {str(k): v for k, v in (getattr(col, 'tl2node', {}) or {}).items()},
+            'gtested': getattr(col, 'gtested', False)}
+
+
 def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None):
     """Linked designs, each opened once: open -> read -> test (Full analysis) -> note the designs it links -> close,
     then the next one from a queue. What a Derive hands over is noted by name while the deriving design is open
@@ -1568,16 +1735,22 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
     links = []              # (source id, target id) across designs, ids already prefixed
     app = adsk.core.Application.get()
 
+    capped = [False]
+
     def entry_for(sd, depth):
         """The queue entry for a linked design (one per file), created when first seen."""
         ref_doc = _safe(lambda: sd.parentDocument)
         name = _safe(lambda: ref_doc.name) or 'Linked design'
         dfile = _safe(lambda: ref_doc.dataFile)
-        key = _safe(lambda: dfile.id) or name
-        ver = _safe(lambda: dfile.versionNumber)
+        return add_entry(_safe(lambda: dfile.id) or name, name, dfile, _safe(lambda: dfile.versionNumber), depth)
+
+    def add_entry(key, name, dfile, ver, depth):
         e = by_key.get(key)
         if e is None:
             if len(by_key) >= max_designs:
+                if not capped[0]:
+                    capped[0] = True
+                    main.warnings.append('More than %d linked designs: the rest were left out.' % max_designs)
                 return None
             k = len(by_key) + 1
             e = {'key': key, 'name': name, 'data_file': dfile, 'read_ver': ver, 'depth': depth,
@@ -1591,8 +1764,30 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 e['versions'].add(ver)
         return e
 
-    def note_links(col, prefix, depth):
-        """While a design is open: the designs it derives from or inserts, and what each Derive hands over."""
+    def apply_link(rec, prefix, depth):
+        """One link of a design to a design it derives or inserts: queue that design, add the arrows."""
+        e = add_entry(rec['key'], rec['name'], rec.get('dfile'), rec['ver'], depth)
+        if e is None:
+            return
+        e['via'].add(rec['via'])
+        for t in rec['targets']:
+            e['targets'].add(prefix + t)
+        e['specs'].extend(tuple(x) for x in rec['specs'])
+
+    def note_links(col, prefix, depth, out=None):
+        """While a design is open: the designs it derives from or inserts, and what each Derive hands over.
+        `out` collects the same links as plain data, for the cache."""
+        def link(sd, via, target, specs):
+            ref_doc = _safe(lambda: sd.parentDocument)
+            name = _safe(lambda: ref_doc.name) or 'Linked design'
+            dfile = _safe(lambda: ref_doc.dataFile)
+            rec = {'key': _safe(lambda: dfile.id) or name, 'name': name, 'ver': _safe(lambda: dfile.versionNumber),
+                   'via': via, 'targets': [target] if target else [], 'specs': specs}
+            if out is not None:
+                out.append(dict(rec))
+            rec['dfile'] = dfile
+            apply_link(rec, prefix, depth)
+
         for nid, df in _derive_features(col):
             if cancelled():
                 return
@@ -1600,41 +1795,35 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if sd is None:
                 main.warnings.append('The source design of %s could not be read.' % _safe(lambda: df.name, 'a Derive feature'))
                 continue
-            e = entry_for(sd, depth)
-            if e is None:
-                continue
-            e['targets'].add(prefix + nid)
-            e['via'].add('derive')
+            specs = []
             for se in (_safe(lambda: list(df.sourceEntities)) or []):
                 t = _t(se)
-                e['specs'].append(('tl', _safe(lambda: se.timelineObject.name)))
+                specs.append(('tl', _safe(lambda: se.timelineObject.name)))
                 if t == 'BRepBody':
-                    e['specs'].append(('body', _safe(lambda: se.name)))
+                    specs.append(('body', _safe(lambda: se.name)))
                 if t in ('Component', 'Occurrence'):
-                    e['specs'].append(('comp', _safe(lambda: se.name) or _safe(lambda: se.component.name)))
+                    specs.append(('comp', _safe(lambda: se.name) or _safe(lambda: se.component.name)))
             for b in (_safe(lambda: list(df.bodies)) or []):
                 sb = _safe(lambda: df.getSourceEntity(b))
                 if sb is not None:
-                    e['specs'].append(('body', _safe(lambda: sb.name)))
+                    specs.append(('body', _safe(lambda: sb.name)))
             dname = _safe(lambda: df.timelineObject.name)
             for p in (_safe(lambda: list(col.des.allParameters)) or []):
                 if _t(p) == 'DerivedParameter' and _safe(lambda: p.deriveFeature.timelineObject.name) == dname:
-                    e['specs'].append(('param', _safe(lambda: p.name, '') or ''))
+                    specs.append(('param', _safe(lambda: p.name, '') or ''))
+            link(sd, 'derive', nid, specs)
         for occ in _linked_occurrences(col.des):
             if cancelled():
                 return
             sd = _safe(lambda: occ.component.parentDesign)
-            e = entry_for(sd, depth) if sd is not None else None
-            if e is None:
+            if sd is None:
                 continue
-            e['via'].add('insert')
             t = _safe(lambda: col.occ_node(occ)) or _safe(lambda: col.comp_ref(occ))
-            if t:
-                e['targets'].add(prefix + t)
+            link(sd, 'insert', t, [])
 
     def open_entry(e):
         """Opens the version the link uses, hidden. mine=False: Fusion handed back a document the user has open."""
-        dfile = e['data_file']
+        dfile = e['data_file'] or _safe(lambda: app.data.findFileById(e['key']))
         if dfile is None:
             return None, False, None
         target = dfile
@@ -1698,6 +1887,15 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
 
     def process(e, n_done):
         name = e['name']
+        # read and tested in an earlier run (same saved version, at least the same checks): nothing to open
+        c = _cache_load('design', e['key'], e['read_ver'])
+        if c and (not exact or c.get('exact')) and (not groups_test or c.get('groups')) and (not pictures or c.get('pics')):
+            e['col'] = _CachedDesign(c)
+            e['pic'] = c.get('pic')
+            for rec in c.get('links') or []:
+                apply_link(rec, e['prefix'], e['depth'] + 1)
+            log('from cache %s' % name)
+            return
         if progress:
             progress('Opening ' + name, n_done, n_done + len(queue) + 1)
         doc, mine, des = open_entry(e)
@@ -1710,7 +1908,12 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 sc = _PlainDesign(des)
                 e['col'] = sc
                 e['pic'] = picture(doc, des, sc, mine)
-                note_links(sc, e['prefix'], e['depth'] + 1)
+                links = []
+                note_links(sc, e['prefix'], e['depth'] + 1, links)
+                if mine and not cancelled():
+                    d = _design_data(sc)
+                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'exact': True, 'groups': True})
+                    _cache_save('design', e['key'], e['read_ver'], d)
                 return
             sc = Collector(des, None, False)
             sc.cancelled = cancelled
@@ -1738,7 +1941,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 if n.get('tl') is not None:
                     sc.by_tlname.setdefault(n['name'], n['id'])
             # its own links, while it is open and its groups are expanded (timeline indexes are read from them)
-            note_links(sc, e['prefix'], e['depth'] + 1)
+            links = []
+            note_links(sc, e['prefix'], e['depth'] + 1, links)
+            tested = False
             if (exact or groups_test) and not cancelled():
                 if not mine:
                     main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). '
@@ -1758,6 +1963,13 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                             sc.suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the item test failed: %s' % (name, ex))
+                    tested = not cancelled()
+            # kept for later runs: only a complete result from a hidden copy of the saved version
+            if mine and not cancelled():
+                d = _design_data(sc)
+                d.update({'links': links, 'pic': e['pic'], 'pics': pictures,
+                          'exact': bool(exact and tested), 'groups': bool(groups_test and tested)})
+                _cache_save('design', e['key'], e['read_ver'], d)
         finally:
             # closed right away: only one linked design is open at a time
             hd = getattr(e['col'], 'hidden_doc', None) or e['doc']
@@ -1917,6 +2129,23 @@ def generate(mode='both', thumbs=True, derived=False):
             except Exception:
                 pass
 
+        # the same saved version generated before with the same options: the result is reused as it is
+        mdf = _safe(lambda: _app.activeDocument.dataFile)
+        m_id, m_ver = _safe(lambda: mdf.id), _safe(lambda: mdf.versionNumber)
+        m_kind = 'main_%s%s%s%s' % (int(exact), int(groups_test), int(bool(thumbs)), int(bool(derived)))
+        cached = None
+        if not _safe(lambda: _app.activeDocument.isModified, True):
+            # a Full analysis result also answers a Quick estimate (it is exact)
+            for kind in (m_kind, 'main_11%s%s' % (int(bool(thumbs)), int(bool(derived)))):
+                cached = _cache_load(kind, m_id, m_ver)
+                if cached:
+                    break
+        if cached and cached.get('data'):
+            data = cached['data']
+            data['meta']['warnings'] = list(data['meta'].get('warnings') or []) + [
+                'Reused the result generated for this saved version on %s.' % data['meta'].get('date', '?')]
+            return _write_page(data, path, out_dir)
+
         progress_dlg = _ui.createProgressDialog()
         progress_dlg.isCancelButtonShown = True
         progress_dlg.show('Dependencies graph', 'Starting...', 0, 1000)
@@ -2035,27 +2264,35 @@ def generate(mode='both', thumbs=True, derived=False):
         data = col.result(doc_name, exact, time.time() - t0)
         progress_dlg.hide()
         progress_dlg = None
-
-        if _sel_info.get('port'):
-            data['meta']['sel'] = {'port': _sel_info['port'], 'token': _sel_info['token']}
-        html = TEMPLATE.replace('/*__DATA__*/null', json.dumps(data).replace('</', '<\\/'))
-        try:
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(html)
-        except Exception as ex:
-            fallback = os.path.join(out_dir, os.path.basename(path))
-            data['meta']['warnings'].append('Could not save to %s (%s); saved to %s instead.' % (path, ex, fallback))
-            path = fallback
-            with open(path, 'w', encoding='utf-8') as f:
-                f.write(html)
-        webbrowser.open(pathlib.Path(path).as_uri())
-        return data['meta']['warnings']
+        if not getattr(col, 'recovered', 0):
+            _cache_save(m_kind, m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
+        return _write_page(data, path, out_dir)
     except Exception:
         if progress_dlg:
             _safe(lambda: progress_dlg.hide())
         if _ui:
             _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
 
+
+
+def _write_page(data, path, out_dir):
+    data = dict(data)
+    data['meta'] = dict(data['meta'])
+    if _sel_info.get('port'):
+        data['meta']['sel'] = {'port': _sel_info['port'], 'token': _sel_info['token']}
+    html = TEMPLATE.replace('/*__DATA__*/null', json.dumps(data).replace('</', '<\\/'))
+    try:
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(html)
+    except Exception as ex:
+        fallback = os.path.join(out_dir, os.path.basename(path))
+        data['meta']['warnings'] = list(data['meta']['warnings']) + [
+            'Could not save to %s (%s); saved to %s instead.' % (path, ex, fallback)]
+        path = fallback
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(html)
+    webbrowser.open(pathlib.Path(path).as_uri())
+    return data['meta']['warnings']
 
 
 # ---------------------------------------------------- select in Fusion ---
@@ -2295,6 +2532,11 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
                                      '(and the designs those link, at any depth). Each is shown in a frame of its own, '
                                      'connected to the Derive feature or insert that uses it. With Full analysis they are '
                                      'suppression-tested too, each in a hidden copy.')
+            ru = oc.addBoolValueInput('hgReuse', 'Reuse earlier results', True, '', bool(_settings().get('reuse', True)))
+            ru.tooltip = 'Take results of saved versions analysed before instead of opening and testing them again'
+            ru.tooltipDescription = ('A saved version never changes, so its results stay valid. Applies to linked designs and '
+                                     'to this design when it has not changed since it was last analysed. Untick to analyse '
+                                     'everything again.')
             # where the page is saved: the temporary folder, or a file chosen here (remembered for next time)
             sv = oc.addTextBoxCommandInput('hgSavePath', 'Save to', _save_label(), 1, True)
             sv.tooltip = 'Where the page is saved (a single self-contained .html file: opens in any browser)'
@@ -2431,6 +2673,11 @@ def _unsaved_reason():
 
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
+        if args.input.id == 'hgReuse':
+            st = _settings()
+            st['reuse'] = bool(args.input.value)
+            _save_settings(st)
+            return
         if args.input.id in ('hgSaveChoose', 'hgSaveTemp'):
             if args.input.id == 'hgSaveChoose':
                 _choose_save_path()
