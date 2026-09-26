@@ -1243,7 +1243,6 @@ class Collector:
         every item in it has no effect (suppression effects add up), with one recompute instead of two per item.
         A batch where something reacts is split in halves; single items that react are tested on their own, like
         every other item."""
-        self._mg_base = _process_memory()
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -1494,94 +1493,28 @@ class Collector:
                 return False
         return True
 
-    MEM_GROWTH_LIMIT = 3 * 1024 ** 3        # bytes Fusion may grow by during the tests before the design is reopened
-
-    def _memory_guard(self, orig, err0):
-        """Every suppress/restore leaves undo history and cached geometry behind in the document, and Fusion keeps
-        it as long as the document is open, so memory grows with every test. Every few tests Fusion's memory is
-        checked; when it has grown too much the design is reopened from its saved version (nothing is lost: it
-        is in its original state after every test), which drops all of that."""
-        now = time.time()
-        if now - getattr(self, '_mg_t', 0) < 1.0:
-            return
-        self._mg_t = now
-        rss = _process_memory()
-        if rss is None:
-            return
-        if getattr(self, '_mg_base', None) is None:
-            self._mg_base = rss
-            return
-        if rss - self._mg_base < self.MEM_GROWTH_LIMIT:
-            return
-        name = _safe(lambda: self.des.parentDocument.name, 'the design')
-        if self._recover() and self._clean(orig, err0):
-            self.refreshed = getattr(self, 'refreshed', 0) + 1
-            gc.collect()
-            adsk.doEvents()
-            after = _process_memory()
-            _mem_log('reopened %s to free memory: %.1f GB -> %s GB' % (name, rss / 1024 ** 3,
-                                                                       '%.1f' % (after / 1024 ** 3) if after else '?'))
-            self._mg_base = after or rss
-
-    def _recover(self):
-        """Reopen the saved version (the run only starts on a saved design) and continue on it."""
-        app = adsk.core.Application.get()
-        hd = getattr(self, 'hidden_doc', None)
-        if hd is not None:
-            # a linked design open in its own tab: reopen that version in a tab again and switch to it
-            df = _safe(lambda: hd.dataFile)
-            try:
-                hd.close(False)
-                nd = app.documents.open(df, True)
-            except Exception:
-                return False
-            _safe(nd.activate)
-            self.hidden_doc = nd
-            self.des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
-            self.tl = self.des.timeline
-            self.root = self.des.rootComponent
-            self.expand_groups()
-            self.recovered = getattr(self, 'recovered', 0) + 1
-            if getattr(self, '_hiding', False):
-                self._hide_display()
-            return True
-        doc = app.activeDocument
-        df = _safe(lambda: doc.dataFile)
-        if df is None:
-            return False
-        try:
-            doc.close(False)
-            nd = app.documents.open(df)
-            _safe(nd.activate)
-        except Exception:
-            return False
-        if getattr(self, 'doc', None) is not None:
-            self.doc = nd
-        self.des = adsk.fusion.Design.cast(app.activeProduct)
-        self.tl = self.des.timeline
-        self.root = self.des.rootComponent
-        self.expand_groups()
-        self.recovered = getattr(self, 'recovered', 0) + 1
-        if getattr(self, '_hiding', False):
-            self._hide_display()
-        return True
-
     def _restore_checked(self, orig, err0, tested=None, what=''):
         self._restore(orig, tested)
         if self._clean(orig, err0):
-            self._memory_guard(orig, err0)
             return True
         self._restore(orig)
         if self._clean(orig, err0):
             return True
-        if self._recover() and self._clean(orig, err0):
+        # the design is never closed and reopened while it is worked on: a third, slower try item by item
+        tl = self.tl
+        for i in sorted(orig):
+            it = _safe(lambda: tl.item(i))
+            if it is not None and _safe(lambda: it.isSuppressed, None) != orig[i]:
+                _safe(lambda: self._set_suppressed([it], orig[i]))
+        _safe(lambda: tl.moveToEnd())
+        if self._clean(orig, err0):
             return True
+        self.recovered = getattr(self, 'recovered', 0) + 1
         self.warnings.append('Could not put the design back after testing %s; later results may be wrong.' % what)
         return False
 
     def _group_suppression_test(self, progress, cancelled):
         """Suppress each timeline group as a whole and record which items outside it Fusion suppresses too."""
-        self._mg_base = _process_memory()
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -2692,8 +2625,9 @@ def generate(mode='both', thumbs=True, derived=False):
             else:
                 _safe(lambda: setattr(tl, 'markerPosition', marker0))
             if getattr(col, 'recovered', 0):
-                col.warnings.append('The design was reopened from its saved version %d time(s) during the test, '
-                                    'because switching a feature back on made Fusion lose references.' % col.recovered)
+                col.warnings.append('The design could not be put back exactly %d time(s) during the test (switching a '
+                                    'feature back on made Fusion lose references). Do not save it; reopen the saved '
+                                    'version.' % col.recovered)
             col.restore_groups()
             _safe(col.thumbs_end)
         if stopped['v']:
