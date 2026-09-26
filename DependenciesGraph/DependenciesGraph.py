@@ -1152,9 +1152,16 @@ class Collector:
         if not es:
             return True
         t0 = time.perf_counter()
+        ok = False
         try:
-            return self._set_suppressed_now(es, value)
+            r = self._set_suppressed_now(es, value)
+            ok = True
+            return r
         finally:
+            # Undo bookkeeping: suppressions since the design was last known to be in its original state, each
+            # one undo step; anything else (switching back on) makes Undo unusable until the next clean state
+            n = getattr(self, '_undo_n', 0)
+            self._undo_n = (n + 1) if (value and ok and n is not None) else None
             self.t_compute = getattr(self, 't_compute', 0.0) + time.perf_counter() - t0
             self.n_compute = getattr(self, 'n_compute', 0) + 1
             _breathe()
@@ -1258,19 +1265,21 @@ class Collector:
         self.n_state_skipped = 0
         t0 = time.perf_counter()
         try:
-            return self._suppression_test(progress, cancelled)
+            self._undo_n = 0
+            return (yield from self._suppression_test(progress, cancelled))
         finally:
             self._show_display()
             _mem_log('item test times: total %.1f s, %d suppress/restore calls %.1f s, reading states %.1f s, '
-                     'state items %d (skipped %d), combined steps %d' %
+                     'state items %d (skipped %d), combined steps %d, undo restores %d (failed %d)' %
                      (time.perf_counter() - t0, self.n_compute, self.t_compute, self.t_state,
                       getattr(self, 'n_state_items', 0), getattr(self, 'n_state_skipped', 0),
-                      getattr(self, 'swapped', 0)))
+                      getattr(self, 'swapped', 0), getattr(self, 'n_undo', 0), getattr(self, 'n_undo_failed', 0)))
 
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
         try:
-            return self._group_suppression_test(progress, cancelled)
+            self._undo_n = 0
+            return (yield from self._group_suppression_test(progress, cancelled))
         finally:
             self._show_display()
 
@@ -1427,13 +1436,13 @@ class Collector:
                 pass
             st, casc, broke, warned = effects(set(idxs))
             if not (all(st.get(i, (False, 0))[0] for i in idxs) and not casc and not broke and not warned):
-                self._restore_checked(orig, err0, None, '%d items' % len(idxs))
+                yield from self._undo_restore(orig, err0, None, '%d items' % len(idxs))
                 if len(idxs) <= 6:
                     singles.extend(idxs)
                     return
                 h = len(idxs) // 2
-                batch(idxs[:h])
-                batch(idxs[h:])
+                yield from batch(idxs[:h])
+                yield from batch(idxs[h:])
                 return
             for k in range(len(idxs) - 1, -1, -1):
                 i = idxs[k]
@@ -1455,7 +1464,7 @@ class Collector:
 
         cands = self._leaf_candidates(items)
         for c in range(0, len(cands), 12):
-            batch(cands[c:c + 12])
+            yield from batch(cands[c:c + 12])
             tl = self.tl
         rest_set = (set(items) - set(cands)) | set(singles)
 
@@ -1464,7 +1473,8 @@ class Collector:
         # safe marker movement. Ties retain the old timeline order.
         rest = sorted(rest_set, reverse=True) if getattr(self, 'SUPPRESSION_FRONTIER_ENABLED', True) else sorted(rest_set)
 
-        can_defer = _safe(lambda: hasattr(self.des, 'isComputeDeferred'), False)
+        # with Undo, putting an item back is cheap on its own: the combined step is not needed
+        can_defer = _safe(lambda: hasattr(self.des, 'isComputeDeferred'), False) and not self._undo_enabled()
         pend = [None, set(), 0]
 
         def settle():
@@ -1581,7 +1591,7 @@ class Collector:
 
             if full_fallback:
                 frontier_stats['full_fallbacks'] += 1
-                self._restore_checked(orig, err0, None, it.name + ' (frontier fallback)')
+                yield from self._undo_restore(orig, err0, None, it.name + ' (frontier fallback)')
                 tl = self.tl
                 it = tl.item(i)
                 fail_msg, st, casc, broke, warned, marker = test_one(i, it, tl.count)
@@ -1605,7 +1615,7 @@ class Collector:
                 continue
 
             name = _safe(lambda: it.name, '')
-            self._restore_checked(orig, err0, i, name)
+            yield from self._undo_restore(orig, err0, i, name)
 
         settle()
         tl = self.tl
@@ -1698,7 +1708,59 @@ class Collector:
                 return False
         return True
 
+    UNDO_RESTORE = True
+    UNDO_MAX_STEPS = 12
+
+    def _undo_enabled(self):
+        return self.UNDO_RESTORE and not getattr(self, '_undo_off', False)
+
+    def _flags_back(self, orig):
+        st = self._state(orig)
+        return all(st[i][0] == orig[i] for i in orig)
+
+    def _undo_restore(self, orig, err0, tested=None, what=''):
+        """Put the design back with Fusion's Undo instead of switching items back on: Undo brings back the model
+        Fusion kept from before the change instead of recomputing it (measured ~2 s instead of ~12 s). Undo runs
+        only after the add-in hands control back to Fusion, so this is a generator: it yields until Fusion has
+        run it. The result is checked item by item; if Undo did not bring back exactly the original state (or
+        cannot be used), the usual restore runs, and after two failed Undos it is not tried again in this design."""
+        n = getattr(self, '_undo_n', None)
+        if self._undo_enabled() and isinstance(n, int) and 0 < n <= self.UNDO_MAX_STEPS:
+            app = adsk.core.Application.get()
+            # Undo works on the active tab: make sure it is this design's
+            mydoc = _safe(lambda: self.des.parentDocument)
+            if mydoc is not None and _safe(lambda: app.activeDocument != mydoc, False):
+                _safe(mydoc.activate)
+            cd = _safe(lambda: app.userInterface.commandDefinitions.itemById('UndoCommand'))
+            if mydoc is not None and _safe(lambda: app.activeDocument != mydoc, False):
+                cd = None
+            queued = 0
+            for _ in range(n):
+                if cd is not None and _safe(lambda: cd.execute() or True, False):
+                    queued += 1
+            if queued == n:
+                for _ in range(60):
+                    yield 'undo'
+                    if self._flags_back(orig):
+                        break
+                if self._flags_back(orig):
+                    _safe(lambda: self.tl.moveToEnd())
+                    if self._clean(orig, err0):
+                        self.n_undo = getattr(self, 'n_undo', 0) + 1
+                        self._undo_n = 0
+                        return True
+            self.n_undo_failed = getattr(self, 'n_undo_failed', 0) + 1
+            if self.n_undo_failed >= 2:
+                self._undo_off = True
+        ok = self._restore_checked(orig, err0, tested, what)
+        return ok
+
     def _restore_checked(self, orig, err0, tested=None, what=''):
+        r = self._restore_checked_now(orig, err0, tested, what)
+        self._undo_n = 0 if r else None
+        return r
+
+    def _restore_checked_now(self, orig, err0, tested=None, what=''):
         self._restore(orig, tested)
         if self._clean(orig, err0):
             return True
@@ -1793,8 +1855,7 @@ class Collector:
                 if warned:
                     byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
-            _safe(lambda: self._set_suppressed([g], False))
-            self._restore_checked(orig, err0, None, gname)
+            yield from self._undo_restore(orig, err0, None, gname)
             if self.tl is not tl:
                 tl = self.tl
                 tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
@@ -2371,14 +2432,14 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                     _safe(lambda: sc.tl.moveToEnd())
                     if groups_test:
                         try:
-                            sc.group_suppression_test(prog, cancelled)
+                            yield from sc.group_suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
                     if groups_test:
                         stage['k'] = 1
                     if exact and not cancelled():
                         try:
-                            sc.suppression_test(prog, cancelled)
+                            yield from sc.suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the item test failed: %s' % (name, ex))
                     tested = not cancelled()
@@ -2417,7 +2478,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         n_done = 0
         while queue and not cancelled():
             e = queue.pop(0)
-            process(e, n_done)
+            yield from process(e, n_done)
             if e['col'] is not None:
                 sources.append(e)
             n_done += 1
@@ -2804,11 +2865,11 @@ def generate(mode='both', thumbs=True, derived=False):
             k = 1
             if groups_test and not cancelled():
                 set_step(k); k += 1
-                col.group_suppression_test(progress, cancelled)
+                yield from col.group_suppression_test(progress, cancelled)
                 _mem_log('group test done')
             if exact and not cancelled():
                 set_step(k); k += 1
-                col.suppression_test(progress, cancelled)
+                yield from col.suppression_test(progress, cancelled)
                 _mem_log('item test done')
             _prow('main', None, 'Cancelled' if cancelled() else 'Done', 1, 'fail' if cancelled() else 'done')
             if derived and not cancelled():
@@ -2823,7 +2884,7 @@ def generate(mode='both', thumbs=True, derived=False):
                         else:
                             steps[k][1] = max(1.0, di * 0.05 + dg * 0.1 + max(1, nd) * 1.0)
                         set_step(k)
-                    _collect_derived(col, progress, cancelled, exact, groups_test, thumbs, plan=_derived_plan)
+                    yield from _collect_derived(col, progress, cancelled, exact, groups_test, thumbs, plan=_derived_plan)
                 except Exception as ex:
                     col.warnings.append('Could not read the derived designs: %s' % ex)
                     col.derived_failed = True
@@ -3327,10 +3388,75 @@ class _RunHandler(adsk.core.CustomEventHandler):
                     return
             if _unsaved_reason():
                 return
+            if _STEPPER.active:
+                _ui.messageBox('A dependencies graph is already being generated. Wait for it to finish or cancel it '
+                               'in the progress panel.', 'Dependencies graph')
+                return
             doc = _app.activeDocument
-            w = list(generate(opts.get('mode', 'both'), bool(opts.get('thumbs', True)),
-                              bool(opts.get('derived', False))) or [])
-            doc = _app.activeDocument      # the test may have reopened the design
+            gen = generate(opts.get('mode', 'both'), bool(opts.get('thumbs', True)), bool(opts.get('derived', False)))
+            _STEPPER.start(gen, lambda w: _run_finished(doc, list(w or [])))
+        except Exception:
+            _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
+
+
+STEP_EVENT_ID = 'claudeDesignGraphStep'
+_step_event = None
+
+
+class _Stepper:
+    """Runs generate() in steps. Wherever the run needs Fusion to do something that only happens after the
+    add-in hands control back (Fusion's Undo command), it yields; this fires a custom event and continues from
+    there when Fusion delivers it, after the queued command has run."""
+    def __init__(self):
+        self.gen = None
+        self.done = None
+
+    @property
+    def active(self):
+        return self.gen is not None
+
+    def start(self, gen, done):
+        self.gen, self.done = gen, done
+        self.step()
+
+    def step(self):
+        while self._step_once():
+            # no custom event to continue with: go on right here (Undo then falls back to switching back on)
+            pass
+
+    def _step_once(self):
+        gen = self.gen
+        if gen is None:
+            return False
+        try:
+            next(gen)
+        except StopIteration as fin:
+            self.gen = None
+            done, self.done = self.done, None
+            if done:
+                try:
+                    done(fin.value)
+                except Exception:
+                    _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
+            return False
+        except Exception:
+            self.gen = self.done = None
+            _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
+            return False
+        return not _safe(lambda: _app.fireCustomEvent(STEP_EVENT_ID, '') or True, False)
+
+
+_STEPPER = _Stepper()
+
+
+class _StepHandler(adsk.core.CustomEventHandler):
+    def notify(self, args):
+        _STEPPER.step()
+
+
+def _run_finished(doc, w):
+    try:
+        if True:
             if _safe(lambda: doc.isModified):
                 # The design was saved when the run started and nothing else could edit it during the run,
                 # so everything that marks it modified came from the run itself (marker moves etc.).
@@ -3341,8 +3467,8 @@ class _RunHandler(adsk.core.CustomEventHandler):
             if w:
                 _ui.messageBox('Dependencies graph opened in your browser, with warnings:\n\n' +
                                '\n'.join(w[:15]), 'Dependencies graph')
-        except Exception:
-            _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
+    except Exception:
+        _ui.messageBox('Dependencies graph failed:\n{}'.format(traceback.format_exc()))
 
 
 def _tab():
@@ -3408,6 +3534,12 @@ def _build_ui():
     on_run = _RunHandler()
     _custom_event.add(on_run)
     _handlers.append(on_run)
+    global _step_event
+    _safe(lambda: _app.unregisterCustomEvent(STEP_EVENT_ID))
+    _step_event = _app.registerCustomEvent(STEP_EVENT_ID)
+    on_step = _StepHandler()
+    _step_event.add(on_step)
+    _handlers.append(on_step)
     global _sel_event
     _safe(lambda: _app.unregisterCustomEvent(SEL_EVENT_ID))
     _sel_event = _app.registerCustomEvent(SEL_EVENT_ID)
@@ -3442,6 +3574,10 @@ def stop(context):
             _custom_event = None
         _safe(_sel_stop)
         _safe(lambda: _app.unregisterCustomEvent(SEL_EVENT_ID))
+        _safe(lambda: _app.unregisterCustomEvent(STEP_EVENT_ID))
+        if _STEPPER.gen is not None:
+            _safe(_STEPPER.gen.close)
+            _STEPPER.gen = None
         _safe(lambda: _ui.palettes.itemById(PANEL_ID).deleteMe())
         _handlers.clear()
     except Exception:
