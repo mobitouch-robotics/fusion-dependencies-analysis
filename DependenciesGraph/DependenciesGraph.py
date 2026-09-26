@@ -2138,11 +2138,14 @@ button{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid var(--li
 <div class="top"><b>Dependencies graph</b><button id="cx">Cancel</button></div>
 <div class="bar"><i id="all"></i></div><div id="eta">Starting...</div><div id="rows"></div>
 <script>
-const rows={};
-function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span></div><div class="s"></div><div class="bar"><i></i></div>';document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
+const rows={};let seq=0;
+// in progress on top, then waiting, then finished (done or failed); each group keeps the order the designs appeared in
+function sortRows(){const box=document.getElementById('rows');const rank=c=>c==='wait'?1:(c==='done'||c==='fail')?2:0;
+  Object.values(rows).sort((a,b)=>rank(a.dataset.c)-rank(b.dataset.c)||a.dataset.o-b.dataset.o).forEach(r=>box.appendChild(r));}
+function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span></div><div class="s"></div><div class="bar"><i></i></div>';r.dataset.o=seq++;document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
 window.fusionJavaScriptHandler={handle:function(action,data){try{const d=JSON.parse(data);
   if(action==='all'){document.getElementById('all').style.width=(100*d.f)+'%';document.getElementById('eta').textContent=d.t;}
-  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;r.querySelector('.s').textContent=x.s;r.querySelector('.bar i').style.width=(100*x.f)+'%';r.className='row '+(x.c||'');});}
+  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;r.querySelector('.s').textContent=x.s;r.querySelector('.bar i').style.width=(100*x.f)+'%';r.className='row '+(x.c||'');r.dataset.c=x.c||'';});sortRows();}
   if(action==='end'){document.getElementById('cx').disabled=true;}
 }catch(e){}return 'ok';}};
 document.getElementById('cx').onclick=()=>{document.getElementById('cx').textContent='Stopping...';document.getElementById('cx').disabled=true;adsk.fusionSendData('cancel','{}');};
