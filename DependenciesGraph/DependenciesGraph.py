@@ -923,6 +923,8 @@ class Collector:
         n_items = tl.count
         stop = getattr(self, 'cancelled', None)
         prev = None
+        tm = self.scan_times = {'roll': 0.0, 'thumbs': 0.0, 'outputs': 0.0, 'references': 0.0}
+        clk = time.perf_counter
         self.thumbs_begin()
         for i in range(n_items):
             if stop and i % 5 == 0 and stop():
@@ -933,20 +935,28 @@ class Collector:
             nid = self.tl2node.get(i)
             if self.progress:
                 self.progress(it.name, i, n_items)
+            t0 = clk()
             if not getattr(self, 'no_roll', False):
                 _safe(lambda: it.rollTo(True))
             self.keep_active()
+            t1 = clk()
+            tm['roll'] += t1 - t0
             if prev is not None:
                 self.capture(*prev)
+                t2 = clk()
+                tm['thumbs'] += t2 - t1
                 try:
                     self.record_outputs(*prev)
                 except Exception as ex:
                     self.warnings.append('Could not read outputs of %s: %s' % (_safe(lambda: prev[0].name, '?'), ex))
+                t1 = clk()
+                tm['outputs'] += t1 - t2
             try:
                 links = self.inputs_of(it)
             except Exception as ex:
                 links = []
                 self.warnings.append('Could not read references of %s: %s' % (_safe(lambda: it.name, '?'), ex))
+            tm['references'] += clk() - t1
             for src, kind in links:
                 self.add_edge(src, nid, kind)
             prev = (it, nid)
@@ -956,6 +966,7 @@ class Collector:
             self.capture(*prev)
             _safe(lambda: self.record_outputs(*prev))
         self.thumbs_end()
+        _mem_log('read times: ' + ', '.join('%s %.1f s' % (k, v) for k, v in tm.items()))
 
     def scan_components(self):
         """A node per component (except the root): its parent is the item that brought it in (insert, New
@@ -1140,6 +1151,14 @@ class Collector:
         es = [e for e in (entities or []) if e is not None]
         if not es:
             return True
+        t0 = time.perf_counter()
+        try:
+            return self._set_suppressed_now(es, value)
+        finally:
+            self.t_compute = getattr(self, 't_compute', 0.0) + time.perf_counter() - t0
+            self.n_compute = getattr(self, 'n_compute', 0) + 1
+
+    def _set_suppressed_now(self, es, value):
         fn = getattr(self.des, 'setSuppressed', None)
         if fn is not None:
             try:
@@ -1198,10 +1217,16 @@ class Collector:
 
     def suppression_test(self, progress, cancelled):
         self._hide_display()
+        self.t_compute = self.t_state = 0.0
+        self.n_compute = 0
+        t0 = time.perf_counter()
         try:
             return self._suppression_test(progress, cancelled)
         finally:
             self._show_display()
+            _mem_log('item test times: total %.1f s, %d suppress/restore calls %.1f s, reading states %.1f s, '
+                     'combined steps %d' % (time.perf_counter() - t0, self.n_compute, self.t_compute, self.t_state,
+                                            getattr(self, 'swapped', 0)))
 
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
@@ -1421,6 +1446,13 @@ class Collector:
     def _state(self, idxs):
         """Suppressed flag and health of the given timeline items, read once each (a table instead of a read per
         question)."""
+        t0 = time.perf_counter()
+        try:
+            return self._state_now(idxs)
+        finally:
+            self.t_state = getattr(self, 't_state', 0.0) + time.perf_counter() - t0
+
+    def _state_now(self, idxs):
         tl = self.tl
         out = {}
         for i in idxs:
