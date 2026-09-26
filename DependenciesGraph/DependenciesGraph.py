@@ -2214,7 +2214,7 @@ def generate(mode='both', thumbs=True, derived=False):
             steps.append(['Every item test', n_tl * 1.7])
         if derived:
             # Placeholder until the read-only derived pre-scan has found the exact number of source items/groups.
-            steps.append(['Derived designs' + (' (gather, then test)' if (exact or groups_test) else ''), 20])
+            steps.append(['Linked designs' + (' (read and tested)' if (exact or groups_test) else ''), 20])
         t0 = time.time()
         try:
             set_step(0)
