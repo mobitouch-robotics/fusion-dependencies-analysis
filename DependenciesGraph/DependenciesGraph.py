@@ -1495,16 +1495,14 @@ class Collector:
         app = adsk.core.Application.get()
         hd = getattr(self, 'hidden_doc', None)
         if hd is not None:
-            # a derived design read in a hidden document: reopen that version, hidden again
+            # a linked design open in its own tab: reopen that version in a tab again and switch to it
             df = _safe(lambda: hd.dataFile)
-            active = _safe(lambda: app.activeDocument)
             try:
                 hd.close(False)
-                nd = app.documents.open(df, False)
+                nd = app.documents.open(df, True)
             except Exception:
                 return False
-            if active is not None and _safe(lambda: app.activeDocument) != active:
-                _safe(active.activate)
+            _safe(nd.activate)
             self.hidden_doc = nd
             self.des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
             self.tl = self.des.timeline
@@ -2034,7 +2032,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             link(sd, 'insert', t, [])
 
     def open_entry(e):
-        """Opens the version the link uses, hidden. mine=False: Fusion handed back a document the user has open."""
+        """Opens the version the link uses in its own tab and switches to it, so you can see what is being worked
+        on (the progress panel stays on top); the tab is closed when the design is done. mine=False: Fusion handed
+        back a document the user has open."""
         dfile = e['data_file'] or _safe(lambda: app.data.findFileById(e['key']))
         if dfile is None:
             return None, False, None
@@ -2046,11 +2046,11 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         active = _safe(lambda: app.activeDocument)
         before = list(_safe(lambda: list(app.documents)) or [])
         try:
-            doc = app.documents.open(target, False)
+            doc = app.documents.open(target, True)
         except Exception:
             return None, False, None
-        if active is not None and _safe(lambda: app.activeDocument) != active:
-            _safe(active.activate)
+        _safe(doc.activate)
+        adsk.doEvents()
         mine = not any(_safe(lambda: d == doc, False) for d in before)
         des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
         if des is None and mine:
@@ -2092,7 +2092,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         if _safe(doc.activate) is not False:
             adsk.doEvents()
             pic = _part_picture()
-        if back is not None:
+        if back is not None and not _safe(lambda: back == doc, False):
             _safe(back.activate)
             adsk.doEvents()
         return pic
