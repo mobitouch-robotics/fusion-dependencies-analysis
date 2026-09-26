@@ -1157,6 +1157,7 @@ class Collector:
         finally:
             self.t_compute = getattr(self, 't_compute', 0.0) + time.perf_counter() - t0
             self.n_compute = getattr(self, 'n_compute', 0) + 1
+            _breathe()
 
     def _set_suppressed_now(self, es, value):
         fn = getattr(self.des, 'setSuppressed', None)
@@ -1898,6 +1899,17 @@ def _cache_load(kind, file_id, ver):
         return d if d.get('cv') == CACHE_VERSION else None
     except Exception:
         return None
+
+
+def _breathe(seconds=0.15):
+    """Let Fusion handle clicks, scrolling and redraws for a moment between two recomputes; a recompute itself
+    cannot be interrupted, so this is where the UI gets its turn."""
+    end = time.perf_counter() + seconds
+    while True:
+        adsk.doEvents()
+        if time.perf_counter() >= end:
+            break
+        time.sleep(0.01)
 
 
 def _probe_text_commands():
