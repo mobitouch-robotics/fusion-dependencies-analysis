@@ -1758,6 +1758,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                  'col': None, 'doc': None, 'specs': [], 'into': set(), 'targets': set(), 'via': set()}
             by_key[key] = e
             queue.append(e)
+            _prow(key, name, 'Waiting', 0, 'wait')
         else:
             e['depth'] = max(e['depth'], depth)
             if ver is not None:
@@ -1892,15 +1893,18 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         if c and (not exact or c.get('exact')) and (not groups_test or c.get('groups')) and (not pictures or c.get('pics')):
             e['col'] = _CachedDesign(c)
             e['pic'] = c.get('pic')
+            _prow(e['key'], name, 'Taken from an earlier run (same saved version)', 1, 'done')
             for rec in c.get('links') or []:
                 apply_link(rec, e['prefix'], e['depth'] + 1)
             log('from cache %s' % name)
             return
         if progress:
             progress('Opening ' + name, n_done, n_done + len(queue) + 1)
+        _prow(e['key'], name, 'Opening...', 0.02, '')
         doc, mine, des = open_entry(e)
         if des is None:
             main.warnings.append('Could not open %s to read it.' % name)
+            _prow(e['key'], name, 'Could not open it', 1, 'fail')
             return
         e['doc'] = doc if mine else None
         try:
@@ -1922,6 +1926,13 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             e['col'] = sc
             if progress:
                 progress('Reading ' + name, n_done, n_done + len(queue) + 1)
+            testing = bool((exact or groups_test) and mine)
+            span = 0.25 if testing else 1.0          # share of this design's bar the reading takes
+
+            def rprog(msg, i, n):
+                _prow(e['key'], name, 'Reading: %s (%d/%d)' % (msg, min(i + 1, n), n), 0.05 + (span - 0.05) * min(1.0, i / max(1, n)))
+                adsk.doEvents()
+            sc.progress = rprog
             if mine:
                 sc.expand_groups()
             else:
@@ -1951,13 +1962,22 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 else:
                     # the same tests as on the main design, on this hidden copy (closed without saving)
                     sc.hidden_doc = doc
-                    prog = (lambda msg, i, n: progress('%s: %s' % (name, msg), i, n)) if progress else (lambda *a: None)
+                    stage = {'k': 0}
+                    n_stages = (1 if groups_test else 0) + (1 if exact else 0)
+
+                    def prog(msg, i, n):
+                        f = span + (1 - span) * (stage['k'] + min(1.0, i / max(1, n))) / max(1, n_stages)
+                        _prow(e['key'], name, '%s: %s (%d/%d)' % ('Group test' if (groups_test and stage['k'] == 0) else 'Item test', msg, min(i + 1, n), n), f)
+                        if progress:
+                            progress('%s: %s' % (name, msg), i, n)
                     _safe(lambda: sc.tl.moveToEnd())
                     if groups_test:
                         try:
                             sc.group_suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
+                    if groups_test:
+                        stage['k'] = 1
                     if exact and not cancelled():
                         try:
                             sc.suppression_test(prog, cancelled)
@@ -1977,6 +1997,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 _safe(e['col'].restore_groups) if e['col'] is not None else None
                 _safe(lambda: hd.close(False))
             e['doc'] = None
+            if e['col'] is not None:
+                _prow(e['key'], name, 'Cancelled' if cancelled() else ('Done' + ('' if mine or isinstance(e['col'], _PlainDesign) else ' (open in Fusion: read as it is, not tested)')), 1,
+                      'fail' if cancelled() else 'done')
             release(e['col'])
             des = doc = hd = None
             gc.collect()
@@ -2095,6 +2118,126 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             main.add_edge(a, b, 'derive')
 
 
+# ------------------------------------------------------------ progress panel ---
+# A Fusion palette (a small HTML panel) with one line per design: its name, what is happening, and its own bar,
+# plus the whole run's bar, time left and Cancel. Behaves like Fusion's progress dialog (message, progressValue,
+# wasCancelled, hide) so the run can fall back to that dialog when a palette cannot be made.
+PANEL_ID = 'claudeDesignGraphProgress'
+PANEL_HTML = r"""<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+:root{--bg:#f7f7f5;--fg:#1f1f1d;--mut:#6b6a64;--bar:#e4e2da;--fill:#185fa5;--ok:#1f8a4c;--err:#c0392b;--line:#d9d7cf}
+@media (prefers-color-scheme:dark){:root{--bg:#232322;--fg:#ecebe6;--mut:#a3a29c;--bar:#3a3a38;--fill:#6aa8e8;--ok:#5fcf8f;--err:#ff7b6b;--line:#3a3a38}}
+body{margin:0;padding:10px 12px;font:12px -apple-system,system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--fg)}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:6px}.top b{font-size:13px;flex:1}
+button{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.bar{height:6px;border-radius:3px;background:var(--bar);overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--fill);transition:width .2s}
+#eta{color:var(--mut);margin:4px 0 10px}
+.row{padding:6px 0;border-top:1px solid var(--line)}.row .h{display:flex;gap:8px;align-items:baseline}
+.row .n{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .s{color:var(--mut);font-size:11px;margin:2px 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.done .bar i{background:var(--ok)}.row.fail .bar i{background:var(--err)}.row.fail .s{color:var(--err)}.row.wait{opacity:.55}
+</style></head><body>
+<div class="top"><b>Dependencies graph</b><button id="cx">Cancel</button></div>
+<div class="bar"><i id="all"></i></div><div id="eta">Starting...</div><div id="rows"></div>
+<script>
+const rows={};
+function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span></div><div class="s"></div><div class="bar"><i></i></div>';document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
+window.fusionJavaScriptHandler={handle:function(action,data){try{const d=JSON.parse(data);
+  if(action==='all'){document.getElementById('all').style.width=(100*d.f)+'%';document.getElementById('eta').textContent=d.t;}
+  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;r.querySelector('.s').textContent=x.s;r.querySelector('.bar i').style.width=(100*x.f)+'%';r.className='row '+(x.c||'');});}
+  if(action==='end'){document.getElementById('cx').disabled=true;}
+}catch(e){}return 'ok';}};
+document.getElementById('cx').onclick=()=>{document.getElementById('cx').textContent='Stopping...';document.getElementById('cx').disabled=true;adsk.fusionSendData('cancel','{}');};
+</script></body></html>"""
+
+
+class _PanelCancelHandler(adsk.core.HTMLEventHandler):
+    def __init__(self, panel):
+        super().__init__()
+        self.panel = panel
+
+    def notify(self, args):
+        if _safe(lambda: args.action) == 'cancel':
+            self.panel.wasCancelled = True
+
+
+class _ProgressPanel:
+    def __init__(self):
+        self.wasCancelled = False
+        self._rows = {}
+        self._dirty = set()
+        self._last = 0.0
+        self._all = (0.0, 'Starting...')
+        path = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', '_progress.html')
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as f:
+            f.write(PANEL_HTML)
+        old = _ui.palettes.itemById(PANEL_ID)
+        if old:
+            _safe(old.deleteMe)
+        self.pal = _ui.palettes.add(PANEL_ID, 'Dependencies graph', pathlib.Path(path).as_uri(), True, True, True, 380, 460)
+        _safe(lambda: setattr(self.pal, 'dockingState', adsk.core.PaletteDockingStates.PaletteDockStateRight))
+        self._h = _PanelCancelHandler(self)
+        self.pal.incomingFromHTML.add(self._h)
+        _handlers.append(self._h)
+        adsk.doEvents()
+
+    # the progress dialog's interface
+    @property
+    def message(self):
+        return self._all[1]
+
+    @message.setter
+    def message(self, text):
+        self._all = (self._all[0], text)
+        self._flush()
+
+    @property
+    def progressValue(self):
+        return int(self._all[0] * 1000)
+
+    @progressValue.setter
+    def progressValue(self, v):
+        self._all = (max(0.0, min(1.0, v / 1000.0)), self._all[1])
+        self._flush()
+
+    def row(self, key, name, status, frac=None, state=''):
+        """One design's line: state '' (working), 'wait', 'done' or 'fail'."""
+        r = self._rows.get(key) or {'k': key, 'n': name, 's': '', 'f': 0.0, 'c': 'wait'}
+        r.update({'n': name or r['n'], 's': status, 'c': state})
+        if frac is not None:
+            r['f'] = max(0.0, min(1.0, frac))
+        self._rows[key] = r
+        self._dirty.add(key)
+        self._flush()
+
+    def _flush(self, force=False):
+        # the panel is redrawn at most a few times a second: sending is not free
+        now = time.time()
+        if not force and now - self._last < 0.15:
+            return
+        self._last = now
+        f, t = self._all
+        _safe(lambda: self.pal.sendInfoToHTML('all', json.dumps({'f': f, 't': t.split('\n')[0]})))
+        if self._dirty:
+            _safe(lambda: self.pal.sendInfoToHTML('rows', json.dumps([self._rows[k] for k in self._dirty])))
+            self._dirty = set()
+
+    def hide(self):
+        """End of the run: the panel stays open with the final state of every line (closed with its X)."""
+        self._all = (1.0 if not self.wasCancelled else self._all[0],
+                     'Cancelled.' if self.wasCancelled else 'Finished: the graph opened in your browser.')
+        self._flush(True)
+        _safe(lambda: self.pal.sendInfoToHTML('end', '{}'))
+
+
+_panel = None
+
+
+def _prow(key, name, status, frac=None, state=''):
+    """A design's line in the progress panel (no-op without one)."""
+    if _panel is not None:
+        _safe(lambda: _panel.row(key, name, status, frac, state))
+
+
 # ------------------------------------------------------------------- run ---
 
 def generate(mode='both', thumbs=True, derived=False):
@@ -2146,9 +2289,15 @@ def generate(mode='both', thumbs=True, derived=False):
                 'Reused the result generated for this saved version on %s.' % data['meta'].get('date', '?')]
             return _write_page(data, path, out_dir)
 
-        progress_dlg = _ui.createProgressDialog()
-        progress_dlg.isCancelButtonShown = True
-        progress_dlg.show('Dependencies graph', 'Starting...', 0, 1000)
+        global _panel
+        try:
+            progress_dlg = _panel = _ProgressPanel()
+        except Exception:
+            _panel = None
+            progress_dlg = _ui.createProgressDialog()
+            progress_dlg.isCancelButtonShown = True
+            progress_dlg.show('Dependencies graph', 'Starting...', 0, 1000)
+        _prow('main', doc_name + ' (this design)', 'Starting...', 0, '')
 
         # One bar for the whole run: every step gets a share of it sized by how long it usually takes.
         steps = []                      # [name, weight]
@@ -2191,6 +2340,9 @@ def generate(mode='both', thumbs=True, derived=False):
                 time_left(frac), cur['k'] + 1, len(steps), steps[cur['k']][0] if steps else '', min(i + 1, n), n,
                 msg.replace('%', ' percent')))[:200]
             progress_dlg.progressValue = int(1000 * frac)
+            if not cur.get('linked'):
+                _prow('main', None, '%s: %s (%d/%d)' % (steps[cur['k']][0] if steps else '', msg, min(i + 1, n), n),
+                      (cur['k'] + min(1.0, i / max(1, n))) / max(1, len(steps) - (1 if derived else 0)))
             adsk.doEvents()
 
         def cancelled():
@@ -2231,8 +2383,10 @@ def generate(mode='both', thumbs=True, derived=False):
             if exact and not cancelled():
                 set_step(k); k += 1
                 col.suppression_test(progress, cancelled)
+            _prow('main', None, 'Cancelled' if cancelled() else 'Done', 1, 'fail' if cancelled() else 'done')
             if derived and not cancelled():
                 # while the groups are still expanded: the derive features' timeline indexes are read from them
+                cur['linked'] = True
                 set_step(k)
                 _safe(lambda: col.tl.moveToEnd())
                 try:
@@ -2856,6 +3010,7 @@ def stop(context):
             _custom_event = None
         _safe(_sel_stop)
         _safe(lambda: _app.unregisterCustomEvent(SEL_EVENT_ID))
+        _safe(lambda: _ui.palettes.itemById(PANEL_ID).deleteMe())
         _handlers.clear()
     except Exception:
         pass
