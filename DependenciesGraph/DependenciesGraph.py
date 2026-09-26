@@ -2507,6 +2507,7 @@ def generate(mode='both', thumbs=True, derived=False):
                     _collect_derived(col, progress, cancelled, exact, groups_test, thumbs, plan=_derived_plan)
                 except Exception as ex:
                     col.warnings.append('Could not read the derived designs: %s' % ex)
+                    col.derived_failed = True
         finally:
             tl = col.tl
             if at_end:
@@ -2526,7 +2527,7 @@ def generate(mode='both', thumbs=True, derived=False):
         data = col.result(doc_name, exact, time.time() - t0)
         progress_dlg.hide()
         progress_dlg = None
-        if not getattr(col, 'recovered', 0):
+        if not getattr(col, 'recovered', 0) and not getattr(col, 'derived_failed', False):
             _cache_save(m_kind, m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
         return _write_page(data, path, out_dir)
     except Exception:
