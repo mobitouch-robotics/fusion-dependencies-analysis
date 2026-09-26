@@ -909,18 +909,13 @@ class Collector:
             _safe(sels.clear)
 
     def scan(self):
+        """One forward walk: with the marker just before each item, its references are read; the previous item is
+        computed by then, so its outputs (face/body owners) are recorded and its picture taken in the same step."""
         tl = self.tl
         n_items = tl.count
         stop = getattr(self, 'cancelled', None)
-        self.thumbs_begin()
-
-        # First pass: keep reference/output discovery exactly as before.  This is a
-        # forward timeline walk because input references are read in the state of
-        # their feature.  Do not mix thumbnail work into this pass.
-        items = []
         prev = None
-        self._sigs_before = {}
-        pics = getattr(self, 'want_thumbs', False) and not getattr(self, 'no_roll', False)
+        self.thumbs_begin()
         for i in range(n_items):
             if stop and i % 5 == 0 and stop():
                 break
@@ -928,21 +923,17 @@ class Collector:
             if it.isGroup:
                 continue
             nid = self.tl2node.get(i)
-            items.append((i, it, nid))
             if self.progress:
                 self.progress(it.name, i, n_items)
             if not getattr(self, 'no_roll', False):
                 _safe(lambda: it.rollTo(True))
             self.keep_active()
-            # the marker is now after the previous item: its bodies and faces are computed, so its outputs are
-            # read here (reading an item's outputs with the marker before it gives wrong face/body owners)
             if prev is not None:
+                self.capture(*prev)
                 try:
                     self.record_outputs(*prev)
                 except Exception as ex:
                     self.warnings.append('Could not read outputs of %s: %s' % (_safe(lambda: prev[0].name, '?'), ex))
-            if pics and nid is not None:
-                self._sigs_before[nid] = _safe(self._all_sigs, set())   # faces before this item, for its picture
             try:
                 links = self.inputs_of(it)
             except Exception as ex:
@@ -951,36 +942,11 @@ class Collector:
             for src, kind in links:
                 self.add_edge(src, nid, kind)
             prev = (it, nid)
+        if not getattr(self, 'no_roll', False):
+            _safe(lambda: tl.moveToEnd())
         if prev is not None:
-            if not getattr(self, 'no_roll', False):
-                _safe(lambda: tl.moveToEnd())
+            self.capture(*prev)
             _safe(lambda: self.record_outputs(*prev))
-
-        if getattr(self, 'want_thumbs', False) and not getattr(self, 'no_roll', False) and items:
-            # Second pass: walk backwards using timeline rollback only.  We deliberately
-            # do NOT suppress features here.  Autodesk documents rollTo(False) as placing
-            # the marker immediately after the object, so starting at the end we can visit
-            # each feature from last to first without changing suppression state.
-            _safe(lambda: tl.moveToEnd())
-            self.keep_active()
-            for rev, (i, it, nid) in enumerate(reversed(items)):
-                if stop and rev % 5 == 0 and stop():
-                    break
-                if not _safe(lambda: it.rollTo(False), False):
-                    self.warnings.append('Could not roll to %s for thumbnail capture' %
-                                         (_safe(lambda: it.name, '?')))
-                    break
-                self.keep_active()
-                if self.progress:
-                    self.progress('Picture of ' + (_safe(lambda: it.name) or '?'), rev, len(items))
-                self._prev_sigs = self._sigs_before.get(nid, set())
-                self.capture(it, nid)
-
-            # Return to the normal end state.  No suppression changes were made.
-            _safe(lambda: tl.moveToEnd())
-        elif not getattr(self, 'no_roll', False):
-            _safe(lambda: tl.moveToEnd())
-
         self.thumbs_end()
 
     def scan_components(self):
