@@ -18,7 +18,7 @@ Two ways to collect dependencies:
     restores it afterwards; save a version before using it.
 """
 import adsk.core, adsk.fusion, traceback, json, os, re, time, webbrowser, datetime, tempfile, pathlib, base64
-import threading, secrets, http.server, gc
+import threading, secrets, http.server, gc, sys
 
 _app = None
 _ui = None
@@ -1366,6 +1366,34 @@ class Collector:
                 return False
         return True
 
+    MEM_GROWTH_LIMIT = 6 * 1024 ** 3        # bytes Fusion may grow by during the tests before the design is reopened
+
+    def _memory_guard(self, orig, err0):
+        """Every suppress/restore leaves undo history and cached geometry behind in the document, and Fusion keeps
+        it as long as the document is open, so memory grows with every test. Every few tests Fusion's memory is
+        checked; when it has grown too much the design is reopened from its saved version (nothing is lost: it
+        is in its original state after every test), which drops all of that."""
+        self._mg_n = getattr(self, '_mg_n', 0) + 1
+        if self._mg_n % 10:
+            return
+        rss = _process_memory()
+        if rss is None:
+            return
+        if getattr(self, '_mg_base', None) is None:
+            self._mg_base = rss
+            return
+        if rss - self._mg_base < self.MEM_GROWTH_LIMIT:
+            return
+        name = _safe(lambda: self.des.parentDocument.name, 'the design')
+        if self._recover() and self._clean(orig, err0):
+            self.refreshed = getattr(self, 'refreshed', 0) + 1
+            gc.collect()
+            adsk.doEvents()
+            after = _process_memory()
+            _mem_log('reopened %s to free memory: %.1f GB -> %s GB' % (name, rss / 1024 ** 3,
+                                                                       '%.1f' % (after / 1024 ** 3) if after else '?'))
+            self._mg_base = after or rss
+
     def _recover(self):
         """Reopen the saved version (the run only starts on a saved design) and continue on it."""
         app = adsk.core.Application.get()
@@ -1398,6 +1426,8 @@ class Collector:
             _safe(nd.activate)
         except Exception:
             return False
+        if getattr(self, 'doc', None) is not None:
+            self.doc = nd
         self.des = adsk.fusion.Design.cast(app.activeProduct)
         self.tl = self.des.timeline
         self.root = self.des.rootComponent
@@ -1408,6 +1438,7 @@ class Collector:
     def _restore_checked(self, orig, err0, tested=None, what=''):
         self._restore(orig, tested)
         if self._clean(orig, err0):
+            self._memory_guard(orig, err0)
             return True
         self._restore(orig)
         if self._clean(orig, err0):
@@ -1652,6 +1683,48 @@ def _open_version(sd):
     # must be neither closed nor changed
     mine = not any(_safe(lambda: d == doc, False) for d in before)
     return doc, mine
+
+
+# ------------------------------------------------------------ memory ---
+def _process_memory():
+    """Memory Fusion uses now (resident set, bytes); None when it cannot be read."""
+    try:
+        if sys.platform == 'darwin':
+            import subprocess
+            out = subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], capture_output=True, text=True,
+                                 timeout=5, env={'PATH': '/bin:/usr/bin'}).stdout.strip()
+            return int(out) * 1024 if out else None
+        if sys.platform.startswith('win'):
+            import ctypes
+            from ctypes import wintypes
+
+            class PMC(ctypes.Structure):
+                _fields_ = [('cb', wintypes.DWORD), ('PageFaultCount', wintypes.DWORD),
+                            ('PeakWorkingSetSize', ctypes.c_size_t), ('WorkingSetSize', ctypes.c_size_t),
+                            ('QuotaPeakPagedPoolUsage', ctypes.c_size_t), ('QuotaPagedPoolUsage', ctypes.c_size_t),
+                            ('QuotaPeakNonPagedPoolUsage', ctypes.c_size_t), ('QuotaNonPagedPoolUsage', ctypes.c_size_t),
+                            ('PagefileUsage', ctypes.c_size_t), ('PeakPagefileUsage', ctypes.c_size_t)]
+            c = PMC()
+            c.cb = ctypes.sizeof(PMC)
+            h = ctypes.windll.kernel32.GetCurrentProcess()
+            if ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
+                return int(c.WorkingSetSize)
+    except Exception:
+        pass
+    return None
+
+
+def _mem_log(msg):
+    """One line in the run's log (temporary folder / FusionDependenciesGraph / run_log.txt)."""
+    try:
+        p = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'run_log.txt')
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        m = _process_memory()
+        with open(p, 'a', encoding='utf-8') as f:
+            f.write('%s  %s  (Fusion memory: %s)\n' % (datetime.datetime.now().strftime('%H:%M:%S'), msg,
+                                                        '%.1f GB' % (m / 1024 ** 3) if m else '?'))
+    except Exception:
+        pass
 
 
 # ------------------------------------------------------------ result cache ---
@@ -2009,6 +2082,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             gc.collect()
             adsk.doEvents()
             log('closed %s' % name)
+            _mem_log('closed %s' % name)
 
     active = _safe(lambda: app.activeDocument)
     try:
@@ -2392,6 +2466,11 @@ def generate(mode='both', thumbs=True, derived=False):
             steps.append(['Linked designs' + (' (read and tested)' if (exact or groups_test) else ''), 20])
         t0 = time.time()
         try:
+            try:
+                open(os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'run_log.txt'), 'w').close()
+            except Exception:
+                pass
+            _mem_log('start: %s' % doc_name)
             set_step(0)
             col.build_nodes()
             col.scan()
@@ -2399,13 +2478,16 @@ def generate(mode='both', thumbs=True, derived=False):
                 col.part_pic = _part_picture()
             _safe(col.scan_components)
             col.scan_parameters()
+            _mem_log('read done')
             k = 1
             if groups_test and not cancelled():
                 set_step(k); k += 1
                 col.group_suppression_test(progress, cancelled)
+                _mem_log('group test done')
             if exact and not cancelled():
                 set_step(k); k += 1
                 col.suppression_test(progress, cancelled)
+                _mem_log('item test done')
             _prow('main', None, 'Cancelled' if cancelled() else 'Done', 1, 'fail' if cancelled() else 'done')
             if derived and not cancelled():
                 # while the groups are still expanded: the derive features' timeline indexes are read from them
