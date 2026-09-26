@@ -1733,7 +1733,7 @@ def _mem_log(msg):
 # ------------------------------------------------------------ result cache ---
 # A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
 # (or another assembly using the same part) takes it from here instead of opening and testing the design again.
-CACHE_VERSION = 1
+CACHE_VERSION = 2
 
 
 def _cache_dir():
@@ -1969,7 +1969,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         name = e['name']
         # read and tested in an earlier run (same saved version, at least the same checks): nothing to open
         c = _cache_load('design', e['key'], e['read_ver'])
-        if c and (not exact or c.get('exact')) and (not groups_test or c.get('groups')) and (not pictures or c.get('pics')):
+        if c and (not exact or c.get('exact')) and (not groups_test or c.get('gtest')) and (not pictures or c.get('pics')):
             e['col'] = _CachedDesign(c)
             e['pic'] = c.get('pic')
             _prow(e['key'], name, 'Taken from an earlier run (same saved version)', 1, 'done', ['From an earlier run'])
@@ -1995,7 +1995,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 note_links(sc, e['prefix'], e['depth'] + 1, links)
                 if mine and not cancelled():
                     d = _design_data(sc)
-                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'exact': True, 'groups': True})
+                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'exact': True, 'gtest': True})
                     _cache_save('design', e['key'], e['read_ver'], d)
                 return
             sc = Collector(des, None, False)
@@ -2068,7 +2068,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if mine and not cancelled():
                 d = _design_data(sc)
                 d.update({'links': links, 'pic': e['pic'], 'pics': pictures,
-                          'exact': bool(exact and tested), 'groups': bool(groups_test and tested)})
+                          'exact': bool(exact and tested), 'gtest': bool(groups_test and tested)})
                 _cache_save('design', e['key'], e['read_ver'], d)
         finally:
             # closed right away: only one linked design is open at a time
