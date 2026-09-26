@@ -911,9 +911,16 @@ class Collector:
     def scan(self):
         tl = self.tl
         n_items = tl.count
-        prev = None
-        self.thumbs_begin()
         stop = getattr(self, 'cancelled', None)
+        self.thumbs_begin()
+
+        # First pass: keep reference/output discovery exactly as before.  This is a
+        # forward timeline walk because input references are read in the state of
+        # their feature.  Do not mix thumbnail work into this pass.
+        items = []
+        prev = None
+        self._sigs_before = {}
+        pics = getattr(self, 'want_thumbs', False) and not getattr(self, 'no_roll', False)
         for i in range(n_items):
             if stop and i % 5 == 0 and stop():
                 break
@@ -921,17 +928,21 @@ class Collector:
             if it.isGroup:
                 continue
             nid = self.tl2node.get(i)
+            items.append((i, it, nid))
             if self.progress:
                 self.progress(it.name, i, n_items)
             if not getattr(self, 'no_roll', False):
                 _safe(lambda: it.rollTo(True))
             self.keep_active()
+            # the marker is now after the previous item: its bodies and faces are computed, so its outputs are
+            # read here (reading an item's outputs with the marker before it gives wrong face/body owners)
             if prev is not None:
-                self.capture(*prev)
                 try:
                     self.record_outputs(*prev)
                 except Exception as ex:
                     self.warnings.append('Could not read outputs of %s: %s' % (_safe(lambda: prev[0].name, '?'), ex))
+            if pics and nid is not None:
+                self._sigs_before[nid] = _safe(self._all_sigs, set())   # faces before this item, for its picture
             try:
                 links = self.inputs_of(it)
             except Exception as ex:
@@ -940,11 +951,36 @@ class Collector:
             for src, kind in links:
                 self.add_edge(src, nid, kind)
             prev = (it, nid)
-        if not getattr(self, 'no_roll', False):
-            _safe(lambda: tl.moveToEnd())
         if prev is not None:
-            self.capture(*prev)
+            if not getattr(self, 'no_roll', False):
+                _safe(lambda: tl.moveToEnd())
             _safe(lambda: self.record_outputs(*prev))
+
+        if getattr(self, 'want_thumbs', False) and not getattr(self, 'no_roll', False) and items:
+            # Second pass: walk backwards using timeline rollback only.  We deliberately
+            # do NOT suppress features here.  Autodesk documents rollTo(False) as placing
+            # the marker immediately after the object, so starting at the end we can visit
+            # each feature from last to first without changing suppression state.
+            _safe(lambda: tl.moveToEnd())
+            self.keep_active()
+            for rev, (i, it, nid) in enumerate(reversed(items)):
+                if stop and rev % 5 == 0 and stop():
+                    break
+                if not _safe(lambda: it.rollTo(False), False):
+                    self.warnings.append('Could not roll to %s for thumbnail capture' %
+                                         (_safe(lambda: it.name, '?')))
+                    break
+                self.keep_active()
+                if self.progress:
+                    self.progress('Picture of ' + (_safe(lambda: it.name) or '?'), rev, len(items))
+                self._prev_sigs = self._sigs_before.get(nid, set())
+                self.capture(it, nid)
+
+            # Return to the normal end state.  No suppression changes were made.
+            _safe(lambda: tl.moveToEnd())
+        elif not getattr(self, 'no_roll', False):
+            _safe(lambda: tl.moveToEnd())
+
         self.thumbs_end()
 
     def scan_components(self):
@@ -1122,6 +1158,41 @@ class Collector:
         return self.tl_node(_safe(lambda: cb.nativeObject) or cb)
 
     # --------------------------------------------------- suppression test ---
+    def _set_suppressed(self, entities, value):
+        """Change several suppression states in one Fusion recompute.
+
+        Fusion 360 September 2026+ exposes Design.setSuppressed(), which is
+        considerably faster than assigning isSuppressed repeatedly. Keep a
+        small fallback for older Fusion builds so the add-in remains usable.
+        """
+        es = [e for e in (entities or []) if e is not None]
+        if not es:
+            return True
+        fn = getattr(self.des, 'setSuppressed', None)
+        if fn is not None:
+            try:
+                fn(es, bool(value))
+                return True
+            except Exception as ex:
+                # Fusion raises when later features fail to compute, usually after doing the change anyway.
+                # Callers check the real state; the message is what the page shows as the reason.
+                if all(_safe(lambda: e.isSuppressed, None) == bool(value) for e in es):
+                    raise
+                first = ex
+        else:
+            first = None
+        err = first
+        for e in es:
+            try:
+                setattr(e, 'isSuppressed', bool(value))
+            except Exception as ex:
+                err = err or ex
+        if err is not None and not all(_safe(lambda: e.isSuppressed, None) == bool(value) for e in es):
+            raise err
+        if err is not None and first is not None:
+            raise first
+        return True
+
     def suppression_test(self, progress, cancelled):
         tl = self.tl
         orig = {}
@@ -1147,7 +1218,7 @@ class Collector:
             progress(it.name, k, len(items))
             fail_msg = None
             try:
-                it.isSuppressed = True
+                self._set_suppressed([it], True)
             except Exception as ex:
                 # Fusion raises when later features fail to compute, but usually suppresses anyway
                 fail_msg = str(ex)
@@ -1207,17 +1278,19 @@ class Collector:
         one by one can make Fusion lose edge references in later features, so that is not used."""
         tl = self.tl
         if tested is not None:
-            _safe(lambda: setattr(tl.item(tested), 'isSuppressed', False))
-        for g in tl.timelineGroups:
-            if _safe(lambda: g.isSuppressed):
-                _safe(lambda: setattr(g, 'isSuppressed', False))
-        for i in sorted(orig):
-            if not orig[i] and _safe(lambda: tl.item(i).isSuppressed, False):
-                _safe(lambda: setattr(tl.item(i), 'isSuppressed', False))
+            _safe(lambda: self._set_suppressed([tl.item(tested)], False))
+        # everything still off goes back on in one recompute (setSuppressed), then the items that were off
+        # before go back off in one more; _restore_checked verifies the result and falls back if needed
+        groups_on = [g for g in (_safe(lambda: list(tl.timelineGroups)) or []) if _safe(lambda: g.isSuppressed)]
+        if groups_on:
+            _safe(lambda: self._set_suppressed(groups_on, False))
+        on = [tl.item(i) for i in sorted(orig) if not orig[i] and _safe(lambda: tl.item(i).isSuppressed, False)]
+        if on:
+            _safe(lambda: self._set_suppressed(on, False))
         # items that were suppressed before must stay suppressed (unsuppressing a group can wake them)
-        for i in sorted(orig, reverse=True):
-            if orig[i] and not _safe(lambda: tl.item(i).isSuppressed, True):
-                _safe(lambda: setattr(tl.item(i), 'isSuppressed', True))
+        off = [tl.item(i) for i in sorted(orig, reverse=True) if orig[i] and not _safe(lambda: tl.item(i).isSuppressed, True)]
+        if off:
+            _safe(lambda: self._set_suppressed(off, True))
         _safe(lambda: tl.moveToEnd())
 
     def _clean(self, orig, err0):
@@ -1319,7 +1392,7 @@ class Collector:
                 continue     # everything in it is already suppressed
             fail_msg = None
             try:
-                g.isSuppressed = True
+                self._set_suppressed([g], True)
             except Exception as ex:
                 # Fusion reports downstream compute failures as an error; see below.
                 fail_msg = str(ex)
@@ -1329,7 +1402,7 @@ class Collector:
                 for i in sorted(inside, reverse=True):
                     if not orig.get(i):
                         try:
-                            tl.item(i).isSuppressed = True
+                            self._set_suppressed([tl.item(i)], True)
                         except Exception:
                             pass
                 if not all(_safe(lambda: tl.item(i).isSuppressed, False) for i in inside):
@@ -1353,7 +1426,7 @@ class Collector:
                 if warned:
                     byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
-            _safe(lambda: setattr(g, 'isSuppressed', False))
+            _safe(lambda: self._set_suppressed([g], False))
             self._restore_checked(orig, err0, None, gname)
             if self.tl is not tl:
                 tl = self.tl
@@ -1385,10 +1458,11 @@ class Collector:
                 sig.append((b.name, round(_safe(lambda: b.volume, 0) * 1000, 1)))
         return sorted(sig)
 
-    def result(self, doc_name, exact):
+    def result(self, doc_name, exact, generation_seconds=None):
         edges = [{'s': s, 't': t, 'k': sorted(k)} for (s, t), k in self.edges.items()]
         return {'meta': {'doc': doc_name, 'exact': exact, 'pic': getattr(self, 'part_pic', None), 'gtest': getattr(self, 'gtested', False), 'warnings': self.warnings,
-                         'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M')},
+                         'date': datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
+                         'generationSeconds': round(float(generation_seconds), 1) if generation_seconds is not None else None},
                 'nodes': self.nodes, 'groups': self.groups, 'edges': edges, 'thumbs': self.thumbs}
 
 
@@ -1518,7 +1592,7 @@ def _open_version(sd):
     return doc, mine
 
 
-def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80):
+def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None):
     sources = []            # [{'key', 'col', 'prefix', 'gid', 'name', 'depth', 'doc'}]
     by_key = {}
     links = []              # (source id, target id) across designs, ids already prefixed
@@ -1555,7 +1629,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         if not parametric:
             sc = _PlainDesign(des)
             src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
-                   'doc': doc if mine else None, 'versions': {ver} if ver is not None else set(), 'read_ver': ver,
+                   'doc': doc if mine else None, 'data_file': dfile, 'versions': {ver} if ver is not None else set(), 'read_ver': ver,
                    'into': set(), 'targets': set(), 'via': set()}
             sources.append(src)
             by_key[key] = src
@@ -1568,6 +1642,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                     _safe(back.activate)
                     adsk.doEvents()
             walk(sc, src['prefix'], depth + 1)
+            if mine:
+                _safe(lambda: doc.close(False))
+                src['doc'] = None
             return src
         sc = Collector(des, None, False)
         sc.cancelled = cancelled
@@ -1600,26 +1677,6 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 adsk.doEvents()
         _safe(sc.scan_components)
         sc.scan_parameters()
-        if mine and (exact or groups_test):
-            # Full analysis: the same suppression tests as on the main design, on this hidden copy (it is closed
-            # without saving afterwards, so nothing of it is kept)
-            sc.hidden_doc = doc
-            prog = (lambda msg, i, n: progress('%s: %s' % (name, msg), i, n)) if progress else (lambda *a: None)
-            _safe(lambda: sc.tl.moveToEnd())
-            if groups_test:
-                try:
-                    sc.group_suppression_test(prog, cancelled)
-                except Exception as ex:
-                    main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
-            if exact:
-                try:
-                    sc.suppression_test(prog, cancelled)
-                except Exception as ex:
-                    main.warnings.append('%s: the item test failed: %s' % (name, ex))
-            src['doc'] = None                 # closed through sc.hidden_doc (the test may have reopened it)
-        elif not mine and (exact or groups_test):
-            main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). '
-                                 'Close it and generate again to test it too.' % name)
         if mine:
             _safe(lambda: sc.tl.moveToEnd())
         elif any(_safe(lambda: g.isCollapsed, False) for g in (_safe(lambda: list(sc.tl.timelineGroups)) or [])):
@@ -1630,6 +1687,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if n.get('tl') is not None:
                 sc.by_tlname.setdefault(n['name'], n['id'])
         walk(sc, src['prefix'], depth + 1)     # the designs this one derives from, while its groups are open
+        if mine:
+            _safe(lambda: doc.close(False))
+            src['doc'] = None
         return src
 
     def walk(col, prefix, depth):
@@ -1689,9 +1749,137 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if t:
                 src['targets'].add(prefix + t)
 
+    def reopen_for_test(src):
+        """Reopen a source design only when its suppression tests are about to run.
+
+        During the read/gather phase source documents opened by this add-in are closed
+        immediately after their data has been collected.  This keeps Fusion from holding
+        every derived design in memory at once.  The test phase gets a fresh Collector
+        for the source, then closes that document as soon as its tests finish.
+        """
+        dfile = src.get('data_file')
+        if dfile is None or cancelled():
+            return None, False, None
+        target = dfile
+        ver = src.get('read_ver')
+        if ver is not None:
+            for v in (_safe(lambda: list(dfile.versions)) or []):
+                if _safe(lambda: v.versionNumber) == ver:
+                    target = v
+                    break
+        before = list(_safe(lambda: list(app.documents)) or [])
+        try:
+            doc = app.documents.open(target, False)
+        except Exception:
+            return None, False, None
+        mine = not any(_safe(lambda: d == doc, False) for d in before)
+        des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
+        if des is None:
+            if mine:
+                _safe(lambda: doc.close(False))
+            return None, mine, None
+        return doc, mine, des
+
+    def make_test_collector(src, doc, des, mine):
+        """Only what the suppression tests need (timeline items and groups): the references were read already."""
+        sc = Collector(des, None, False)
+        sc.cancelled = cancelled
+        sc.doc = None
+        sc.no_roll = not mine
+        if mine:
+            sc.expand_groups()
+        else:
+            sc.collapsed = []
+        sc.build_nodes()
+        return sc
+
+    def merge_tests(read, test):
+        """Test results into the collector that read the design (same saved version, so the same items), checked
+        item by item; returns False when the two do not match, and then nothing is merged."""
+        rn = {n['id']: n for n in read.nodes}
+        for n in test.nodes:
+            m = rn.get(n['id'])
+            if m is None or m.get('name') != n.get('name'):
+                return False
+        rg = {g['id']: g for g in read.groups}
+        for n in test.nodes:
+            for f in ('dsupp', 'dbreak', 'dwarn', 'fail'):
+                if f in n:
+                    rn[n['id']][f] = n[f]
+        for g in test.groups:
+            if g['id'] in rg:
+                for f in ('dsupp', 'dbreak', 'dwarn', 'fail', 'empty'):
+                    if f in g:
+                        rg[g['id']][f] = g[f]
+        for key, k in test.edges.items():
+            read.edges.setdefault(key, set()).update(k)
+        read.gtested = getattr(test, 'gtested', False)
+        read.warnings = list(read.warnings) + list(test.warnings)
+        return True
+
     active = _safe(lambda: app.activeDocument)
     try:
+        # Phase 1: gather/read every derived or linked source before any suppression test.
+        # This makes the complete derived test workload known up front.
         walk(main, '', 1)
+        if sources and (exact or groups_test) and not cancelled():
+            derived_items = 0
+            derived_groups = 0
+            for src in sources:
+                sc = src['col']
+                if isinstance(sc, Collector):
+                    derived_items += sum(1 for n in sc.nodes if n.get('tl') is not None and not n.get('supp'))
+                    derived_groups += len(sc.groups)
+            if plan:
+                plan(derived_items, derived_groups, len(sources))
+            done = 0
+            total = len(sources)
+            for src in sorted(sources, key=lambda x: -x['depth']):
+                if cancelled():
+                    break
+                sc = src['col']
+                if not isinstance(sc, Collector):
+                    continue
+                name = src['name']
+                # Source documents were closed after the gather/read phase to keep RAM usage low.
+                # Reopen only this one source for its suppression tests, then close it immediately.
+                doc, mine, des = reopen_for_test(src)
+                if doc is None or des is None:
+                    main.warnings.append('%s could not be reopened for suppression testing.' % name)
+                    done += 1
+                    if progress:
+                        progress('Finished derived design ' + name, done, total)
+                    continue
+                if not mine:
+                    main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). Close it and generate again to test it too.' % name)
+                    done += 1
+                    if progress:
+                        progress('Finished derived design ' + name, done, total)
+                    continue
+                test_sc = None
+                try:
+                    test_sc = make_test_collector(src, doc, des, mine)
+                    test_sc.hidden_doc = doc
+                    prog = (lambda msg, i, n, nm=name: progress('%s: %s' % (nm, msg), i, n)) if progress else (lambda *a: None)
+                    _safe(lambda: test_sc.tl.moveToEnd())
+                    if groups_test:
+                        try:
+                            test_sc.group_suppression_test(prog, cancelled)
+                        except Exception as ex:
+                            main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
+                    if exact and not cancelled():
+                        try:
+                            test_sc.suppression_test(prog, cancelled)
+                        except Exception as ex:
+                            main.warnings.append('%s: the item test failed: %s' % (name, ex))
+                    if not merge_tests(sc, test_sc):
+                        main.warnings.append('%s changed between reading and testing; its test results were left out.' % name)
+                finally:
+                    _safe(lambda: test_sc.restore_groups() if test_sc is not None else None)
+                    _safe(lambda: doc.close(False))
+                done += 1
+                if progress:
+                    progress('Finished derived design ' + name, done, total)
     finally:
         # the hidden documents are closed without saving: nothing of them is kept or changed
         for src in sources:
@@ -1862,9 +2050,8 @@ def generate(mode='both', thumbs=True, derived=False):
         if exact:
             steps.append(['Every item test', n_tl * 1.7])
         if derived:
-            # testing the derived designs too takes about as long as the main design's own tests
-            steps.append(['Derived designs' + (' (read and tested)' if (exact or groups_test) else ''),
-                          (n_tl * 1.7 + n_groups * 2.5) if (exact or groups_test) else 20])
+            # Placeholder until the read-only derived pre-scan has found the exact number of source items/groups.
+            steps.append(['Derived designs' + (' (gather, then test)' if (exact or groups_test) else ''), 20])
         t0 = time.time()
         try:
             set_step(0)
@@ -1886,7 +2073,13 @@ def generate(mode='both', thumbs=True, derived=False):
                 set_step(k)
                 _safe(lambda: col.tl.moveToEnd())
                 try:
-                    _collect_derived(col, progress, cancelled, exact, groups_test, thumbs)
+                    def _derived_plan(di, dg, nd):
+                        if exact or groups_test:
+                            steps[k][1] = max(1.0, di * 1.7 + dg * 2.5 + max(1, nd) * 2.0)
+                        else:
+                            steps[k][1] = max(1.0, di * 0.05 + dg * 0.1 + max(1, nd) * 1.0)
+                        set_step(k)
+                    _collect_derived(col, progress, cancelled, exact, groups_test, thumbs, plan=_derived_plan)
                 except Exception as ex:
                     col.warnings.append('Could not read the derived designs: %s' % ex)
         finally:
@@ -1905,7 +2098,7 @@ def generate(mode='both', thumbs=True, derived=False):
             _safe(lambda: progress_dlg.hide())
             progress_dlg = None
             return []
-        data = col.result(doc_name, exact)
+        data = col.result(doc_name, exact, time.time() - t0)
         progress_dlg.hide()
         progress_dlg = None
 
@@ -3297,6 +3490,10 @@ function linkList(list,dir){const ul=document.createElement('ul');if(!list.lengt
 function setInfo(open){if(open&&document.body.classList.contains('legendopen'))setLegend(false);document.body.classList.toggle('infoopen',!!open);$('infoBtn').classList.toggle('on',!!open);}
 function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.createElement('div');cols.className='cols';
   const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details; Cmd+click (Mac) or Ctrl+click adds or removes items to select several. Click empty space in the graph to deselect.</div>';
+  const gen=document.createElement('div');gen.className='hint';
+  {const sec=D.meta.generationSeconds;const dur=sec==null?'unknown':(sec<60?(sec.toFixed(1)+' s'):(Math.floor(sec/60)+' min '+Math.round(sec%60)+' s'));
+   gen.innerHTML='<b>Generated:</b> '+(D.meta.date||'unknown')+' · <b>Generation time:</b> '+dur;}
+  c1.appendChild(gen);
   const lg=document.createElement('div');lg.className='legend';Object.keys(CAT).forEach(c=>{if(!nodes.some(n=>n.cat===c))return;const s=document.createElement('span');s.className='pill';s.textContent=CAT[c];s.style.color='var(--c-'+c+')';s.style.background='var(--c-'+c+'-bg)';lg.appendChild(s);});c1.appendChild(lg);
   const h=document.createElement('div');h.className='hint';h.innerHTML='Graph: drag to pan, scroll to zoom, click a grey group box to expand it. Blue links lead to what the selection depends on, green links to what depends on it. <b>▶ Play</b> (or P) animates how the selected item was built from its dependencies, or the whole history when nothing is selected: Space pauses, → goes one step forward and ← one step back (while paused, one step at a time), Esc stops.'+(D.meta.exact||D.meta.gtest?'':'<br>Links come from references the add-in could read (sketches, profiles, planes, faces/edges, bodies, parameters). Use <b>Full analysis</b> in the add-in to get Fusion\'s real dependencies and the suppression preview.');c1.appendChild(h);
   if(canGroups){const x=document.createElement('div');x.className='hint';x.innerHTML='<b>Suppression preview:</b> use the on/off buttons (groups panel, tree, details) or Shift+click a box in the graph'+(canItems?'':' (switches its whole group - this page has the group test only)')+'. The preview bar appears as soon as something is switched off.'+
