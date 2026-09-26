@@ -2681,8 +2681,9 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             th.tooltipDescription = ('Each item is photographed straight on (sketches, planes) or in a three-quarter '
                                      'view (3D features), zoomed to the item. Adds about 20 seconds on a large design.')
             # less common options, folded away
-            ag = oc.addGroupCommandInput('hgAdvanced', 'Advanced options')
-            ag.isExpanded = False
+            # a group of its own at the top level: Fusion cannot fold a group nested inside another
+            ag = inputs.addGroupCommandInput('hgAdvanced', 'Advanced options')
+            _safe(lambda: setattr(ag, 'isExpanded', False))
             dv = ag.children.addBoolValueInput('hgDerived', 'Include linked designs', True, '', False)
             dv.tooltip = 'Also map the designs this one derives from or inserts'
             dv.tooltipDescription = ('Each design brought in with Derive or inserted as a linked component is read as well '
