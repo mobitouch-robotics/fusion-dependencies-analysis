@@ -1372,8 +1372,7 @@ class Collector:
         - Putting an item back: the marker goes back right after it, the item is switched on, and the marker
           goes to the end - the design is then the original one again and Fusion reuses the result it already
           has instead of recomputing (measured: ~0.1 s instead of ~11 s).
-        - Items nothing seems to depend on are tested in batches first (one run for up to 12 items when nothing
-          reacts), as before."""
+"""
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -1477,57 +1476,11 @@ class Collector:
                 brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
                 wrn[nid] = [self.tl2node[j] for j in warned if j in self.tl2node]
 
-        # --- 1. likely leaves, in batches
-        singles = []
         batch_hits = 0
+        # from the back: later items are tested first, so their results are there for the earlier ones
+        rest = sorted(items, reverse=True)
 
-        def batch(idxs):
-            nonlocal batch_hits
-            idxs = sorted(idxs)
-            if cancelled() or len(idxs) < 2:
-                singles.extend(idxs)
-                return
-            progress('%d items at once' % len(idxs), done[0], total)
-            ok, _msg, casc, broke, warned = probe(idxs)
-            if not (ok and not casc and not broke and not warned):
-                put_back(idxs, '%d items' % len(idxs))
-                if len(idxs) <= 6:
-                    singles.extend(idxs)
-                    return
-                h = len(idxs) // 2
-                batch(idxs[:h])
-                batch(idxs[h:])
-                return
-            # nothing outside reacted (the marker is at the end): switch the items back on one at a time from the
-            # last; one that comes back clean is not affected by the earlier ones still off and affects nothing
-            for k in range(len(idxs) - 1, -1, -1):
-                i = idxs[k]
-                try:
-                    self._set_suppressed([tl.item(i)], False)
-                except Exception:
-                    pass
-                s1 = self._state([i])[i]
-                # the items after it came back clean while it was off: it affects nothing
-                record(i, [], [], [])
-                done[0] += 1
-                batch_hits += 1
-                if s1[0] or (s1[1] == ERR and i not in err0) or (s1[1] == WARN and i not in warn0):
-                    # an earlier item of the batch affects this one: those are tested again on their own
-                    put_back(idxs, '%d items' % len(idxs))
-                    singles.extend(idxs[:k])
-                    return
-            put_back(idxs, '%d items' % len(idxs))
-
-        # from the back: later items are tested first, so their proofs are there for the earlier ones
-        cands = sorted(self._leaf_candidates(items), reverse=True)
-        for c in range(0, len(cands), 12):
-            if cancelled():
-                break
-            batch(cands[c:c + 12])
-        rest = sorted((set(items) - set(cands)) | set(singles), reverse=True)
-        rest = [i for i in rest if self.tl2node.get(i) not in desc]
-
-        # --- 2. every other item on its own
+        # --- every item on its own
         for i in rest:
             if cancelled():
                 self.warnings.append('Suppression test was cancelled; results are partial.')
@@ -1550,9 +1503,8 @@ class Collector:
         if vol0 != vol1:
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
-        _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
-                 '%d items proven in batches' % (stats['tests'], stats['stopped_early'], stats['items_not_computed'],
-                                                 stats['proof_mismatch'], batch_hits))
+        _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches' %
+                 (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch']))
         self.test_stats = stats
         self.item_proofs = known
         if False:
