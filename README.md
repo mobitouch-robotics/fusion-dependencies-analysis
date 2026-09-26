@@ -4,6 +4,10 @@
 as an interactive HTML page: a dependency graph and tree of every timeline item, with thumbnails,
 timeline groups, components, parameters and optional suppression tests.
 
+[![Dependencies Graph demo video](https://img.youtube.com/vi/AzQnUs5jFEE/maxresdefault.jpg)](https://youtu.be/AzQnUs5jFEE)
+
+*▶ Watch the demo on YouTube*
+
 ## Features
 
 ### What is shown
