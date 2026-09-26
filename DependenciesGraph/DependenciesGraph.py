@@ -1420,6 +1420,9 @@ class Collector:
             # items between the first and last of S are already computed
             start = S[0] + 1
             n = tl.count
+            # an item no finished test ever took down can never be proven off, so the walk cannot stop before it:
+            # go straight past the last such item in one move instead of stepping to it
+            pos = self._jump_past_unprovable(pos, Sset, active, known)
             while True:
                 seg = [j for j in active if start <= j < pos and j not in Sset]
                 if seg:
@@ -1501,8 +1504,10 @@ class Collector:
         if vol0 != vol1:
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
-        _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches' %
-                 (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch']))
+        _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
+                 '%d direct jumps past unprovable items' %
+                 (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch'],
+                  getattr(self, 'n_jumps', 0)))
         self.test_stats = stats
         self.item_proofs = known
         if False:
@@ -1656,6 +1661,23 @@ class Collector:
         return False
 
 
+    def _jump_past_unprovable(self, pos, S, active, known):
+        """The walk forward can only stop where every remaining item is covered by some finished test. An item
+        that is in no test's results can never be covered, so stepping before it is wasted: the marker goes
+        straight past the last such item (to the end when it is the last item). Returns the new marker."""
+        union = set()
+        for v in known.values():
+            union |= v
+        blockers = [j for j in active if j >= pos and j not in S and j not in union]
+        if not blockers:
+            return pos
+        target = max(blockers) + 1
+        if target > pos:
+            self.n_jumps = getattr(self, 'n_jumps', 0) + 1
+            self._set_test_marker(target)
+            return target
+        return pos
+
     def _walk_forward(self, orig, S, err0, warn0, start, pos):
         """With the items S suppressed and the marker at `pos`, read what Fusion computed and move the marker
         forward STEP_ITEMS at a time, until the end or until every remaining active item is proven off by the
@@ -1668,6 +1690,7 @@ class Collector:
         casc, broke, warned = [], [], []
         covered, use_proof = set(), True
         n = tl.count
+        pos = self._jump_past_unprovable(pos, S, active, known)
         while True:
             seg = [j for j in active if start <= j < pos and j not in S]
             if seg:
