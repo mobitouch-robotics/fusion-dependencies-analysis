@@ -2680,7 +2680,10 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             th.tooltip = 'A picture of every timeline step'
             th.tooltipDescription = ('Each item is photographed straight on (sketches, planes) or in a three-quarter '
                                      'view (3D features), zoomed to the item. Adds about 20 seconds on a large design.')
-            dv = oc.addBoolValueInput('hgDerived', 'Include linked designs', True, '', False)
+            # less common options, folded away
+            ag = oc.addGroupCommandInput('hgAdvanced', 'Advanced options')
+            ag.isExpanded = False
+            dv = ag.children.addBoolValueInput('hgDerived', 'Include linked designs', True, '', False)
             dv.tooltip = 'Also map the designs this one derives from or inserts'
             dv.tooltipDescription = ('Each design brought in with Derive or inserted as a linked component is read as well '
                                      '(and the designs those link, at any depth). Each is shown in a frame of its own, '
