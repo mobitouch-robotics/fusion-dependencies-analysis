@@ -1559,106 +1559,40 @@ def _open_version(sd):
 
 
 def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None):
-    sources = []            # [{'key', 'col', 'prefix', 'gid', 'name', 'depth', 'doc'}]
-    by_key = {}
+    """Linked designs, each opened once: open -> read -> test (Full analysis) -> note the designs it links -> close,
+    then the next one from a queue. What a Derive hands over is noted by name while the deriving design is open
+    and matched once the source design has been read (names are stable within a saved version)."""
+    sources = []            # read designs, in the order they were processed
+    by_key = {}             # file id -> entry (queued or read)
+    queue = []
     links = []              # (source id, target id) across designs, ids already prefixed
     app = adsk.core.Application.get()
 
-    def read(sd, depth):
+    def entry_for(sd, depth):
+        """The queue entry for a linked design (one per file), created when first seen."""
         ref_doc = _safe(lambda: sd.parentDocument)
-        name = _safe(lambda: ref_doc.name) or 'Derived design'
+        name = _safe(lambda: ref_doc.name) or 'Linked design'
         dfile = _safe(lambda: ref_doc.dataFile)
-        # one entry per file: the same design derived several times (from any file, even at another version)
-        # is read once and linked to every Derive feature that uses it
         key = _safe(lambda: dfile.id) or name
         ver = _safe(lambda: dfile.versionNumber)
-        if key in by_key:
-            src = by_key[key]
-            src['depth'] = max(src['depth'], depth)
-            if ver is not None:
-                src['versions'].add(ver)
-            return src
-        if len(sources) >= max_designs or cancelled():
-            return None
-        if progress:
-            progress('Opening ' + name, len(sources), len(sources) + 1)
-        opened = _open_version(sd)
-        doc, mine = opened if opened else (None, False)
-        des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType'))) if doc else None
-        if des is None:
-            main.warnings.append('Could not open %s to read it.' % name)
-            if doc is not None and mine:
-                _safe(lambda: doc.close(False))
-            return None
-        k = len(sources) + 1
-        parametric = _safe(lambda: des.designType) == adsk.fusion.DesignTypes.ParametricDesignType
-        if not parametric:
-            sc = _PlainDesign(des)
-            src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
-                   'doc': doc if mine else None, 'data_file': dfile, 'versions': {ver} if ver is not None else set(), 'read_ver': ver,
-                   'into': set(), 'targets': set(), 'via': set()}
-            sources.append(src)
-            by_key[key] = src
-            if pictures and not cancelled() and _has_geometry(des):
-                back = _safe(lambda: app.activeDocument)
-                if _safe(doc.activate) is not False:
-                    adsk.doEvents()
-                    src['pic'] = _part_picture()
-                if back is not None:
-                    _safe(back.activate)
-                    adsk.doEvents()
-            walk(sc, src['prefix'], depth + 1)
-            if mine:
-                _safe(lambda: doc.close(False))
-                src['doc'] = None
-            return src
-        sc = Collector(des, None, False)
-        sc.cancelled = cancelled
-        sc.doc = None                        # a hidden document: the main design stays the active one
-        sc.no_roll = not mine                # a document the user has open: read as it is, the timeline is not moved
-        src = {'key': key, 'col': sc, 'prefix': 'x%d:' % k, 'gid': 'X%d' % k, 'name': name, 'depth': depth,
-               'doc': doc if mine else None,
-               'versions': {ver} if ver is not None else set(), 'read_ver': ver, 'into': set(), 'targets': set(),
-               'via': set()}
-        sources.append(src)
-        by_key[key] = src
-        if progress:
-            progress('Reading ' + name, len(sources) - 1, len(sources))
-        if mine:
-            sc.expand_groups()
+        e = by_key.get(key)
+        if e is None:
+            if len(by_key) >= max_designs:
+                return None
+            k = len(by_key) + 1
+            e = {'key': key, 'name': name, 'data_file': dfile, 'read_ver': ver, 'depth': depth,
+                 'versions': {ver} if ver is not None else set(), 'prefix': 'x%d:' % k, 'gid': 'X%d' % k,
+                 'col': None, 'doc': None, 'specs': [], 'into': set(), 'targets': set(), 'via': set()}
+            by_key[key] = e
+            queue.append(e)
         else:
-            sc.collapsed = []
-        sc.build_nodes()
-        sc.scan()
-        if pictures and not cancelled() and _has_geometry(des):
-            # Fusion takes pictures only in the active window: this design is shown for a moment
-            back = _safe(lambda: app.activeDocument)
-            if mine:
-                _safe(lambda: sc.tl.moveToEnd())
-            if _safe(doc.activate) is not False:
-                adsk.doEvents()
-                src['pic'] = _part_picture()
-            if back is not None:
-                _safe(back.activate)
-                adsk.doEvents()
-        _safe(sc.scan_components)
-        sc.scan_parameters()
-        if mine:
-            _safe(lambda: sc.tl.moveToEnd())
-        elif any(_safe(lambda: g.isCollapsed, False) for g in (_safe(lambda: list(sc.tl.timelineGroups)) or [])):
-            main.warnings.append('%s is open in Fusion, so it was read as it is: items inside its collapsed timeline '
-                                 'groups are left out. Close it and generate again for the full picture.' % name)
-        sc.by_tlname = {}
-        for n in sc.nodes:
-            if n.get('tl') is not None:
-                sc.by_tlname.setdefault(n['name'], n['id'])
-        walk(sc, src['prefix'], depth + 1)     # the designs this one derives from, while its groups are open
-        if mine:
-            _safe(lambda: doc.close(False))
-            src['doc'] = None
-        return src
+            e['depth'] = max(e['depth'], depth)
+            if ver is not None:
+                e['versions'].add(ver)
+        return e
 
-    def walk(col, prefix, depth):
+    def note_links(col, prefix, depth):
+        """While a design is open: the designs it derives from or inserts, and what each Derive hands over."""
         for nid, df in _derive_features(col):
             if cancelled():
                 return
@@ -1666,197 +1600,195 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if sd is None:
                 main.warnings.append('The source design of %s could not be read.' % _safe(lambda: df.name, 'a Derive feature'))
                 continue
-            src = read(sd, depth)
-            if src is None:
+            e = entry_for(sd, depth)
+            if e is None:
                 continue
-            sc, sp, target = src['col'], src['prefix'], prefix + nid
-            # everything goes through the design's connector: its items -> connector -> this Derive feature
-            src['targets'].add(target)
-            src['via'].add('derive')
-            # the items the derive hands over (objects of the referenced copy: matched by their timeline item)
+            e['targets'].add(prefix + nid)
+            e['via'].add('derive')
             for se in (_safe(lambda: list(df.sourceEntities)) or []):
                 t = _t(se)
-                n = sc.by_tlname.get(_safe(lambda: se.timelineObject.name))
-                if n is None and t == 'BRepBody':
-                    n = sc.body_owner.get(_safe(lambda: se.name))
-                if n is None and t in ('Component', 'Occurrence'):
-                    n = sc.comp_owner.get(_safe(lambda: se.name) or _safe(lambda: se.component.name))
-                if n:
-                    src['into'].add(sp + n)
+                e['specs'].append(('tl', _safe(lambda: se.timelineObject.name)))
+                if t == 'BRepBody':
+                    e['specs'].append(('body', _safe(lambda: se.name)))
+                if t in ('Component', 'Occurrence'):
+                    e['specs'].append(('comp', _safe(lambda: se.name) or _safe(lambda: se.component.name)))
             for b in (_safe(lambda: list(df.bodies)) or []):
                 sb = _safe(lambda: df.getSourceEntity(b))
-                n = sc.body_owner.get(_safe(lambda: sb.name)) if sb is not None else None
-                if n:
-                    src['into'].add(sp + n)
-            # parameters -> the derived parameters of this Derive feature
-            src_names = [n['name'] for n in sc.nodes if n['type'] == 'UserParameter']
+                if sb is not None:
+                    e['specs'].append(('body', _safe(lambda: sb.name)))
             dname = _safe(lambda: df.timelineObject.name)
             for p in (_safe(lambda: list(col.des.allParameters)) or []):
-                if _t(p) != 'DerivedParameter':
-                    continue
-                if _safe(lambda: p.deriveFeature.timelineObject.name) != dname:
-                    continue
-                pn = _safe(lambda: p.name, '') or ''
-                sn = _source_param(pn, src_names)
-                if sn:
-                    src['into'].add(sp + 'p:' + sn)   # the derived parameter itself hangs under the Derive feature
-        # linked (inserted) components: the whole design comes in, through the item that inserted it
+                if _t(p) == 'DerivedParameter' and _safe(lambda: p.deriveFeature.timelineObject.name) == dname:
+                    e['specs'].append(('param', _safe(lambda: p.name, '') or ''))
         for occ in _linked_occurrences(col.des):
             if cancelled():
                 return
             sd = _safe(lambda: occ.component.parentDesign)
-            if sd is None:
+            e = entry_for(sd, depth) if sd is not None else None
+            if e is None:
                 continue
-            src = read(sd, depth)
-            if src is None:
-                continue
-            src['via'].add('insert')
+            e['via'].add('insert')
             t = _safe(lambda: col.occ_node(occ)) or _safe(lambda: col.comp_ref(occ))
             if t:
-                src['targets'].add(prefix + t)
+                e['targets'].add(prefix + t)
 
-    def reopen_for_test(src):
-        """Reopen a source design only when its suppression tests are about to run.
-
-        During the read/gather phase source documents opened by this add-in are closed
-        immediately after their data has been collected.  This keeps Fusion from holding
-        every derived design in memory at once.  The test phase gets a fresh Collector
-        for the source, then closes that document as soon as its tests finish.
-        """
-        dfile = src.get('data_file')
-        if dfile is None or cancelled():
+    def open_entry(e):
+        """Opens the version the link uses, hidden. mine=False: Fusion handed back a document the user has open."""
+        dfile = e['data_file']
+        if dfile is None:
             return None, False, None
         target = dfile
-        ver = src.get('read_ver')
-        if ver is not None:
-            for v in (_safe(lambda: list(dfile.versions)) or []):
-                if _safe(lambda: v.versionNumber) == ver:
-                    target = v
-                    break
+        for v in (_safe(lambda: list(dfile.versions)) or []):
+            if _safe(lambda: v.versionNumber) == e['read_ver']:
+                target = v
+                break
+        active = _safe(lambda: app.activeDocument)
         before = list(_safe(lambda: list(app.documents)) or [])
         try:
             doc = app.documents.open(target, False)
         except Exception:
             return None, False, None
+        if active is not None and _safe(lambda: app.activeDocument) != active:
+            _safe(active.activate)
         mine = not any(_safe(lambda: d == doc, False) for d in before)
         des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
-        if des is None:
-            if mine:
-                _safe(lambda: doc.close(False))
-            return None, mine, None
+        if des is None and mine:
+            _safe(lambda: doc.close(False))
         return doc, mine, des
 
-    def make_test_collector(src, doc, des, mine):
-        """Only what the suppression tests need (timeline items and groups): the references were read already."""
-        sc = Collector(des, None, False)
-        sc.cancelled = cancelled
-        sc.doc = None
-        sc.no_roll = not mine
-        if mine:
-            sc.expand_groups()
-        else:
-            sc.collapsed = []
-        sc.build_nodes()
-        return sc
+    def picture(doc, des, sc, mine):
+        if not (pictures and not cancelled() and _has_geometry(des)):
+            return None
+        back = _safe(lambda: app.activeDocument)
+        if mine and getattr(sc, 'tl', None) is not None:
+            _safe(lambda: sc.tl.moveToEnd())
+        pic = None
+        if _safe(doc.activate) is not False:
+            adsk.doEvents()
+            pic = _part_picture()
+        if back is not None:
+            _safe(back.activate)
+            adsk.doEvents()
+        return pic
 
-    def merge_tests(read, test):
-        """Test results into the collector that read the design (same saved version, so the same items), checked
-        item by item; returns False when the two do not match, and then nothing is merged."""
-        rn = {n['id']: n for n in read.nodes}
-        for n in test.nodes:
-            m = rn.get(n['id'])
-            if m is None or m.get('name') != n.get('name'):
-                return False
-        rg = {g['id']: g for g in read.groups}
-        for n in test.nodes:
-            for f in ('dsupp', 'dbreak', 'dwarn', 'fail'):
-                if f in n:
-                    rn[n['id']][f] = n[f]
-        for g in test.groups:
-            if g['id'] in rg:
-                for f in ('dsupp', 'dbreak', 'dwarn', 'fail', 'empty'):
-                    if f in g:
-                        rg[g['id']][f] = g[f]
-        for key, k in test.edges.items():
-            read.edges.setdefault(key, set()).update(k)
-        read.gtested = getattr(test, 'gtested', False)
-        read.warnings = list(read.warnings) + list(test.warnings)
-        return True
-
-    active = _safe(lambda: app.activeDocument)
-    try:
-        # Phase 1: gather/read every derived or linked source before any suppression test.
-        # This makes the complete derived test workload known up front.
-        walk(main, '', 1)
-        if sources and (exact or groups_test) and not cancelled():
-            derived_items = 0
-            derived_groups = 0
-            for src in sources:
-                sc = src['col']
-                if isinstance(sc, Collector):
-                    derived_items += sum(1 for n in sc.nodes if n.get('tl') is not None and not n.get('supp'))
-                    derived_groups += len(sc.groups)
-            if plan:
-                plan(derived_items, derived_groups, len(sources))
-            done = 0
-            total = len(sources)
-            for src in sorted(sources, key=lambda x: -x['depth']):
-                if cancelled():
-                    break
-                sc = src['col']
-                if not isinstance(sc, Collector):
-                    continue
-                name = src['name']
-                # Source documents were closed after the gather/read phase to keep RAM usage low.
-                # Reopen only this one source for its suppression tests, then close it immediately.
-                doc, mine, des = reopen_for_test(src)
-                if doc is None or des is None:
-                    main.warnings.append('%s could not be reopened for suppression testing.' % name)
-                    done += 1
-                    if progress:
-                        progress('Finished derived design ' + name, done, total)
-                    continue
+    def process(e, n_done):
+        name = e['name']
+        if progress:
+            progress('Opening ' + name, n_done, n_done + len(queue) + 1)
+        doc, mine, des = open_entry(e)
+        if des is None:
+            main.warnings.append('Could not open %s to read it.' % name)
+            return
+        e['doc'] = doc if mine else None
+        try:
+            if _safe(lambda: des.designType) != adsk.fusion.DesignTypes.ParametricDesignType:
+                sc = _PlainDesign(des)
+                e['col'] = sc
+                e['pic'] = picture(doc, des, sc, mine)
+                note_links(sc, e['prefix'], e['depth'] + 1)
+                return
+            sc = Collector(des, None, False)
+            sc.cancelled = cancelled
+            sc.doc = None                        # hidden: the main design stays the active one
+            sc.no_roll = not mine                # a design the user has open is read as it is
+            e['col'] = sc
+            if progress:
+                progress('Reading ' + name, n_done, n_done + len(queue) + 1)
+            if mine:
+                sc.expand_groups()
+            else:
+                sc.collapsed = []
+            sc.build_nodes()
+            sc.scan()
+            e['pic'] = picture(doc, des, sc, mine)
+            _safe(sc.scan_components)
+            sc.scan_parameters()
+            if mine:
+                _safe(lambda: sc.tl.moveToEnd())
+            elif any(_safe(lambda: g.isCollapsed, False) for g in (_safe(lambda: list(sc.tl.timelineGroups)) or [])):
+                main.warnings.append('%s is open in Fusion, so it was read as it is: items inside its collapsed timeline '
+                                     'groups are left out. Close it and generate again for the full picture.' % name)
+            sc.by_tlname = {}
+            for n in sc.nodes:
+                if n.get('tl') is not None:
+                    sc.by_tlname.setdefault(n['name'], n['id'])
+            # its own links, while it is open and its groups are expanded (timeline indexes are read from them)
+            note_links(sc, e['prefix'], e['depth'] + 1)
+            if (exact or groups_test) and not cancelled():
                 if not mine:
-                    main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). Close it and generate again to test it too.' % name)
-                    done += 1
-                    if progress:
-                        progress('Finished derived design ' + name, done, total)
-                    continue
-                test_sc = None
-                try:
-                    test_sc = make_test_collector(src, doc, des, mine)
-                    test_sc.hidden_doc = doc
-                    prog = (lambda msg, i, n, nm=name: progress('%s: %s' % (nm, msg), i, n)) if progress else (lambda *a: None)
-                    _safe(lambda: test_sc.tl.moveToEnd())
+                    main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). '
+                                         'Close it and generate again to test it too.' % name)
+                else:
+                    # the same tests as on the main design, on this hidden copy (closed without saving)
+                    sc.hidden_doc = doc
+                    prog = (lambda msg, i, n: progress('%s: %s' % (name, msg), i, n)) if progress else (lambda *a: None)
+                    _safe(lambda: sc.tl.moveToEnd())
                     if groups_test:
                         try:
-                            test_sc.group_suppression_test(prog, cancelled)
+                            sc.group_suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
                     if exact and not cancelled():
                         try:
-                            test_sc.suppression_test(prog, cancelled)
+                            sc.suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the item test failed: %s' % (name, ex))
-                    if not merge_tests(sc, test_sc):
-                        main.warnings.append('%s changed between reading and testing; its test results were left out.' % name)
-                finally:
-                    _safe(lambda: test_sc.restore_groups() if test_sc is not None else None)
-                    _safe(lambda: doc.close(False))
-                done += 1
-                if progress:
-                    progress('Finished derived design ' + name, done, total)
+        finally:
+            # closed right away: only one linked design is open at a time
+            hd = getattr(e['col'], 'hidden_doc', None) or e['doc']
+            if hd is not None:
+                _safe(e['col'].restore_groups) if e['col'] is not None else None
+                _safe(lambda: hd.close(False))
+            e['doc'] = None
+
+    active = _safe(lambda: app.activeDocument)
+    try:
+        note_links(main, '', 1)
+        n_done = 0
+        while queue and not cancelled():
+            e = queue.pop(0)
+            process(e, n_done)
+            if e['col'] is not None:
+                sources.append(e)
+            n_done += 1
+            if plan:
+                # the workload known so far: designs read plus those found but not read yet (average size)
+                read_cols = [x['col'] for x in sources if isinstance(x['col'], Collector)]
+                avg_i = (sum(len(c.tl2node) for c in read_cols) / len(read_cols)) if read_cols else 20
+                avg_g = (sum(len(c.groups) for c in read_cols) / len(read_cols)) if read_cols else 2
+                total = n_done + len(queue)
+                plan(avg_i * total, avg_g * total, total)
+            if progress:
+                progress('Finished ' + e['name'], n_done, n_done + len(queue))
     finally:
-        # the hidden documents are closed without saving: nothing of them is kept or changed
-        for src in sources:
-            hd = src['doc'] or getattr(src['col'], 'hidden_doc', None)
-            if hd is not None:                   # only the hidden documents this run opened itself
-                _safe(src['col'].restore_groups)
+        for e in by_key.values():
+            hd = e.get('doc') or getattr(e.get('col'), 'hidden_doc', None)
+            if hd is not None and _safe(lambda: hd.isValid, False):
                 _safe(lambda: hd.close(False))
         if active is not None and _safe(lambda: app.activeDocument) != active:
             _safe(active.activate)
     if not sources:
         return
+
+    # what each Derive hands over, matched by name now that the source designs have been read
+    for e in sources:
+        sc, sp = e['col'], e['prefix']
+        src_names = [n['name'] for n in sc.nodes if n['type'] == 'UserParameter']
+        for kind, val in e['specs']:
+            if not val:
+                continue
+            n = None
+            if kind == 'tl':
+                n = sc.by_tlname.get(val)
+            elif kind == 'body':
+                n = sc.body_owner.get(val)
+            elif kind == 'comp':
+                n = sc.comp_owner.get(val)
+            elif kind == 'param':
+                sn = _source_param(val, src_names)
+                n = 'p:' + sn if sn else None
+            if n:
+                e['into'].add(sp + n)
 
     # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
     order = sorted(sources, key=lambda s: -s['depth'])
