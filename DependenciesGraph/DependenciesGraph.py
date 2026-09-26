@@ -1356,21 +1356,24 @@ class Collector:
         self._frontier_src[i] = src
         return best
 
+    STEP_ITEMS = 5          # how many timeline items the marker moves forward at a time during an item test
+
     def _suppression_test(self, progress, cancelled):
-        """Exact suppression testing with a conservative proven-tail timeline frontier.
+        """Suppress each item and record what Fusion suppresses, breaks or warns about with it - exactly what a
+        test with the marker at the end shows, computed with less work:
 
-        The first tests run normally at the end of the timeline. Once Fusion has
-        proved that a source suppresses a contiguous active suffix, that suffix is
-        a certificate. Later tests that are known (by an already observed
-        suppression edge) to suppress a certified source may move the marker back
-        to the certificate boundary. Features beyond that marker are not recomputed
-        or inspected because their result is already proven.
-
-        The marker optimization is intentionally proof-based: static/reference
-        dependencies alone never create a frontier. Any suspicious result is
-        retried at the full timeline before it is accepted.
-        """
-        self._mg_base = _process_memory()
+        - The marker is put right after the tested item(s) before suppressing, so the suppression itself costs
+          nothing; then the marker moves forward a few items at a time and Fusion computes only those.
+        - Items are tested from the back of the timeline. Every finished test is a proof of which items a
+          suppressed item takes down with it. When the items found switched off so far are known (from their own
+          tests) to take down every remaining active item after the marker, the rest is proven and the marker
+          does not go further. A proof that does not hold in the part computed (an item that should be off is
+          on) switches this shortcut off for that test, which then runs to the end.
+        - Putting an item back: the marker goes back right after it, the item is switched on, and the marker
+          goes to the end - the design is then the original one again and Fusion reuses the result it already
+          has instead of recomputing (measured: ~0.1 s instead of ~11 s).
+        - Items nothing seems to depend on are tested in batches first (one run for up to 12 items when nothing
+          reacts), as before."""
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -1378,46 +1381,101 @@ class Collector:
             if not it.isGroup:
                 orig[i] = it.isSuppressed
         vol0 = self.body_signature()
-        desc = {}
-        brk = {}
-        fails = {}
-        wrn = {}
+        desc, brk, fails, wrn = {}, {}, {}, {}
         ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
         WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
         st0 = self._state(orig)
         err0 = set(i for i in orig if st0[i][1] == ERR)
         warn0 = set(i for i in orig if st0[i][1] == WARN)
         items = [i for i in orig if not orig[i]]
-        active_indices = sorted(items)
+        active = sorted(items)
         total = len(items)
         done = [0]
+        known = {}              # tested item -> every active item suppressed together with it (complete, proven)
+        stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0}
 
-        # source timeline index -> first active item of a proven suppressed suffix
-        certificates = {}
-        observed_by_index = {}
-        frontier_stats = {'tests': 0, 'moved': 0, 'skipped': 0, 'full_fallbacks': 0, 'max_skipped': 0}
+        def marker_to(m):
+            n = tl.count
+            if m >= n:
+                _safe(lambda: tl.moveToEnd())
+            else:
+                self._set_test_marker(m)
 
-        def effects(tested, marker_end=None, known_tail=None):
-            """Read only the computed part of the timeline.
-            `known_tail` is added as already-proven suppression rather than read."""
-            if marker_end is None:
-                marker_end = tl.count
-            computed = [j for j in orig
-                        if j not in tested and not orig[j] and j < marker_end]
-            # Keep the tested feature in the state table as well; callers use it
-            # to verify that the suppression itself actually took effect.
-            read_ids = list(tested) + computed
-            st = self._state(read_ids)
-            casc = [j for j in computed if st[j][0]]
-            broke = [j for j in computed if j not in err0 and not st[j][0] and st[j][1] == ERR]
-            warned = [j for j in computed if j not in warn0 and not st[j][0] and st[j][1] == WARN]
-            if known_tail:
-                casc.extend(sorted(known_tail))
-            return st, casc, broke, warned
+        def probe(S):
+            """Suppress the items S, move forward until the rest is proven or the end is reached.
+            Returns (suppressed ok, fail message, casc, broke, warned)."""
+            S = sorted(S)
+            Sset = set(S)
+            pos = S[-1] + 1
+            marker_to(pos)
+            fail_msg = None
+            try:
+                self._set_suppressed([tl.item(i) for i in S], True)
+            except Exception as ex:
+                fail_msg = str(ex)
+            st = self._state(S)
+            if not all(st[i][0] for i in S):
+                return False, fail_msg, [], [], []
+            stats['tests'] += 1
+            casc, broke, warned = [], [], []
+            covered = set()
+            use_proof = True
+            # items between the first and last of S are already computed
+            start = S[0] + 1
+            n = tl.count
+            while True:
+                seg = [j for j in active if start <= j < pos and j not in Sset]
+                if seg:
+                    sts = self._state(seg)
+                    for j in seg:
+                        sup, h = sts[j]
+                        if sup:
+                            casc.append(j)
+                            if j in known:
+                                covered |= known[j]
+                        elif use_proof and j in covered:
+                            # a proven item is not off: do not rely on proofs in this test
+                            use_proof = False
+                            stats['proof_mismatch'] += 1
+                        elif h == ERR and j not in err0:
+                            broke.append(j)
+                        elif h == WARN and j not in warn0:
+                            warned.append(j)
+                rest = [j for j in active if j >= pos and j not in Sset]
+                if not rest:
+                    break
+                if use_proof and all(j in covered for j in rest):
+                    casc.extend(rest)
+                    stats['stopped_early'] += 1
+                    stats['items_not_computed'] += len(rest)
+                    break
+                start = pos
+                pos = min(n, pos + self.STEP_ITEMS)
+                marker_to(pos)
+            return True, fail_msg, casc, broke, warned
 
-        def full_effects(tested):
-            # Always used for validation/fallback.
-            return effects(tested, tl.count, None)
+        def put_back(S, what):
+            """Marker right after the first item of S, switch S back on, marker to the end: the original design
+            again, which Fusion does not recompute. Checked; the usual restore if anything differs."""
+            S = sorted(S)
+            marker_to(S[0] + 1)
+            try:
+                self._set_suppressed([tl.item(i) for i in S], False)
+            except Exception:
+                pass
+            _safe(lambda: tl.moveToEnd())
+            if self._clean(orig, err0):
+                self._undo_n = 0
+                return True
+            return self._restore_checked(orig, err0, None, what)
+
+        def record(i, casc, broke, warned):
+            known[i] = set(casc)
+            nid = self.tl2node.get(i)
+            if nid:
+                desc[nid] = [self.tl2node[j] for j in casc if j in self.tl2node]
+                brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
+                wrn[nid] = [self.tl2node[j] for j in warned if j in self.tl2node]
 
         # --- 1. likely leaves, in batches
         singles = []
@@ -1430,20 +1488,18 @@ class Collector:
                 singles.extend(idxs)
                 return
             progress('%d items at once' % len(idxs), done[0], total)
-            try:
-                self._set_suppressed([tl.item(i) for i in idxs], True)
-            except Exception:
-                pass
-            st, casc, broke, warned = effects(set(idxs))
-            if not (all(st.get(i, (False, 0))[0] for i in idxs) and not casc and not broke and not warned):
-                yield from self._undo_restore(orig, err0, None, '%d items' % len(idxs))
+            ok, _msg, casc, broke, warned = probe(idxs)
+            if not (ok and not casc and not broke and not warned):
+                put_back(idxs, '%d items' % len(idxs))
                 if len(idxs) <= 6:
                     singles.extend(idxs)
                     return
                 h = len(idxs) // 2
-                yield from batch(idxs[:h])
-                yield from batch(idxs[h:])
+                batch(idxs[:h])
+                batch(idxs[h:])
                 return
+            # nothing outside reacted (the marker is at the end): switch the items back on one at a time from the
+            # last; one that comes back clean is not affected by the earlier ones still off and affects nothing
             for k in range(len(idxs) - 1, -1, -1):
                 i = idxs[k]
                 try:
@@ -1451,187 +1507,56 @@ class Collector:
                 except Exception:
                     pass
                 s1 = self._state([i])[i]
-                nid = self.tl2node.get(i)
-                if nid:
-                    desc[nid], brk[nid], wrn[nid] = [], [], []
+                # the items after it came back clean while it was off: it affects nothing
+                record(i, [], [], [])
                 done[0] += 1
                 batch_hits += 1
                 if s1[0] or (s1[1] == ERR and i not in err0) or (s1[1] == WARN and i not in warn0):
-                    self._restore_checked(orig, err0, None, '%d items' % len(idxs))
+                    # an earlier item of the batch affects this one: those are tested again on their own
+                    put_back(idxs, '%d items' % len(idxs))
                     singles.extend(idxs[:k])
                     return
-            self._restore_checked(orig, err0, None, '%d items' % len(idxs))
+            put_back(idxs, '%d items' % len(idxs))
 
-        cands = self._leaf_candidates(items)
+        # from the back: later items are tested first, so their proofs are there for the earlier ones
+        cands = sorted(self._leaf_candidates(items), reverse=True)
         for c in range(0, len(cands), 12):
-            yield from batch(cands[c:c + 12])
-            tl = self.tl
-        rest_set = (set(items) - set(cands)) | set(singles)
+            if cancelled():
+                break
+            batch(cands[c:c + 12])
+        rest = sorted((set(items) - set(cands)) | set(singles), reverse=True)
+        rest = [i for i in rest if self.tl2node.get(i) not in desc]
 
-        # Build from the back first. This tends to establish long proven suffixes
-        # early, which gives later front-of-timeline tests the largest possible
-        # safe marker movement. Ties retain the old timeline order.
-        rest = sorted(rest_set, reverse=True) if getattr(self, 'SUPPRESSION_FRONTIER_ENABLED', True) else sorted(rest_set)
-
-        # with Undo, putting an item back is cheap on its own: the combined step is not needed
-        can_defer = _safe(lambda: hasattr(self.des, 'isComputeDeferred'), False) and not self._undo_enabled()
-        pend = [None, set(), 0]
-
-        def settle():
-            if pend[0] is not None:
-                self._restore_checked(orig, err0, pend[0], 'item')
-            pend[0], pend[1], pend[2] = None, set(), 0
-
-        def record(i, casc, broke, warned):
-            nid = self.tl2node.get(i)
-            if nid:
-                desc[nid] = [self.tl2node[j] for j in casc if j in self.tl2node]
-                brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
-                wrn[nid] = [self.tl2node[j] for j in warned if j in self.tl2node]
-
-        def test_one(i, it, marker):
-            """Run one exact test at `marker`; returns the observed state."""
-            nonlocal tl
-            marker = max(i + 1, min(int(marker), tl.count))
-            before_marker = tl.markerPosition
-            actual = self._set_test_marker(marker)
-            if actual is None or actual < i + 1:
-                # Cannot safely move the marker: run at the end.
-                marker = tl.count
-                self._set_test_marker(marker)
-            else:
-                if marker < tl.count:
-                    frontier_stats['moved'] += 1
-                    frontier_stats['skipped'] += max(0, tl.count - marker)
-                    frontier_stats['max_skipped'] = max(frontier_stats['max_skipped'], max(0, tl.count - marker))
-            frontier_stats['tests'] += 1
-
-            fail_msg = None
-            try:
-                self._set_suppressed([tl.item(i)], True)
-            except Exception as ex:
-                fail_msg = str(ex)
-
-            known_tail = self._frontier_items(marker, orig) if marker < tl.count else set()
-            st, casc, broke, warned = effects({i}, marker, known_tail)
-            return fail_msg, st, casc, broke, warned, marker
-
+        # --- 2. every other item on its own
         for i in rest:
             if cancelled():
                 self.warnings.append('Suppression test was cancelled; results are partial.')
                 break
-
-            tl = self.tl
             it = tl.item(i)
             progress(it.name, done[0], total)
             done[0] += 1
-
-            # The deferred swap path is intentionally disabled when a marker
-            # frontier is available: two edits straddling a rolled-back marker
-            # are harder to reason about. Full-timeline swap remains available
-            # when no certificate can shorten this test.
-            frontier = self._frontier_for(i, certificates, observed_by_index)
-            has_frontier = frontier < tl.count
-
-            if pend[0] is not None and can_defer and pend[2] < 25 and not has_frontier:
-                prev = pend[0]
-                try:
-                    self.des.isComputeDeferred = True
-                    self._set_suppressed([tl.item(prev)], False)
-                    self._set_suppressed([it], True)
-                finally:
-                    try:
-                        self.des.isComputeDeferred = False
-                    except Exception:
-                        pass
-                st, casc, broke, warned = full_effects({i})
-                ok = (st.get(i, (False, 0))[0] and not st.get(prev, (False, 0))[0]
-                      and (st.get(prev, (False, 0))[1] != ERR or prev in err0)
-                      and not broke and not warned and prev not in casc)
-                if ok:
-                    self.swapped = getattr(self, 'swapped', 0) + 1
-                    record(i, casc, broke, warned)
-                    observed_by_index[i] = set(casc)
-                    self._record_frontier_certificate(i, casc, certificates, active_indices)
-                    pend[0], pend[1], pend[2] = i, set(casc), pend[2] + 1
-                    continue
-                self._restore_checked(orig, err0, None, it.name)
-                pend[0], pend[1], pend[2] = None, set(), 0
-                tl = self.tl
-                it = tl.item(i)
-            elif pend[0] is not None:
-                settle()
-                tl = self.tl
-                it = tl.item(i)
-
-            # If we have a pending prior item but are going to use a shortened
-            # timeline, restore it first. This keeps marker movement independent
-            # from the deferred two-edit optimization.
-            if pend[0] is not None and has_frontier:
-                settle()
-                tl = self.tl
-                it = tl.item(i)
-
-            full_fallback = False
-            fail_msg, st, casc, broke, warned, marker = test_one(i, it, frontier)
-
-            # A shortened test cannot directly prove a new suffix beyond its
-            # marker. It may, however, expose an unexpected reaction before the
-            # marker. Any such reaction is still useful, but a new certificate
-            # must be validated against the full timeline before being accepted.
-            candidate_cert = self._record_frontier_certificate(i, casc, certificates, active_indices)
-
-            # If this test was shortened and the source did not remain suppressed,
-            # or a new break/warning appeared, the result is suspicious. Rerun
-            # at the full timeline before accepting anything.
-            src = getattr(self, '_frontier_src', {}).get(i)
-            if marker < tl.count and (not st.get(i, (False, 0))[0] or broke or warned
-                                      or src is None or src not in casc):
-                full_fallback = True
-
-            if full_fallback:
-                frontier_stats['full_fallbacks'] += 1
-                yield from self._undo_restore(orig, err0, None, it.name + ' (frontier fallback)')
-                tl = self.tl
-                it = tl.item(i)
-                fail_msg, st, casc, broke, warned, marker = test_one(i, it, tl.count)
-                # Full result is authoritative; replace any certificate inferred
-                # from the shortened attempt.
-                certificates.pop(i, None)
-                candidate_cert = self._record_frontier_certificate(i, casc, certificates, active_indices)
-
-            nid = self.tl2node.get(i)
-            if not st.get(i, (False, 0))[0]:
+            ok, fail_msg, casc, broke, warned = probe([i])
+            if not ok:
+                nid = self.tl2node.get(i)
                 if nid:
                     fails[nid] = self._parse_fail(fail_msg)
-                self._restore_checked(orig, err0, None, it.name)
+                put_back([i], it.name)
                 continue
-
             record(i, casc, broke, warned)
-            observed_by_index[i] = set(casc)
-
-            if can_defer and not broke and not warned and marker == tl.count:
-                pend[0], pend[1], pend[2] = i, set(casc), 0
-                continue
-
-            name = _safe(lambda: it.name, '')
-            yield from self._undo_restore(orig, err0, i, name)
-
-        settle()
-        tl = self.tl
+            put_back([i], _safe(lambda: it.name, ''))
+        _safe(lambda: tl.moveToEnd())
         self.batched = batch_hits
         vol1 = self.body_signature()
         if vol0 != vol1:
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
-
-        # Keep the timing/cutoff numbers visible in the run log rather than the
-        # generated graph; they are diagnostic and can be compared across designs.
-        _mem_log('timeline frontier: %d tests, %d shortened, %d full fallbacks, '
-                 '%d timeline items skipped, max suffix skipped %d' %
-                 (frontier_stats['tests'], frontier_stats['moved'], frontier_stats['full_fallbacks'],
-                  frontier_stats['skipped'], frontier_stats['max_skipped']))
-        self.frontier_stats = frontier_stats
+        _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
+                 '%d items proven in batches' % (stats['tests'], stats['stopped_early'], stats['items_not_computed'],
+                                                 stats['proof_mismatch'], batch_hits))
+        self.test_stats = stats
+        self.item_proofs = known
+        if False:
+            yield           # a generator like the other steps of the run
 
         anc = {}
         for s_, ds in desc.items():
@@ -1708,7 +1633,7 @@ class Collector:
                 return False
         return True
 
-    UNDO_RESTORE = True
+    UNDO_RESTORE = False      # superseded by the marker put-back (faster, no waiting for Fusion)
     UNDO_MAX_STEPS = 12
 
     def _undo_enabled(self):
@@ -1781,6 +1706,49 @@ class Collector:
         return False
 
 
+    def _walk_forward(self, orig, S, err0, warn0, start, pos):
+        """With the items S suppressed and the marker at `pos`, read what Fusion computed and move the marker
+        forward STEP_ITEMS at a time, until the end or until every remaining active item is proven off by the
+        item test's results for the items found off (self.item_proofs). Returns (casc, broke, warned)."""
+        tl = self.tl
+        ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
+        WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
+        known = getattr(self, 'item_proofs', None) or {}
+        active = sorted(i for i in orig if not orig[i])
+        casc, broke, warned = [], [], []
+        covered, use_proof = set(), True
+        n = tl.count
+        while True:
+            seg = [j for j in active if start <= j < pos and j not in S]
+            if seg:
+                sts = self._state(seg)
+                for j in seg:
+                    sup, h = sts[j]
+                    if sup:
+                        casc.append(j)
+                        if j in known:
+                            covered |= known[j]
+                    elif use_proof and j in covered:
+                        use_proof = False
+                    elif h == ERR and j not in err0:
+                        broke.append(j)
+                    elif h == WARN and j not in warn0:
+                        warned.append(j)
+            rest = [j for j in active if j >= pos and j not in S]
+            if not rest:
+                break
+            if use_proof and all(j in covered for j in rest):
+                casc.extend(rest)
+                self.g_stopped_early = getattr(self, 'g_stopped_early', 0) + 1
+                break
+            start = pos
+            pos = min(n, pos + self.STEP_ITEMS)
+            if pos >= n:
+                _safe(lambda: tl.moveToEnd())
+            else:
+                self._set_test_marker(pos)
+        return casc, broke, warned
+
     def _group_suppression_test(self, progress, cancelled):
         """Suppress each timeline group as a whole and record which items outside it Fusion suppresses too."""
         self._mg_base = _process_memory()
@@ -1820,6 +1788,8 @@ class Collector:
             if all(orig.get(i) for i in inside):
                 continue     # everything in it is already suppressed
             fail_msg = None
+            # the marker right after the group: suppressing costs nothing, then it moves forward (see below)
+            self._set_test_marker(max(inside) + 1)
             try:
                 self._set_suppressed([g], True)
             except Exception as ex:
@@ -1842,20 +1812,22 @@ class Collector:
                     tl = self.tl
                     tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
                     continue
-            st = self._state(orig)      # one read of the whole timeline
-            ERR_ = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
-            casc = [i for i in orig if i not in inside and not orig[i] and st[i][0]]
-            broke = [i for i in orig if i not in inside and not orig[i] and i not in err0
-                     and not st[i][0] and st[i][1] == ERR_]
+            casc, broke, warned = self._walk_forward(orig, set(inside), err0, warn0, min(inside) + 1, max(inside) + 1)
             if gid in byg:
                 byg[gid]['dsupp'] = [self.tl2node[i] for i in casc if i in self.tl2node]
                 byg[gid]['dbreak'] = [self.tl2node[i] for i in broke if i in self.tl2node]
-                warned = [i for i in orig if i not in inside and not orig[i] and i not in warn0
-                          and not st[i][0] and st[i][1] == WARN]
                 if warned:
                     byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
-            yield from self._undo_restore(orig, err0, None, gname)
+            # put back with the marker right after the group's first item: the design is the original one again
+            # and Fusion reuses its result instead of recomputing everything after the group
+            first = min(inside) if inside else None
+            if first is not None:
+                self._set_test_marker(first + 1)
+            _safe(lambda: self._set_suppressed([g], False))
+            _safe(lambda: tl.moveToEnd())
+            if not self._clean(orig, err0):
+                self._restore_checked(orig, err0, None, gname)
             if self.tl is not tl:
                 tl = self.tl
                 tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
@@ -2191,7 +2163,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
     capped = [False]
 
     def step_labels(testing=True):
-        return ['Reading'] + (['Group test'] if groups_test and testing else []) + (['Item test'] if exact and testing else [])
+        return ['Reading'] + (['Item test'] if exact and testing else []) + (['Group test'] if groups_test and testing else [])
 
     def entry_for(sd, depth):
         """The queue entry for a linked design (one per file), created when first seen."""
@@ -2425,23 +2397,24 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                     n_stages = (1 if groups_test else 0) + (1 if exact else 0)
 
                     def prog(msg, i, n):
-                        _prow(e['key'], name, '%s: %s (%d/%d)' % ('Group test' if (groups_test and stage['k'] == 0) else 'Item test', msg, min(i + 1, n), n),
+                        _prow(e['key'], name, '%s: %s (%d/%d)' % ('Item test' if (exact and stage['k'] == 0) else 'Group test', msg, min(i + 1, n), n),
                               min(1.0, (i + 1) / max(1, n)), '', step_labels(True), 1 + stage['k'])
                         if progress:
                             progress('%s: %s' % (name, msg), i, n)
                     _safe(lambda: sc.tl.moveToEnd())
-                    if groups_test:
-                        try:
-                            yield from sc.group_suppression_test(prog, cancelled)
-                        except Exception as ex:
-                            main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
-                    if groups_test:
-                        stage['k'] = 1
+                    # items first: their proofs let the group test stop early
                     if exact and not cancelled():
                         try:
                             yield from sc.suppression_test(prog, cancelled)
                         except Exception as ex:
                             main.warnings.append('%s: the item test failed: %s' % (name, ex))
+                    if exact:
+                        stage['k'] = 1
+                    if groups_test and not cancelled():
+                        try:
+                            yield from sc.group_suppression_test(prog, cancelled)
+                        except Exception as ex:
+                            main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
                     tested = not cancelled()
             # kept for later runs: only a complete result from a hidden copy of the saved version
             if mine and not cancelled():
@@ -2839,10 +2812,10 @@ def generate(mode='both', thumbs=True, derived=False):
         n_tl = tl.count
         n_groups = len(_safe(lambda: list(tl.timelineGroups)) or [])
         steps.append(['Reading references' + (' and thumbnails' if thumbs else ''), n_tl * (0.6 if thumbs else 0.05)])
-        if groups_test:
-            steps.append(['Whole groups test', n_groups * 2.5])
         if exact:
             steps.append(['Every item test', n_tl * 1.7])
+        if groups_test:
+            steps.append(['Whole groups test', n_groups * 2.5])
         if derived:
             # Placeholder until the read-only derived pre-scan has found the exact number of source items/groups.
             steps.append(['Linked designs' + (' (read and tested)' if (exact or groups_test) else ''), 20])
@@ -2863,14 +2836,15 @@ def generate(mode='both', thumbs=True, derived=False):
             col.scan_parameters()
             _mem_log('read done')
             k = 1
-            if groups_test and not cancelled():
-                set_step(k); k += 1
-                yield from col.group_suppression_test(progress, cancelled)
-                _mem_log('group test done')
+            # items first: their proofs let the group test stop early
             if exact and not cancelled():
                 set_step(k); k += 1
                 yield from col.suppression_test(progress, cancelled)
                 _mem_log('item test done')
+            if groups_test and not cancelled():
+                set_step(k); k += 1
+                yield from col.group_suppression_test(progress, cancelled)
+                _mem_log('group test done')
             _prow('main', None, 'Cancelled' if cancelled() else 'Done', 1, 'fail' if cancelled() else 'done')
             if derived and not cancelled():
                 # while the groups are still expanded: the derive features' timeline indexes are read from them
