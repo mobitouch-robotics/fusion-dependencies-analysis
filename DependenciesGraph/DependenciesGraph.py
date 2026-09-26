@@ -1178,6 +1178,7 @@ class Collector:
         every item in it has no effect (suppression effects add up), with one recompute instead of two per item.
         A batch where something reacts is split in halves; single items that react are tested on their own, like
         every other item."""
+        self._mg_base = _process_memory()
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -1366,16 +1367,17 @@ class Collector:
                 return False
         return True
 
-    MEM_GROWTH_LIMIT = 6 * 1024 ** 3        # bytes Fusion may grow by during the tests before the design is reopened
+    MEM_GROWTH_LIMIT = 3 * 1024 ** 3        # bytes Fusion may grow by during the tests before the design is reopened
 
     def _memory_guard(self, orig, err0):
         """Every suppress/restore leaves undo history and cached geometry behind in the document, and Fusion keeps
         it as long as the document is open, so memory grows with every test. Every few tests Fusion's memory is
         checked; when it has grown too much the design is reopened from its saved version (nothing is lost: it
         is in its original state after every test), which drops all of that."""
-        self._mg_n = getattr(self, '_mg_n', 0) + 1
-        if self._mg_n % 10:
+        now = time.time()
+        if now - getattr(self, '_mg_t', 0) < 1.0:
             return
+        self._mg_t = now
         rss = _process_memory()
         if rss is None:
             return
@@ -1450,6 +1452,7 @@ class Collector:
 
     def group_suppression_test(self, progress, cancelled):
         """Suppress each timeline group as a whole and record which items outside it Fusion suppresses too."""
+        self._mg_base = _process_memory()
         tl = self.tl
         orig = {}
         for i in range(tl.count):
