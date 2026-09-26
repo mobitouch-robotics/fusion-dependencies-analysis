@@ -1832,6 +1832,8 @@ class Collector:
                 tl = self.tl
                 tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
         self.gtested = True
+        if False:
+            yield           # a generator like the other steps of the run
         vol1 = self.body_signature()
         if vol0 != vol1:
             self.warnings.append('Warning: after the group suppression test the bodies differ from before '
