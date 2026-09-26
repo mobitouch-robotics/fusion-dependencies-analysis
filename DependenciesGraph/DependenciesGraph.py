@@ -18,7 +18,7 @@ Two ways to collect dependencies:
     restores it afterwards; save a version before using it.
 """
 import adsk.core, adsk.fusion, traceback, json, os, re, time, webbrowser, datetime, tempfile, pathlib, base64
-import threading, secrets, http.server
+import threading, secrets, http.server, gc
 
 _app = None
 _ui = None
@@ -1656,6 +1656,31 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             _safe(lambda: doc.close(False))
         return doc, mine, des
 
+    log_path = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'linked_designs_log.txt')
+
+    def log(msg):
+        try:
+            with open(log_path, 'a', encoding='utf-8') as f:
+                f.write('%s  %s  (documents open in Fusion: %s)\n' % (
+                    datetime.datetime.now().strftime('%H:%M:%S'), msg, _safe(lambda: app.documents.count, '?')))
+        except Exception:
+            pass
+
+    def release(col):
+        """Drops every Fusion object a read design still holds, so the closed document can be freed; only plain
+        data (names, ids, links, test results) is kept for the page."""
+        if col is None:
+            return
+        for a in ('des', 'root', 'tl', 'doc', 'hidden_doc', '_vp', '_cam0'):
+            if hasattr(col, a):
+                setattr(col, a, None)
+        for a in ('collapsed', '_hidden', '_changed'):
+            if hasattr(col, a):
+                setattr(col, a, [])
+        for ent in (getattr(col, 'comps', None) or {}).values():
+            ent['c'] = None
+            ent['occ'] = None
+
     def picture(doc, des, sc, mine):
         if not (pictures and not cancelled() and _has_geometry(des)):
             return None
@@ -1740,9 +1765,20 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 _safe(e['col'].restore_groups) if e['col'] is not None else None
                 _safe(lambda: hd.close(False))
             e['doc'] = None
+            release(e['col'])
+            des = doc = hd = None
+            gc.collect()
+            adsk.doEvents()
+            log('closed %s' % name)
 
     active = _safe(lambda: app.activeDocument)
     try:
+        try:
+            os.makedirs(os.path.dirname(log_path), exist_ok=True)
+            open(log_path, 'w').close()
+        except Exception:
+            pass
+        log('start')
         note_links(main, '', 1)
         n_done = 0
         while queue and not cancelled():
