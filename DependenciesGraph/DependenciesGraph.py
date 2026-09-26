@@ -1285,6 +1285,10 @@ class Collector:
 
     # ------------------------------------------- proven-tail timeline frontier ---
     SUPPRESSION_FRONTIER_ENABLED = True
+    # Timeline walk in the item and group tests: suppress with the marker right after the tested item(s), move it
+    # forward until the rest is proven (or the end), put back through the marker. False: the plain way - suppress
+    # and put back with the marker at the end of the timeline (slower, same results).
+    TIMELINE_WALK = True
     MARKER_PAUSE = 0.05     # seconds Fusion gets to redraw after every marker move during the tests
 
     def _set_test_marker(self, marker):
@@ -1403,7 +1407,7 @@ class Collector:
             Returns (suppressed ok, fail message, casc, broke, warned)."""
             S = sorted(S)
             Sset = set(S)
-            pos = S[-1] + 1
+            pos = S[-1] + 1 if self.TIMELINE_WALK else tl.count
             marker_to(pos)
             fail_msg = None
             try:
@@ -1422,7 +1426,8 @@ class Collector:
             n = tl.count
             # an item no finished test ever took down can never be proven off, so the walk cannot stop before it:
             # go straight past the last such item in one move instead of stepping to it
-            pos = self._jump_past_unprovable(pos, Sset, active, known)
+            if self.TIMELINE_WALK:
+                pos = self._jump_past_unprovable(pos, Sset, active, known)
             while True:
                 seg = [j for j in active if start <= j < pos and j not in Sset]
                 if seg:
@@ -1458,7 +1463,7 @@ class Collector:
             """Marker right after the first item of S, switch S back on, marker to the end: the original design
             again, which Fusion does not recompute. Checked; the usual restore if anything differs."""
             S = sorted(S)
-            marker_to(S[0] + 1)
+            marker_to(S[0] + 1 if self.TIMELINE_WALK else tl.count)
             try:
                 self._set_suppressed([tl.item(i) for i in S], False)
             except Exception:
@@ -1690,7 +1695,8 @@ class Collector:
         casc, broke, warned = [], [], []
         covered, use_proof = set(), True
         n = tl.count
-        pos = self._jump_past_unprovable(pos, S, active, known)
+        if self.TIMELINE_WALK:
+            pos = self._jump_past_unprovable(pos, S, active, known)
         while True:
             seg = [j for j in active if start <= j < pos and j not in S]
             if seg:
@@ -1759,7 +1765,7 @@ class Collector:
                 continue     # everything in it is already suppressed
             fail_msg = None
             # the marker right after the group: suppressing costs nothing, then it moves forward (see below)
-            self._set_test_marker(max(inside) + 1)
+            self._set_test_marker(max(inside) + 1 if self.TIMELINE_WALK else tl.count)
             try:
                 self._set_suppressed([g], True)
             except Exception as ex:
@@ -1782,7 +1788,8 @@ class Collector:
                     tl = self.tl
                     tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
                     continue
-            casc, broke, warned = self._walk_forward(orig, set(inside), err0, warn0, min(inside) + 1, max(inside) + 1)
+            casc, broke, warned = self._walk_forward(orig, set(inside), err0, warn0, min(inside) + 1,
+                                                     max(inside) + 1 if self.TIMELINE_WALK else tl.count)
             if gid in byg:
                 byg[gid]['dsupp'] = [self.tl2node[i] for i in casc if i in self.tl2node]
                 byg[gid]['dbreak'] = [self.tl2node[i] for i in broke if i in self.tl2node]
@@ -1792,7 +1799,7 @@ class Collector:
             # put back with the marker right after the group's first item: the design is the original one again
             # and Fusion reuses its result instead of recomputing everything after the group
             first = min(inside) if inside else None
-            if first is not None:
+            if first is not None and self.TIMELINE_WALK:
                 self._set_test_marker(first + 1)
             _safe(lambda: self._set_suppressed([g], False))
             _safe(lambda: tl.moveToEnd())
