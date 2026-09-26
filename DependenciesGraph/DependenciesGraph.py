@@ -1285,6 +1285,7 @@ class Collector:
 
     # ------------------------------------------- proven-tail timeline frontier ---
     SUPPRESSION_FRONTIER_ENABLED = True
+    MARKER_PAUSE = 0.05     # seconds Fusion gets to redraw after every marker move during the tests
 
     def _set_test_marker(self, marker):
         """Put the timeline marker so that items [0, marker) are computed; returns the marker Fusion reports."""
@@ -1295,6 +1296,7 @@ class Collector:
         else:
             if not _safe(lambda: setattr(tl, 'markerPosition', int(marker)) or True, False):
                 _safe(lambda: tl.item(int(marker)).rollTo(True))
+        _breathe(self.MARKER_PAUSE)      # let Fusion redraw the timeline, so the marker is seen moving
         return _safe(lambda: tl.markerPosition)
 
     def _frontier_items(self, marker, orig):
@@ -1394,11 +1396,7 @@ class Collector:
         stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0}
 
         def marker_to(m):
-            n = tl.count
-            if m >= n:
-                _safe(lambda: tl.moveToEnd())
-            else:
-                self._set_test_marker(m)
+            self._set_test_marker(m)
 
         def probe(S):
             """Suppress the items S, move forward until the rest is proven or the end is reached.
@@ -1695,10 +1693,7 @@ class Collector:
                 break
             start = pos
             pos = min(n, pos + self.STEP_ITEMS)
-            if pos >= n:
-                _safe(lambda: tl.moveToEnd())
-            else:
-                self._set_test_marker(pos)
+            self._set_test_marker(pos)
         return casc, broke, warned
 
     def _group_suppression_test(self, progress, cancelled):
