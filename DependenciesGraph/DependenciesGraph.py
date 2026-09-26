@@ -1737,6 +1737,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
 
     capped = [False]
 
+    def step_labels(testing=True):
+        return ['Reading'] + (['Group test'] if groups_test and testing else []) + (['Item test'] if exact and testing else [])
+
     def entry_for(sd, depth):
         """The queue entry for a linked design (one per file), created when first seen."""
         ref_doc = _safe(lambda: sd.parentDocument)
@@ -1758,7 +1761,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                  'col': None, 'doc': None, 'specs': [], 'into': set(), 'targets': set(), 'via': set()}
             by_key[key] = e
             queue.append(e)
-            _prow(key, name, 'Waiting', 0, 'wait')
+            _prow(key, name, 'Waiting', 0, 'wait', step_labels())
         else:
             e['depth'] = max(e['depth'], depth)
             if ver is not None:
@@ -1893,14 +1896,14 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         if c and (not exact or c.get('exact')) and (not groups_test or c.get('groups')) and (not pictures or c.get('pics')):
             e['col'] = _CachedDesign(c)
             e['pic'] = c.get('pic')
-            _prow(e['key'], name, 'Taken from an earlier run (same saved version)', 1, 'done')
+            _prow(e['key'], name, 'Taken from an earlier run (same saved version)', 1, 'done', ['From an earlier run'])
             for rec in c.get('links') or []:
                 apply_link(rec, e['prefix'], e['depth'] + 1)
             log('from cache %s' % name)
             return
         if progress:
             progress('Opening ' + name, n_done, n_done + len(queue) + 1)
-        _prow(e['key'], name, 'Opening...', 0.02, '')
+        _prow(e['key'], name, 'Opening...', 0.02, '', step_labels(), 0)
         doc, mine, des = open_entry(e)
         if des is None:
             main.warnings.append('Could not open %s to read it.' % name)
@@ -1930,7 +1933,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             span = 0.25 if testing else 1.0          # share of this design's bar the reading takes
 
             def rprog(msg, i, n):
-                _prow(e['key'], name, 'Reading: %s (%d/%d)' % (msg, min(i + 1, n), n), 0.05 + (span - 0.05) * min(1.0, i / max(1, n)))
+                _prow(e['key'], name, 'Reading: %s (%d/%d)' % (msg, min(i + 1, n), n), min(1.0, (i + 1) / max(1, n)), '',
+                      step_labels(testing), 0)
                 adsk.doEvents()
             sc.progress = rprog
             if mine:
@@ -1966,8 +1970,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                     n_stages = (1 if groups_test else 0) + (1 if exact else 0)
 
                     def prog(msg, i, n):
-                        f = span + (1 - span) * (stage['k'] + min(1.0, i / max(1, n))) / max(1, n_stages)
-                        _prow(e['key'], name, '%s: %s (%d/%d)' % ('Group test' if (groups_test and stage['k'] == 0) else 'Item test', msg, min(i + 1, n), n), f)
+                        _prow(e['key'], name, '%s: %s (%d/%d)' % ('Group test' if (groups_test and stage['k'] == 0) else 'Item test', msg, min(i + 1, n), n),
+                              min(1.0, (i + 1) / max(1, n)), '', step_labels(True), 1 + stage['k'])
                         if progress:
                             progress('%s: %s' % (name, msg), i, n)
                     _safe(lambda: sc.tl.moveToEnd())
@@ -2133,19 +2137,24 @@ button{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid var(--li
 #eta{color:var(--mut);margin:4px 0 10px}
 .row{padding:6px 0;border-top:1px solid var(--line)}.row .h{display:flex;gap:8px;align-items:baseline}
 .row .n{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .s{color:var(--mut);font-size:11px;margin:2px 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.segs{display:flex;gap:4px}.sg{flex:1;min-width:0}.sl{font-size:10px;color:var(--mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row.done .bar i{background:var(--ok)}.row.fail .bar i{background:var(--err)}.row.fail .s{color:var(--err)}.row.wait{opacity:.55}
 </style></head><body>
 <div class="top"><b>Dependencies graph</b><button id="cx">Cancel</button></div>
 <div class="bar"><i id="all"></i></div><div id="eta">Starting...</div><div id="rows"></div>
 <script>
 const rows={};let seq=0;
+// one bar per step, side by side, each with its name under it
+function segs(r,x){const box=r.querySelector('.segs');const L=(x.l&&x.l.length)?x.l:[''];const P=(x.p&&x.p.length)?x.p:[x.f];
+  if(box.childElementCount!==L.length||box.dataset.l!==L.join('|')){box.innerHTML='';L.forEach(l=>{const d=document.createElement('div');d.className='sg';d.innerHTML='<div class="bar"><i></i></div><div class="sl"></div>';d.querySelector('.sl').textContent=l;d.title=l;box.appendChild(d);});box.dataset.l=L.join('|');}
+  [...box.children].forEach((d,j)=>{d.querySelector('i').style.width=(100*(P[j]||0))+'%';});}
 // in progress on top, then waiting, then finished (done or failed); each group keeps the order the designs appeared in
 function sortRows(){const box=document.getElementById('rows');const rank=c=>c==='wait'?1:(c==='done'||c==='fail')?2:0;
   Object.values(rows).sort((a,b)=>rank(a.dataset.c)-rank(b.dataset.c)||a.dataset.o-b.dataset.o).forEach(r=>box.appendChild(r));}
-function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span></div><div class="s"></div><div class="bar"><i></i></div>';r.dataset.o=seq++;document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
+function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span></div><div class="s"></div><div class="segs"></div>';r.dataset.o=seq++;document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
 window.fusionJavaScriptHandler={handle:function(action,data){try{const d=JSON.parse(data);
   if(action==='all'){document.getElementById('all').style.width=(100*d.f)+'%';document.getElementById('eta').textContent=d.t;}
-  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;r.querySelector('.s').textContent=x.s;r.querySelector('.bar i').style.width=(100*x.f)+'%';r.className='row '+(x.c||'');r.dataset.c=x.c||'';});sortRows();}
+  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;r.querySelector('.s').textContent=x.s;segs(r,x);r.className='row '+(x.c||'');r.dataset.c=x.c||'';});sortRows();}
   if(action==='end'){document.getElementById('cx').disabled=true;}
 }catch(e){}return 'ok';}};
 document.getElementById('cx').onclick=()=>{document.getElementById('cx').textContent='Stopping...';document.getElementById('cx').disabled=true;adsk.fusionSendData('cancel','{}');};
@@ -2202,12 +2211,23 @@ class _ProgressPanel:
         self._all = (max(0.0, min(1.0, v / 1000.0)), self._all[1])
         self._flush()
 
-    def row(self, key, name, status, frac=None, state=''):
-        """One design's line: state '' (working), 'wait', 'done' or 'fail'."""
-        r = self._rows.get(key) or {'k': key, 'n': name, 's': '', 'f': 0.0, 'c': 'wait'}
+    def row(self, key, name, status, frac=None, state='', labels=None, idx=None):
+        """One design's line: state '' (working), 'wait', 'done' or 'fail'. With `labels` (its steps) the bar is
+        split into one part per step: steps before `idx` full, step `idx` at `frac`, later ones empty."""
+        r = self._rows.get(key) or {'k': key, 'n': name, 's': '', 'f': 0.0, 'c': 'wait', 'l': [], 'p': []}
         r.update({'n': name or r['n'], 's': status, 'c': state})
+        if labels is not None:
+            r['l'] = list(labels)
         if frac is not None:
             r['f'] = max(0.0, min(1.0, frac))
+        L = len(r['l'])
+        if L:
+            if state == 'done':
+                r['p'] = [1.0] * L
+            elif idx is not None:
+                r['p'] = [1.0 if j < idx else (r['f'] if j == idx else 0.0) for j in range(L)]
+            elif not r['p'] or len(r['p']) != L:
+                r['p'] = [0.0] * L
         self._rows[key] = r
         self._dirty.add(key)
         self._flush()
@@ -2235,10 +2255,10 @@ class _ProgressPanel:
 _panel = None
 
 
-def _prow(key, name, status, frac=None, state=''):
+def _prow(key, name, status, frac=None, state='', labels=None, idx=None):
     """A design's line in the progress panel (no-op without one)."""
     if _panel is not None:
-        _safe(lambda: _panel.row(key, name, status, frac, state))
+        _safe(lambda: _panel.row(key, name, status, frac, state, labels, idx))
 
 
 # ------------------------------------------------------------------- run ---
@@ -2345,7 +2365,7 @@ def generate(mode='both', thumbs=True, derived=False):
             progress_dlg.progressValue = int(1000 * frac)
             if not cur.get('linked'):
                 _prow('main', None, '%s: %s (%d/%d)' % (steps[cur['k']][0] if steps else '', msg, min(i + 1, n), n),
-                      (cur['k'] + min(1.0, i / max(1, n))) / max(1, len(steps) - (1 if derived else 0)))
+                      min(1.0, (i + 1) / max(1, n)), '', [x[0] for x in steps[:len(steps) - (1 if derived else 0)]], cur['k'])
             adsk.doEvents()
 
         def cancelled():
