@@ -1171,7 +1171,46 @@ class Collector:
         has_out = set(sa for (sa, _t_), k in self.edges.items() if k - {'order'})
         return [i for i in items if self.tl2node.get(i) not in has_out]
 
+    DISPLAY_FOLDERS = ('isBodiesFolderLightBulbOn', 'isSketchFolderLightBulbOn', 'isConstructionFolderLightBulbOn',
+                       'isJointsFolderLightBulbOn')
+
+    def _hide_display(self):
+        """Hide bodies, sketches and construction geometry of every component while the tests run: each recompute
+        also builds the display meshes of what is visible (dense for gears), and Fusion keeps them. Hidden
+        geometry is still computed, so suppression, errors and warnings are the same."""
+        self._hiding = True
+        saved = []
+        for c in (_safe(lambda: list(self.des.allComponents)) or []):
+            for a in self.DISPLAY_FOLDERS:
+                if _safe(lambda: getattr(c, a), False):
+                    try:
+                        setattr(c, a, False)
+                        saved.append((c, a))
+                    except Exception:
+                        pass
+        self._display_saved = saved
+
+    def _show_display(self):
+        self._hiding = False
+        for c, a in getattr(self, '_display_saved', None) or []:
+            _safe(lambda: setattr(c, a, True))
+        self._display_saved = []
+
     def suppression_test(self, progress, cancelled):
+        self._hide_display()
+        try:
+            return self._suppression_test(progress, cancelled)
+        finally:
+            self._show_display()
+
+    def group_suppression_test(self, progress, cancelled):
+        self._hide_display()
+        try:
+            return self._group_suppression_test(progress, cancelled)
+        finally:
+            self._show_display()
+
+    def _suppression_test(self, progress, cancelled):
         """Suppress each item and record what Fusion suppresses, breaks or warns about with it.
 
         Likely leaves are tested in batches first: suppressing a batch that makes nothing outside it change proves
@@ -1263,14 +1302,69 @@ class Collector:
             tl = self.tl
         rest = sorted(set(items) - set(cands) | set(singles))
 
-        # --- 2. every other item on its own
+        # --- 2. every other item on its own. Switching the previous item back on and the next one off happens
+        # in one recompute (compute deferred between the two changes) instead of two. Fusion's state follows from
+        # the suppression flags, so this gives what a separate test gives; the one known exception (switching an
+        # item back on can make later features lose references) shows up as the previous item not back, or as a
+        # new error or warning. Then everything is put back properly and the item is tested again on its own,
+        # and every 25 steps the design is checked to be exactly in its original state.
+        can_defer = _safe(lambda: hasattr(self.des, 'isComputeDeferred'), False)
+        pend = [None, set(), 0]          # previous item still off, its cascade, steps since the last full check
+
+        def settle():
+            if pend[0] is not None:
+                self._restore_checked(orig, err0, pend[0], 'item')
+            pend[0], pend[1], pend[2] = None, set(), 0
+
+        def record(i, casc, broke, warned):
+            nid = self.tl2node.get(i)
+            if nid:
+                desc[nid] = [self.tl2node[j] for j in casc if j in self.tl2node]
+                brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
+                wrn[nid] = [self.tl2node[j] for j in warned if j in self.tl2node]
+
         for i in rest:
             if cancelled():
                 self.warnings.append('Suppression test was cancelled; results are partial.')
                 break
+            tl = self.tl
             it = tl.item(i)
             progress(it.name, done[0], total)
             done[0] += 1
+            if pend[0] is not None and can_defer and pend[2] < 25:
+                prev = pend[0]
+                try:
+                    self.des.isComputeDeferred = True
+                    try:
+                        self._set_suppressed([tl.item(prev)], False)
+                    except Exception:
+                        pass
+                    try:
+                        self._set_suppressed([it], True)
+                    except Exception:
+                        pass
+                finally:
+                    try:
+                        self.des.isComputeDeferred = False
+                    except Exception:
+                        pass
+                st, casc, broke, warned = effects({i})
+                ok = (st[i][0] and not st[prev][0] and (st[prev][1] != ERR or prev in err0)
+                      and not broke and not warned and prev not in casc)
+                if ok:
+                    self.swapped = getattr(self, 'swapped', 0) + 1
+                    record(i, casc, broke, warned)
+                    pend[0], pend[1], pend[2] = i, set(casc), pend[2] + 1
+                    continue
+                # not clear-cut: put everything back and test this item on its own
+                self._restore_checked(orig, err0, None, it.name)
+                pend[0], pend[1], pend[2] = None, set(), 0
+                tl = self.tl
+                it = tl.item(i)
+            elif pend[0] is not None:
+                settle()
+                tl = self.tl
+                it = tl.item(i)
             fail_msg = None
             try:
                 self._set_suppressed([it], True)
@@ -1283,15 +1377,15 @@ class Collector:
                 if nid:
                     fails[nid] = self._parse_fail(fail_msg)
                 self._restore_checked(orig, err0, None, it.name)
-                tl = self.tl
                 continue
-            if nid:
-                desc[nid] = [self.tl2node[j] for j in casc if j in self.tl2node]
-                brk[nid] = [self.tl2node[j] for j in broke if j in self.tl2node]
-                wrn[nid] = [self.tl2node[j] for j in warned if j in self.tl2node]
+            record(i, casc, broke, warned)
+            if can_defer and not broke and not warned:
+                pend[0], pend[1], pend[2] = i, set(casc), 0       # put back together with the next item's test
+                continue
             name = _safe(lambda: it.name, '')
             self._restore_checked(orig, err0, i, name)
-            tl = self.tl
+        settle()
+        tl = self.tl
         self.batched = batch_hits
         vol1 = self.body_signature()
         if vol0 != vol1:
@@ -1417,6 +1511,8 @@ class Collector:
             self.root = self.des.rootComponent
             self.expand_groups()
             self.recovered = getattr(self, 'recovered', 0) + 1
+            if getattr(self, '_hiding', False):
+                self._hide_display()
             return True
         doc = app.activeDocument
         df = _safe(lambda: doc.dataFile)
@@ -1435,6 +1531,8 @@ class Collector:
         self.root = self.des.rootComponent
         self.expand_groups()
         self.recovered = getattr(self, 'recovered', 0) + 1
+        if getattr(self, '_hiding', False):
+            self._hide_display()
         return True
 
     def _restore_checked(self, orig, err0, tested=None, what=''):
@@ -1450,7 +1548,7 @@ class Collector:
         self.warnings.append('Could not put the design back after testing %s; later results may be wrong.' % what)
         return False
 
-    def group_suppression_test(self, progress, cancelled):
+    def _group_suppression_test(self, progress, cancelled):
         """Suppress each timeline group as a whole and record which items outside it Fusion suppresses too."""
         self._mg_base = _process_memory()
         tl = self.tl
@@ -1770,6 +1868,26 @@ def _cache_load(kind, file_id, ver):
         return d if d.get('cv') == CACHE_VERSION else None
     except Exception:
         return None
+
+
+def _probe_text_commands():
+    """Once per Fusion session: note Fusion's text commands about memory, caches or undo in the run log (to find
+    one that gives memory back)."""
+    if globals().get('_probed'):
+        return
+    globals()['_probed'] = True
+    try:
+        out = adsk.core.Application.get().executeTextCommand('TextCommands.List /hidden') or ''
+    except Exception as ex:
+        out = ''
+        _mem_log('text commands: could not list (%s)' % ex)
+    hits = [l.strip() for l in out.splitlines() if re.search(r'mem|cache|purge|undo|flush|garbage|release|trim', l, re.I)]
+    try:
+        with open(os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'text_commands.txt'), 'w') as f:
+            f.write(out)
+    except Exception:
+        pass
+    _mem_log('text commands about memory: ' + ('; '.join(hits[:60]) if hits else 'none found'))
 
 
 def _cache_save(kind, file_id, ver, d):
@@ -2226,13 +2344,13 @@ body{margin:0;padding:10px 12px;font:12px -apple-system,system-ui,Segoe UI,sans-
 button{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
 .bar{height:6px;border-radius:3px;background:var(--bar);overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--fill);transition:width .2s}
 #eta{color:var(--mut);margin:4px 0 10px}
-.row{padding:6px 0;border-top:1px solid var(--line)}.row .h{display:flex;gap:8px;align-items:baseline}
-.row .n{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .s{color:var(--mut);font-size:11px;margin:2px 0 4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row{padding:4px 0;border-top:1px solid var(--line)}.row .h{display:flex;gap:8px;align-items:baseline;margin-bottom:3px}
+.row .n{font-weight:600;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .s{color:var(--mut);font-size:11px;flex:0 1 auto;max-width:55%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .segs{display:flex;gap:4px}.sg{flex:1;min-width:0}.sl{font-size:10px;color:var(--mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .row.done .bar i{background:var(--ok)}.row.fail .bar i{background:var(--err)}.row.fail .s{color:var(--err)}.row.wait{opacity:.55}
 </style></head><body>
 <div class="top"><b>Dependencies graph</b><button id="cx">Cancel</button></div>
-<div class="bar"><i id="all"></i></div><div id="eta">Starting...</div><div id="rows"></div>
+<div id="rows"></div>
 <script>
 const rows={};let seq=0;
 // one bar per step, side by side, each with its name under it
@@ -2242,10 +2360,10 @@ function segs(r,x){const box=r.querySelector('.segs');const L=(x.l&&x.l.length)?
 // in progress on top, then waiting, then finished (done or failed); each group keeps the order the designs appeared in
 function sortRows(){const box=document.getElementById('rows');const rank=c=>c==='wait'?1:(c==='done'||c==='fail')?2:0;
   Object.values(rows).sort((a,b)=>rank(a.dataset.c)-rank(b.dataset.c)||a.dataset.o-b.dataset.o).forEach(r=>box.appendChild(r));}
-function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span></div><div class="s"></div><div class="segs"></div>';r.dataset.o=seq++;document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
+function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span><span class="s"></span></div><div class="segs"></div>';r.dataset.o=seq++;document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
 window.fusionJavaScriptHandler={handle:function(action,data){try{const d=JSON.parse(data);
-  if(action==='all'){document.getElementById('all').style.width=(100*d.f)+'%';document.getElementById('eta').textContent=d.t;}
-  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;r.querySelector('.s').textContent=x.s;segs(r,x);r.className='row '+(x.c||'');r.dataset.c=x.c||'';});sortRows();}
+  if(action==='all'){document.getElementById('cx').title=d.t;}
+  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;const s=r.querySelector('.s');s.textContent=x.s;s.title=x.s;segs(r,x);r.className='row '+(x.c||'');r.dataset.c=x.c||'';});sortRows();}
   if(action==='end'){document.getElementById('cx').disabled=true;}
 }catch(e){}return 'ok';}};
 document.getElementById('cx').onclick=()=>{document.getElementById('cx').textContent='Stopping...';document.getElementById('cx').disabled=true;adsk.fusionSendData('cancel','{}');};
@@ -2488,6 +2606,7 @@ def generate(mode='both', thumbs=True, derived=False):
             except Exception:
                 pass
             _mem_log('start: %s' % doc_name)
+            _safe(_probe_text_commands)
             set_step(0)
             col.build_nodes()
             col.scan()
