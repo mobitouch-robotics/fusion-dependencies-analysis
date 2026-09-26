@@ -1690,9 +1690,23 @@ def _open_version(sd):
 
 # ------------------------------------------------------------ memory ---
 def _process_memory():
-    """Memory Fusion uses now (resident set, bytes); None when it cannot be read."""
+    """Memory Fusion uses now (footprint / private bytes); None when it cannot be read."""
     try:
         if sys.platform == 'darwin':
+            # the footprint (what Activity Monitor shows): the resident set leaves out memory macOS has
+            # compressed or swapped out, which is most of it once Fusion grows large
+            try:
+                import ctypes
+
+                class RI(ctypes.Structure):
+                    _fields_ = [('uuid', ctypes.c_uint8 * 16)] + [(n, ctypes.c_uint64) for n in (
+                        'user_time', 'system_time', 'pkg_idle_wkups', 'interrupt_wkups', 'pageins', 'wired_size',
+                        'resident_size', 'phys_footprint', 'proc_start_abstime', 'proc_exit_abstime')]
+                ri = RI()
+                if ctypes.CDLL('/usr/lib/libproc.dylib').proc_pid_rusage(os.getpid(), 0, ctypes.byref(ri)) == 0:
+                    return int(ri.phys_footprint)
+            except Exception:
+                pass
             import subprocess
             out = subprocess.run(['ps', '-o', 'rss=', '-p', str(os.getpid())], capture_output=True, text=True,
                                  timeout=5, env={'PATH': '/bin:/usr/bin'}).stdout.strip()
@@ -1711,7 +1725,7 @@ def _process_memory():
             c.cb = ctypes.sizeof(PMC)
             h = ctypes.windll.kernel32.GetCurrentProcess()
             if ctypes.windll.psapi.GetProcessMemoryInfo(h, ctypes.byref(c), c.cb):
-                return int(c.WorkingSetSize)
+                return int(c.PagefileUsage)      # private memory, also what is paged out
     except Exception:
         pass
     return None
