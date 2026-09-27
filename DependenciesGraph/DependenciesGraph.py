@@ -1943,6 +1943,19 @@ def _source_param(name, src_names):
     return best
 
 
+def _file_location(dfile):
+    """'Project / folder / subfolder' of a cloud file, to tell apart files with the same name."""
+    parts = []
+    f = _safe(lambda: dfile.parentFolder)
+    while f is not None:
+        nm = _safe(lambda: f.name)
+        if nm and not _safe(lambda: f.isRoot, False):
+            parts.append(nm)
+        f = _safe(lambda: f.parentFolder)
+    proj = _safe(lambda: dfile.parentProject.name)
+    return ' / '.join(([proj] if proj else []) + list(reversed(parts)))
+
+
 def _open_version(sd):
     """Opens the saved version a Derive feature uses as a hidden document of its own, so it can be read (and
     its timeline stepped through) without touching the copy the open design references. None if it cannot."""
@@ -2030,7 +2043,7 @@ def _mem_log(msg):
 # ------------------------------------------------------------ result cache ---
 # A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
 # (or another assembly using the same part) takes it from here instead of opening and testing the design again.
-CACHE_VERSION = 2
+CACHE_VERSION = 3
 
 
 def _cache_dir():
@@ -2149,7 +2162,12 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         ref_doc = _safe(lambda: sd.parentDocument)
         name = _safe(lambda: ref_doc.name) or 'Linked design'
         dfile = _safe(lambda: ref_doc.dataFile)
-        return add_entry(_safe(lambda: dfile.id) or name, name, dfile, _safe(lambda: dfile.versionNumber), depth)
+        fid = _safe(lambda: dfile.id)
+        if not fid:
+            # identified only by its file id: names repeat across folders and projects
+            main.warnings.append('%s: its cloud file could not be identified, so it was left out.' % name)
+            return None
+        return add_entry(fid, name, dfile, _safe(lambda: dfile.versionNumber), depth)
 
     def add_entry(key, name, dfile, ver, depth):
         e = by_key.get(key)
@@ -2174,9 +2192,13 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
 
     def apply_link(rec, prefix, depth):
         """One link of a design to a design it derives or inserts: queue that design, add the arrows."""
+        if not str(rec.get('key') or '').startswith('urn:'):
+            return          # an old cache record keyed by name: never trusted (names repeat across folders)
         e = add_entry(rec['key'], rec['name'], rec.get('dfile'), rec['ver'], depth)
         if e is None:
             return
+        if rec.get('loc'):
+            e['loc'] = rec['loc']
         e['via'].add(rec['via'])
         for t in rec['targets']:
             e['targets'].add(prefix + t)
@@ -2189,7 +2211,12 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             ref_doc = _safe(lambda: sd.parentDocument)
             name = _safe(lambda: ref_doc.name) or 'Linked design'
             dfile = _safe(lambda: ref_doc.dataFile)
-            rec = {'key': _safe(lambda: dfile.id) or name, 'name': name, 'ver': _safe(lambda: dfile.versionNumber),
+            fid = _safe(lambda: dfile.id)
+            if not fid:
+                # identified only by its file id: names repeat across folders and projects
+                main.warnings.append('%s: its cloud file could not be identified, so it was left out.' % name)
+                return
+            rec = {'key': fid, 'name': name, 'ver': _safe(lambda: dfile.versionNumber), 'loc': _file_location(dfile),
                    'via': via, 'targets': [target] if target else [], 'specs': specs}
             if out is not None:
                 out.append(dict(rec))
@@ -2250,6 +2277,19 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         _safe(doc.activate)
         adsk.doEvents()
         mine = not any(_safe(lambda: d == doc, False) for d in before)
+        # make sure Fusion handed back exactly that file and version (never another file with the same name)
+        got = _safe(lambda: doc.dataFile)
+        got_id, got_ver = _safe(lambda: got.id), _safe(lambda: got.versionNumber)
+        if got_id != e['key'] or (e['read_ver'] is not None and got_ver is not None and got_ver != e['read_ver']
+                                  and mine):
+            if mine:
+                _safe(lambda: doc.close(False))
+            main.warnings.append('%s: Fusion opened a different file (%s v%s in %s) instead of the linked one '
+                                 '(%s v%s in %s), so it was left out.' % (
+                                     e['name'], _safe(lambda: got.name, '?'), got_ver, _file_location(got) or '?',
+                                     e['name'], e['read_ver'], e.get('loc') or _file_location(dfile) or '?'))
+            return None, False, None
+        e['loc'] = e.get('loc') or _file_location(got)
         des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
         if des is None and mine:
             _safe(lambda: doc.close(False))
@@ -2316,6 +2356,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             _prow(e['key'], name, 'Could not open it', 1, 'fail')
             return
         e['doc'] = doc if mine else None
+        log('opened %s from %s (%s)' % (name, e.get('loc') or '?', e['key']))
         try:
             if _safe(lambda: des.designType) != adsk.fusion.DesignTypes.ParametricDesignType:
                 sc = _PlainDesign(des)
@@ -2473,6 +2514,15 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if n:
                 e['into'].add(sp + n)
 
+    # designs with the same name in different folders: their frames say where each one is
+    base = lambda nm: re.sub(r'\s+v\d+$', '', nm or '')
+    main_name = base(_safe(lambda: adsk.core.Application.get().activeDocument.name, ''))
+    counts = {}
+    for e in sources:
+        counts[base(e['name'])] = counts.get(base(e['name']), 0) + 1
+    for e in sources:
+        e['show_loc'] = bool((counts[base(e['name'])] > 1 or base(e['name']) == main_name) and e.get('loc'))
+
     # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
     order = sorted(sources, key=lambda s: -s['depth'])
     for rank, src in enumerate(order):
@@ -2482,6 +2532,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             base_name = re.sub(r'\s+v\d+$', '', src['name'])
             src['name'] = '%s (v%s; read v%s)' % (base_name, ', v'.join(str(v) for v in sorted(src['versions'])), src['read_ver'])
             main.warnings.append('%s is linked at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
+        if src.get('show_loc'):
+            src['name'] = '%s (%s)' % (src['name'], src['loc'])
         main.groups.append({'id': gid, 'name': src['name'], 'first': base, 'parent': None, 'design': True,
                             'pic': src.get('pic'), 'via': sorted(src.get('via') or [])})
         # a source design's user parameters only when something uses them (a big design can have hundreds)
