@@ -74,6 +74,9 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
 - With *Full analysis*, linked designs get the same suppression tests. Each is read and tested in a
   hidden copy of the version that is used, closed without saving; a linked design you have open in a
   tab is read as it is and not tested.
+- Fusion keeps every test step's model data until a document is closed, so while a linked design is tested
+  its hidden copy is closed and the same version opened again each time Fusion has grown by 4 GB
+  (`"memoryRefreshGB"` in `DependenciesGraph/settings.json`; 0 switches it off).
 - In the Groups and Components layouts every design is a frame of its own, with its timeline groups and
   a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.
 - Cancel stops the whole run; no page is generated.

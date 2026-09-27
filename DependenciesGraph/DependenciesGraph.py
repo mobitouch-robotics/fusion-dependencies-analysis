@@ -1320,6 +1320,7 @@ class Collector:
 
     def suppression_test(self, progress, cancelled):
         self._hide_display()
+        self._mr_base = _process_memory()
         self.t_compute = self.t_state = 0.0
         self.n_compute = 0
         self.n_state_items = 0
@@ -1338,6 +1339,7 @@ class Collector:
 
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
+        self._mr_base = _process_memory()
         try:
             self._undo_n = 0
             return (yield from self._group_suppression_test(progress, cancelled))
@@ -1542,7 +1544,15 @@ class Collector:
 
         def put_back(S, what):
             """Marker right after the first item of S, switch S back on, marker to the end: the original design
-            again, which Fusion does not recompute. Checked; the usual restore if anything differs."""
+            again, which Fusion does not recompute. Checked; the usual restore if anything differs. Then, when
+            Fusion has grown too much, a hidden copy is reopened (see _memory_refresh)."""
+            nonlocal tl
+            ok = put_back_now(S, what)
+            if ok and self._memory_refresh(orig, err0):
+                tl = self.tl
+            return ok
+
+        def put_back_now(S, what):
             S = sorted(S)
             # a test that ran to the end: switched back on right there (Fusion recognises the original design
             # and reuses its result, measured). One that stopped early: through the marker right after S.
@@ -1780,6 +1790,69 @@ class Collector:
         ok = self._restore_checked(orig, err0, tested, what)
         return ok
 
+    MEM_REFRESH_GB = 4      # a hidden copy of a linked design is reopened when Fusion has grown by this much
+
+    def _memory_refresh(self, orig, err0):
+        """Between two tests (the design is in its original state): when Fusion has grown by MEM_REFRESH_GB
+        since this design's tests started, close the hidden copy of the linked design and open the same saved
+        version again. Fusion keeps every test step's model data as undo history until the document is closed
+        (measured ~110 MB per recompute of a heavy part); closing gives it back. Only for copies the add-in
+        opened itself (closed without saving anyway), never the design you have open. Returns True when the
+        design was reopened: self.des / self.tl are then new objects."""
+        hd = getattr(self, 'hidden_doc', None)
+        limit = _settings().get('memoryRefreshGB', self.MEM_REFRESH_GB)
+        if hd is None or not limit:
+            return False
+        now = time.time()
+        if now - getattr(self, '_mr_t', 0) < 5:
+            return False
+        self._mr_t = now
+        m = _process_memory()
+        if m is None:
+            return False
+        # freeing after a close goes on for a while: the lowest reading is the baseline
+        base = getattr(self, '_mr_base', None)
+        self._mr_base = m if base is None else min(base, m)
+        if base is None or m - self._mr_base < limit * 1024 ** 3:
+            return False
+        app = adsk.core.Application.get()
+        name = _safe(lambda: hd.name, '?')
+        df = _safe(lambda: hd.dataFile)
+        fid, ver = _safe(lambda: df.id), _safe(lambda: df.versionNumber)
+        if df is None or not fid:
+            return False
+        try:
+            hd.close(False)
+        except Exception:
+            return False
+        self.hidden_doc = None
+        gc.collect()
+        try:
+            nd = app.documents.open(df, True)
+        except Exception as ex:
+            raise RuntimeError('could not reopen %s to free memory: %s' % (name, ex))
+        _safe(nd.activate)
+        adsk.doEvents()
+        got = _safe(lambda: nd.dataFile)
+        if _safe(lambda: got.id) != fid or (ver is not None and _safe(lambda: got.versionNumber) != ver):
+            _safe(lambda: nd.close(False))
+            raise RuntimeError('reopening %s to free memory opened a different file or version' % name)
+        des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
+        self.hidden_doc = nd
+        self.des, self.root, self.tl = des, des.rootComponent, des.timeline
+        self.expand_groups()
+        self._display_saved = []
+        self._hide_display()
+        _safe(lambda: self.tl.moveToEnd())
+        if not self._clean(orig, err0):
+            raise RuntimeError('%s reopened to free memory is not in the state it was tested in' % name)
+        self.n_refresh = getattr(self, 'n_refresh', 0) + 1
+        after = _process_memory()
+        _mem_log('reopened %s to free memory: %.1f GB -> %s' % (
+            name, m / 1024 ** 3, '%.1f GB' % (after / 1024 ** 3) if after else '?'))
+        self._mr_base = after or m
+        return True
+
     def _restore_checked(self, orig, err0, tested=None, what=''):
         r = self._restore_checked_now(orig, err0, tested, what)
         self._undo_n = 0 if r else None
@@ -1934,9 +2007,6 @@ class Collector:
 
     def _group_suppression_test(self, progress, cancelled):
         """Suppress each timeline group as a whole and record which items outside it Fusion suppresses too."""
-        self._mg_base = _process_memory()
-        self._mg_pending = False
-        self._mg_pending_rss = None
         tl = self.tl
         orig = {}
         for i in range(tl.count):
@@ -2012,8 +2082,8 @@ class Collector:
                 self._set_test_marker(first + 1)
             _safe(lambda: self._set_suppressed([g], False))
             _safe(lambda: tl.moveToEnd())
-            if not self._clean(orig, err0):
-                self._restore_checked(orig, err0, None, gname)
+            if self._clean(orig, err0) or self._restore_checked(orig, err0, None, gname):
+                self._memory_refresh(orig, err0)
             if self.tl is not tl:
                 tl = self.tl
                 tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
@@ -2667,10 +2737,12 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                             progress('%s: %s' % (name, msg), i, n)
                     _safe(lambda: sc.tl.moveToEnd())
                     # items first: their proofs let the group test stop early
+                    failed = False
                     if exact and not cancelled():
                         try:
                             yield from sc.suppression_test(prog, cancelled)
                         except Exception as ex:
+                            failed = True
                             main.warnings.append('%s: the item test failed: %s' % (name, ex))
                     if exact:
                         stage['k'] = 1
@@ -2678,10 +2750,11 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                         try:
                             yield from sc.group_suppression_test(prog, cancelled)
                         except Exception as ex:
+                            failed = True
                             main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
-                    tested = not cancelled()
+                    tested = not cancelled() and not failed
             # kept for later runs: only a complete result from a hidden copy of the saved version
-            if mine and not cancelled():
+            if mine and not cancelled() and not (testing and not tested):
                 d = _design_data(sc)
                 d.update({'links': links, 'pic': e['pic'], 'pics': pictures,
                           'exact': bool(exact and tested), 'gtest': bool(groups_test and tested)})
