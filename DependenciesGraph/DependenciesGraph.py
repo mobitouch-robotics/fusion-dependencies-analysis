@@ -1320,6 +1320,7 @@ class Collector:
 
     def suppression_test(self, progress, cancelled):
         self._hide_display()
+        tx = _tx_off()
         self.t_compute = self.t_state = 0.0
         self.n_compute = 0
         self.n_state_items = 0
@@ -1329,6 +1330,8 @@ class Collector:
             self._undo_n = 0
             return (yield from self._suppression_test(progress, cancelled))
         finally:
+            if tx:
+                _tx_on()
             self._show_display()
             _mem_log('item test times: total %.1f s, %d suppress/restore calls %.1f s, reading states %.1f s, '
                      'state items %d (skipped %d), combined steps %d, undo restores %d (failed %d)' %
@@ -1338,10 +1341,13 @@ class Collector:
 
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
+        tx = _tx_off()
         try:
             self._undo_n = 0
             return (yield from self._group_suppression_test(progress, cancelled))
         finally:
+            if tx:
+                _tx_on()
             self._show_display()
 
     # ------------------------------------------- proven-tail timeline frontier ---
@@ -2318,6 +2324,53 @@ def _probe_text_commands():
     except Exception:
         pass
     _mem_log('text commands about memory: ' + ('; '.join(hits[:60]) if hits else 'none found'))
+
+
+_TX_FLAG = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'transactions_off.flag')
+
+
+def _tx_command(arg=''):
+    """Fusion's text command for its transaction (undo) system; None when it cannot be run."""
+    try:
+        return adsk.core.Application.get().executeTextCommand(('Options.Transactions ' + arg).strip()) or ''
+    except Exception as ex:
+        _mem_log('Options.Transactions %s failed: %s' % (arg, ex))
+        return None
+
+
+def _tx_off():
+    """While the suppression tests run, Fusion records every suppress, switch back on and marker move as an undo
+    step and keeps the model data of each one as long as the document is open (measured: ~110 MB per recompute
+    of a heavy part, 22 GB over one linked design's test). The tests put the design back themselves and never
+    use Undo, so the recording is switched off for them. Returns True when it was switched off here (and must be
+    switched back on with _tx_on)."""
+    if not _settings().get('transactionsOff', True):
+        return False
+    before = _tx_command()
+    if before is None:
+        return False
+    if re.search(r'\boff\b', before, re.I) and not re.search(r'\bon\b', before, re.I):
+        return False            # already off (by someone else): left as it is
+    if _tx_command('/off') is None:
+        return False
+    try:
+        os.makedirs(os.path.dirname(_TX_FLAG), exist_ok=True)
+        open(_TX_FLAG, 'w').close()
+    except Exception:
+        pass
+    _mem_log('undo recording switched off for the test (was: %s; now: %s)' % (
+        before.strip()[:80] or '?', (_tx_command() or '?').strip()[:80]))
+    return True
+
+
+def _tx_on(force=False):
+    """Switches the undo recording back on after _tx_off; force: also when a run stopped before it could (the
+    flag file is still there, e.g. after Fusion or the add-in was stopped mid-test)."""
+    if force and not os.path.exists(_TX_FLAG):
+        return
+    _tx_command('/on')
+    _safe(lambda: os.remove(_TX_FLAG))
+    _mem_log('undo recording switched back on (%s)' % ((_tx_command() or '?').strip()[:80]))
 
 
 def _cache_save(kind, file_id, ver, d):
@@ -3757,6 +3810,8 @@ def run(context):
     global _app, _ui
     _app = adsk.core.Application.get()
     _ui = _app.userInterface
+    # a run stopped mid-test (Fusion or the add-in stopped) left the undo recording off: switch it back on
+    _safe(lambda: _tx_on(force=True))
     try:
         _build_ui()
     except Exception:
@@ -3777,6 +3832,7 @@ def stop(context):
         if _STEPPER.gen is not None:
             _safe(_STEPPER.gen.close)
             _STEPPER.gen = None
+        _safe(lambda: _tx_on(force=True))
         _safe(lambda: _ui.palettes.itemById(PANEL_ID).deleteMe())
         _handlers.clear()
     except Exception:
