@@ -290,7 +290,16 @@ class Collector:
             if n: out.append((n, 'component'))
             return
         if t == 'BRepFace':
-            tok = _safe(lambda: obj.entityToken)
+            # the same faces come up again and again (every curve a sketch projects from a gear): the token is
+            # slow to read (~3 ms), so it is looked up once per face while one item is read
+            memo = self.__dict__.setdefault('_face_memo', {})
+            fk = (_safe(lambda: obj.body.name), _safe(lambda: obj.tempId))
+            if fk[1] is not None and fk in memo:
+                tok = memo[fk]
+            else:
+                tok = _safe(lambda: obj.entityToken)
+                if fk[1] is not None:
+                    memo[fk] = tok
             n = self.face_owner.get(tok) if tok else None
             if n:
                 out.append((n, 'geometry'))
@@ -298,8 +307,17 @@ class Collector:
                 self.resolve(_safe(lambda: obj.body), out, 'body', depth + 1)
             return
         if t == 'BRepEdge':
+            memo = self.__dict__.setdefault('_edge_memo', {})
+            ek = (_safe(lambda: obj.body.name), _safe(lambda: obj.tempId))
+            if ek[1] is not None and ek in memo:
+                out.extend(memo[ek])
+                return
+            sub = []
             for f in (_safe(lambda: list(obj.faces)) or []):
-                self.resolve(f, out, 'geometry', depth + 1)
+                self.resolve(f, sub, 'geometry', depth + 1)
+            if ek[1] is not None:
+                memo[ek] = sub
+            out.extend(sub)
             return
         if t == 'BRepVertex':
             eds = _safe(lambda: list(obj.edges)) or []
@@ -474,6 +492,25 @@ class Collector:
                     cn = _safe(lambda: c.name)
                     if cn: self.comp_owner.setdefault(cn, nid)
 
+    def _diff_outputs(self, it):
+        """The faces an item made or changed, found by comparing each of its bodies with the last time an item
+        changed that body (face centre and area). Read through the bodies: a feature's own face list is very
+        slow to walk in Fusion (about 2.5 ms per face, seconds for a gear), a body's is not. Updates the record."""
+        e = _safe(lambda: it.entity)
+        if e is None or _safe(lambda: it.isSuppressed, False) or not _has(e, 'bodies'):
+            return []
+        bs = self.__dict__.setdefault('_body_sigs', {})
+        new = []
+        for b in (_safe(lambda: list(e.bodies)) or []):
+            key = self._body_key(b)
+            prev = bs.get(key)
+            cur = {}
+            for f in (_safe(lambda: list(b.faces)) or []):
+                cur.setdefault(self._face_sig(f), f)
+            new.extend(f for sg, f in cur.items() if prev is None or sg not in prev)
+            bs[key] = set(cur)
+        return new
+
     def record_outputs(self, it, nid):
         """Remember which bodies/faces an item produced (state right after it)."""
         e = _safe(lambda: it.entity)
@@ -484,7 +521,7 @@ class Collector:
             if nm:
                 self.body_creator.setdefault(nm, nid)
                 self.body_owner[nm] = nid
-        for f in (_safe(lambda: list(e.faces)) or []):
+        for f in (getattr(self, '_cur_new', None) or []):
             tok = _safe(lambda: f.entityToken)
             if tok: self.face_owner[tok] = nid
         # a feature that makes a new component (e.g. Extrude as new component) owns that component,
@@ -499,6 +536,8 @@ class Collector:
             if nm: self.mesh_creator.setdefault(nm, nid)
 
     def inputs_of(self, it):
+        self._face_memo = {}         # face and edge ids are only valid until the next compute
+        self._edge_memo = {}
         e = _safe(lambda: it.entity)
         if e is None:
             return []
@@ -871,13 +910,7 @@ class Collector:
         only touched (for example a second cut through the same slot) over to that feature, so
         e.faces alone can show geometry an earlier feature made. Compared with the faces its bodies had the
         last time an item changed them."""
-        faces = _safe(lambda: list(e.faces)) or []
-        bs = self.__dict__.get('_body_sigs', {})
-        prev = set()
-        for b in (_safe(lambda: list(e.bodies)) or []):
-            prev |= bs.get(self._body_key(b), set())
-        new = [f for f in faces if self._face_sig(f) not in prev]
-        return new or faces
+        return list(getattr(self, '_cur_new', None) or [])
 
     def capture(self, it, nid):
         # Called with the marker right after `it`.
@@ -887,7 +920,7 @@ class Collector:
             if nid is not None:
                 self._capture(it, nid)
         finally:
-            _safe(lambda: self._remember_bodies(_safe(lambda: it.entity)))
+            pass
 
     def _capture(self, it, nid):
         app = adsk.core.Application.get()
@@ -952,6 +985,7 @@ class Collector:
             t1 = clk()
             tm['roll'] += t1 - t0
             if prev is not None:
+                self._cur_new = _safe(lambda: self._diff_outputs(prev[0]), [])
                 self.capture(*prev)
                 t2 = clk()
                 tm['thumbs'] += t2 - t1
@@ -973,6 +1007,7 @@ class Collector:
         if not getattr(self, 'no_roll', False):
             _safe(lambda: tl.moveToEnd())
         if prev is not None:
+            self._cur_new = _safe(lambda: self._diff_outputs(prev[0]), [])
             self.capture(*prev)
             _safe(lambda: self.record_outputs(*prev))
         self.thumbs_end()
