@@ -1451,7 +1451,10 @@ class Collector:
             Returns (suppressed ok, fail message, casc, broke, warned)."""
             S = sorted(S)
             Sset = set(S)
-            pos = S[-1] + 1 if self.TIMELINE_WALK else tl.count
+            # the marker goes straight to the first place the walk could stop (worked out from the known tails),
+            # not right after the item: Fusion then computes up to there in one go
+            pos = (self._next_marker(S[-1] + 1, Sset, active, known, tl.count) if self.TIMELINE_WALK
+                   else tl.count)
             marker_to(pos)
             fail_msg = None
             try:
@@ -1831,8 +1834,11 @@ class Collector:
             if all(orig.get(i) for i in inside):
                 continue     # everything in it is already suppressed
             fail_msg = None
-            # the marker right after the group: suppressing costs nothing, then it moves forward (see below)
-            self._set_test_marker(max(inside) + 1 if self.TIMELINE_WALK else tl.count)
+            # the marker at the first place the walk could stop (known tails of the item test), then forward
+            active_g = sorted(i for i in orig if not orig[i])
+            gpos = (self._next_marker(max(inside) + 1, set(inside), active_g, getattr(self, 'item_proofs', None) or {},
+                                      tl.count) if self.TIMELINE_WALK else tl.count)
+            self._set_test_marker(gpos)
             try:
                 self._set_suppressed([g], True)
             except Exception as ex:
@@ -1855,8 +1861,7 @@ class Collector:
                     tl = self.tl
                     tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
                     continue
-            casc, broke, warned = self._walk_forward(orig, set(inside), err0, warn0, min(inside) + 1,
-                                                     max(inside) + 1 if self.TIMELINE_WALK else tl.count)
+            casc, broke, warned = self._walk_forward(orig, set(inside), err0, warn0, min(inside) + 1, gpos)
             if gid in byg:
                 byg[gid]['dsupp'] = [self.tl2node[i] for i in casc if i in self.tl2node]
                 byg[gid]['dbreak'] = [self.tl2node[i] for i in broke if i in self.tl2node]
