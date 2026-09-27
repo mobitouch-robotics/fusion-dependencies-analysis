@@ -1209,7 +1209,7 @@ class Collector:
             self._undo_n = (n + 1) if (value and ok and n is not None) else None
             self.t_compute = getattr(self, 't_compute', 0.0) + time.perf_counter() - t0
             self.n_compute = getattr(self, 'n_compute', 0) + 1
-            _breathe()
+            _breathe(self.UI_PAUSE)
 
     def _set_suppressed_now(self, es, value):
         fn = getattr(self.des, 'setSuppressed', None)
@@ -1334,7 +1334,8 @@ class Collector:
     # forward until the rest is proven (or the end), put back through the marker. False: the plain way - suppress
     # and put back with the marker at the end of the timeline (slower, same results).
     TIMELINE_WALK = True
-    MARKER_PAUSE = 0.05     # seconds Fusion gets to redraw after every marker move during the tests
+    MARKER_PAUSE = 0.02     # seconds Fusion gets to redraw after every marker move during the tests
+    UI_PAUSE = 0.03         # seconds Fusion gets for clicks and redraws after every suppress / switch back on
 
     def _set_test_marker(self, marker):
         """Put the timeline marker so that items [0, marker) are computed; returns the marker Fusion reports."""
@@ -1510,7 +1511,11 @@ class Collector:
             """Marker right after the first item of S, switch S back on, marker to the end: the original design
             again, which Fusion does not recompute. Checked; the usual restore if anything differs."""
             S = sorted(S)
-            marker_to(S[0] + 1 if self.TIMELINE_WALK else tl.count)
+            # a test that ran to the end: switched back on right there (Fusion recognises the original design
+            # and reuses its result, measured). One that stopped early: through the marker right after S.
+            at_end = (_safe(lambda: tl.markerPosition, -1) or 0) >= tl.count
+            if self.TIMELINE_WALK and not at_end:
+                marker_to(S[0] + 1)
             try:
                 self._set_suppressed([tl.item(i) for i in S], False)
             except Exception:
@@ -1871,7 +1876,7 @@ class Collector:
             # put back with the marker right after the group's first item: the design is the original one again
             # and Fusion reuses its result instead of recomputing everything after the group
             first = min(inside) if inside else None
-            if first is not None and self.TIMELINE_WALK:
+            if first is not None and self.TIMELINE_WALK and (_safe(lambda: tl.markerPosition, -1) or 0) < tl.count:
                 self._set_test_marker(first + 1)
             _safe(lambda: self._set_suppressed([g], False))
             _safe(lambda: tl.moveToEnd())
