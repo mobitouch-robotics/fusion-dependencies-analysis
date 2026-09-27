@@ -2456,7 +2456,8 @@ def _design_data(col):
             'gtested': getattr(col, 'gtested', False)}
 
 
-def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None):
+def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None,
+                     skipped_groups=False):
     """Linked designs, each opened once: open -> read -> test (Full analysis) -> note the designs it links -> close,
     then the next one from a queue. What a Derive hands over is noted by name while the deriving design is open
     and matched once the source design has been read (names are stable within a saved version)."""
@@ -2863,6 +2864,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 if g.get(f): ng[f] = pre(g[f])
             for f in ('fail', 'empty'):
                 if f in g: ng[f] = g[f]
+            if skipped_groups and not getattr(sc, 'gtested', False):
+                ng['gskip'] = True       # not tested on its own: the page adds up its items' results
             main.groups.append(ng)
         for n in sc.nodes:
             if n['type'] == 'UserParameter' and n['id'] not in used:
@@ -3011,6 +3014,9 @@ def _prow(key, name, status, frac=None, state='', labels=None, idx=None):
 def generate(mode='both', thumbs=True, derived=False):
     exact = mode in ('items', 'both')
     groups_test = mode in ('groups', 'both')
+    # the whole groups test of linked designs is optional (it takes about as long as their item test); without it
+    # the page adds up the items' results for their groups (estimated)
+    linked_groups = groups_test and bool(_settings().get('linkedGroupTest', False))
     global _app, _ui
     _app = adsk.core.Application.get()
     _ui = _app.userInterface
@@ -3044,10 +3050,15 @@ def generate(mode='both', thumbs=True, derived=False):
         mdf = _safe(lambda: _app.activeDocument.dataFile)
         m_id, m_ver = _safe(lambda: mdf.id), _safe(lambda: mdf.versionNumber)
         m_kind = 'main_%s%s%s%s' % (int(exact), int(groups_test), int(bool(thumbs)), int(bool(derived)))
+        skip_lg = bool(derived and groups_test and not linked_groups)
+        kinds = [m_kind + ('s' if skip_lg else ''), 'main_11%s%s' % (int(bool(thumbs)), int(bool(derived)))]
+        if skip_lg:
+            # a result with the linked groups tested (more complete) also answers one without
+            kinds = [kinds[0], m_kind, kinds[1] + 's', kinds[1]]
         cached = None
         if not _safe(lambda: _app.activeDocument.isModified, True):
             # a Full analysis result also answers a Quick estimate (it is exact)
-            for kind in (m_kind, 'main_11%s%s' % (int(bool(thumbs)), int(bool(derived)))):
+            for kind in kinds:
                 cached = _cache_load(kind, m_id, m_ver)
                 if cached:
                     break
@@ -3170,11 +3181,13 @@ def generate(mode='both', thumbs=True, derived=False):
                 try:
                     def _derived_plan(di, dg, nd):
                         if exact or groups_test:
-                            steps[k][1] = max(1.0, di * 1.7 + dg * 2.5 + max(1, nd) * 2.0)
+                            steps[k][1] = max(1.0, (di * 1.7 if exact else 0) + (dg * 2.5 if linked_groups else 0)
+                                              + max(1, nd) * 2.0)
                         else:
                             steps[k][1] = max(1.0, di * 0.05 + dg * 0.1 + max(1, nd) * 1.0)
                         set_step(k)
-                    yield from _collect_derived(col, progress, cancelled, exact, groups_test, thumbs, plan=_derived_plan)
+                    yield from _collect_derived(col, progress, cancelled, exact, linked_groups, thumbs,
+                                                plan=_derived_plan, skipped_groups=skip_lg)
                 except Exception as ex:
                     col.warnings.append('Could not read the derived designs: %s' % ex)
                     col.derived_failed = True
@@ -3198,7 +3211,7 @@ def generate(mode='both', thumbs=True, derived=False):
         progress_dlg.hide()
         progress_dlg = None
         if not getattr(col, 'recovered', 0) and not getattr(col, 'derived_failed', False):
-            _cache_save(m_kind, m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
+            _cache_save(kinds[0], m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
         return _write_page(data, path, out_dir)
     except Exception:
         if progress_dlg:
@@ -3471,6 +3484,12 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
                                      '(and the designs those link, at any depth). Each is shown in a frame of its own, '
                                      'connected to the Derive feature or insert that uses it. With Full analysis they are '
                                      'suppression-tested too, each in a hidden copy.')
+            lg = ag.children.addBoolValueInput('hgLinkedGroups', 'Group test for linked designs', True, '',
+                                               bool(_settings().get('linkedGroupTest', False)))
+            lg.tooltip = 'Full analysis: also run the Whole groups test on every linked design'
+            lg.tooltipDescription = ('Takes about as long again as their item test. Off: their items are still tested '
+                                     'exactly; what suppressing one of their timeline groups does is added up from its '
+                                     'items\' results (shown as estimated). This design\'s groups are always tested.')
             ru = oc.addBoolValueInput('hgReuse', 'Reuse earlier results', True, '', bool(_settings().get('reuse', True)))
             ru.tooltip = 'Take results of saved versions analysed before instead of opening and testing them again'
             ru.tooltipDescription = ('A saved version never changes, so its results stay valid. Applies to linked designs and '
@@ -3612,9 +3631,9 @@ def _unsaved_reason():
 
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
-        if args.input.id == 'hgReuse':
+        if args.input.id in ('hgReuse', 'hgLinkedGroups'):
             st = _settings()
-            st['reuse'] = bool(args.input.value)
+            st['reuse' if args.input.id == 'hgReuse' else 'linkedGroupTest'] = bool(args.input.value)
             _save_settings(st)
             return
         if args.input.id in ('hgSaveChoose', 'hgSaveTemp'):

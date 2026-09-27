@@ -454,7 +454,8 @@ function simCompute(){
     mem.forEach(n=>add(n.id,{g}));
     if(G.fail){refused.push(g);forced(mem.map(n=>n.id),G.fail,{g});return;}
     if(G.dsupp)G.dsupp.forEach(i=>add(i,{g}));
-    else if(canItems)mem.forEach(n=>(n.dsupp||[]).forEach(i=>add(i,{g})));
+    else if(canItems){const ms=new Set(mem.map(n=>n.id));mem.forEach(n=>(n.dsupp||[]).forEach(i=>{if(!why[i]&&!ms.has(i)){add(i,{g});est.add(i);}}));
+      mem.forEach(n=>{(n.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]={g};});(n.dwarn||[]).forEach(i=>{if(!warned[i])warned[i]={g};});});}
     (G.dbreak||[]).forEach(i=>{if(!broken[i])broken[i]={g};});(G.dwarn||[]).forEach(i=>{if(!warned[i])warned[i]={g};});});
   if(canItems)sim.items.forEach(id=>{const n=byId[id];if(!n)return;
     add(id,{i:id});
@@ -766,7 +767,7 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
     if(g.fail.node&&byId[g.fail.node]){const a=document.createElement('span');a.className='name st-err';a.textContent=byId[g.fail.node].name;a.onclick=()=>select(g.fail.node);x.appendChild(a);}else x.append(g.fail.name||'unknown feature');
     d.appendChild(x);if(g.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=g.fail.msg;d.appendChild(m);}
   }else if(g.pseudo){const x=document.createElement('div');x.className='hint';x.textContent=g.id==='_params'?'All user parameters, shown as one box. Expand it (+) to see them one by one.':'Items that are not in any timeline group, shown as one box. Expand it (+) to see them one by one.';d.appendChild(x);
-  }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Full analysis to see what suppressing this group does.');d.appendChild(x);}
+  }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':g.gskip?'The Whole groups test was not run on linked designs (option "Group test for linked designs"). Its items were tested one by one: suppressing it in the preview adds up their results (estimated).':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Full analysis to see what suppressing this group does.');d.appendChild(x);}
   // reference links crossing the group boundary, counted per other group
   const out={},inn={};
   EFF.forEach(e=>{const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});

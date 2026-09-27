@@ -71,7 +71,9 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
 - Each linked design has a connector on its frame: the items a Derive hands over (sketches, bodies,
   parameters) lead into it, and it leads into the Derive feature or the insert item. Linked designs start
   folded into one box; + opens them. Designs without a timeline (e.g. library parts) show only their frame.
-- With *Full analysis*, linked designs get the same suppression tests. Each is read and tested in a
+- With *Full analysis*, linked designs get the item test; the *Whole groups* test too with *Group test for
+  linked designs* (Advanced options, off by default: it takes about as long again; without it a linked
+  group's preview adds up its items' results, marked estimated). Each is read and tested in a
   hidden copy of the version that is used, closed without saving; a linked design you have open in a
   tab is read as it is and not tested.
 - Fusion keeps every test step's model data until a document is closed, so while a linked design is tested
