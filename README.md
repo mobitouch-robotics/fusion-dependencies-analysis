@@ -95,6 +95,10 @@ each test:
 - *Experiment: one recompute per test step*: in the item test, the marker move and the suppression (and the
   three steps of putting an item back) are made with `Design.isComputeDeferred` on, so Fusion computes once
   instead of after each step. The run log shows how long each part of the item test took either way.
+- *Experiment: put back with Undo after slow tests*: after a test that took more than 3 s, the design is put
+  back with Fusion's Undo (one step at a time, until every item has its original state) instead of switching
+  the item back on, which makes Fusion compute the heavy features after it again. Checked; the usual way
+  when Undo does not bring back exactly the original state.
 
 Results of a run with an experiment on are not cached. Keep an experiment only if `tools/compare_pages.py`
 shows the same results as a run without it (both with *Reuse earlier results* unticked).

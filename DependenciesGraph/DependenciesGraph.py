@@ -1469,8 +1469,11 @@ class Collector:
         self._heavy = set()
         stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0, 'blocks': 0,
                  'bound_mismatch': 0, 'computed': 0,
-                 'secs_marker0': 0.0, 'secs_suppress': 0.0, 'secs_walk': 0.0, 'secs_back': 0.0}
+                 'secs_marker0': 0.0, 'secs_suppress': 0.0, 'secs_walk': 0.0, 'secs_back': 0.0,
+                 'undo_tries': 0, 'undo_ok': 0, 'secs_back_undo': 0.0}
         self._defer_on = bool(_settings().get('experimentDeferCompute'))
+        self._undo_put_back = bool(_settings().get('experimentUndoPutBack'))
+        last = {'t0': time.perf_counter()}      # when the latest test started
 
         def marker_to(m):
             self._set_test_marker(m)
@@ -1487,6 +1490,7 @@ class Collector:
             pos = (self._next_marker(S[-1] + 1, Sset, active, known, tl.count, free=free) if self.TIMELINE_WALK
                    else tl.count)
             ts = time.perf_counter()
+            last['t0'] = ts
             deferred = self._defer_begin()
             marker_to(pos)
             fail_msg = None
@@ -1561,7 +1565,17 @@ class Collector:
             again, which Fusion does not recompute. Checked; the usual restore if anything differs. Then, when
             Fusion has grown too much, a hidden copy is reopened (see _memory_refresh)."""
             nonlocal tl
-            ok = put_back_now(S, what)
+            ok = False
+            if self._undo_put_back and time.perf_counter() - last['t0'] >= self.UNDO_PUT_BACK_MIN:
+                t0 = time.perf_counter()
+                stats['undo_tries'] += 1
+                ok = yield from self._undo_back(orig, err0)
+                if ok:
+                    stats['undo_ok'] += 1
+                    stats['secs_back_undo'] += time.perf_counter() - t0
+                    self._undo_n = 0
+            if not ok:
+                ok = put_back_now(S, what)
             if ok and self._memory_refresh(orig, err0):
                 tl = self.tl
             return ok
@@ -1624,6 +1638,8 @@ class Collector:
         useless = [0]
 
         def block_bound(i):
+            if False:
+                yield
             b = self._block_of.get(i)
             if b is None:
                 return None
@@ -1649,7 +1665,7 @@ class Collector:
                             useless[0] = 0
                         else:
                             useless[0] += 1
-                    put_back(b, '%d items' % len(b))
+                    yield from put_back(b, '%d items' % len(b))
             return bound_of[key]
 
         # --- every item on its own
@@ -1657,7 +1673,7 @@ class Collector:
             if cancelled():
                 self.warnings.append('Suppression test was cancelled; results are partial.')
                 break
-            bnd = block_bound(i)
+            bnd = yield from block_bound(i)
             it = tl.item(i)
             progress(it.name, done[0], total)
             done[0] += 1
@@ -1666,10 +1682,10 @@ class Collector:
                 nid = self.tl2node.get(i)
                 if nid:
                     fails[nid] = self._parse_fail(fail_msg)
-                put_back([i], it.name)
+                yield from put_back([i], it.name)
                 continue
             record(i, casc, broke, warned)
-            put_back([i], _safe(lambda: it.name, ''))
+            yield from put_back([i], _safe(lambda: it.name, ''))
         _safe(lambda: tl.moveToEnd())
         self.batched = batch_hits
         vol1 = self.body_signature()
@@ -1681,9 +1697,12 @@ class Collector:
                  '(%d bound mismatches)' %
                  (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch'],
                   getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0), stats['blocks'], stats['bound_mismatch']))
-        _mem_log('item test time: first marker move %.1f s, suppress %.1f s, walk forward %.1f s, put back %.1f s%s; '
+        _mem_log('item test time: first marker move %.1f s, suppress %.1f s, walk forward %.1f s, put back %.1f s%s%s; '
                  'slowest items: %s' % (stats['secs_marker0'], stats['secs_suppress'], stats['secs_walk'],
                                         stats['secs_back'], ' (deferred compute)' if self._defer_on else '',
+                                        (', Undo put back %d of %d tries, %.1f s' % (
+                                            stats['undo_ok'], stats['undo_tries'], stats['secs_back_undo']))
+                                        if self._undo_put_back else '',
                                         self._top_costs()))
         self.test_stats = stats
         self.item_proofs = known
@@ -1874,6 +1893,50 @@ class Collector:
             name, m / 1024 ** 3, '%.1f GB' % (after / 1024 ** 3) if after else '?'))
         self._mr_base = after or m
         return True
+
+    UNDO_PUT_BACK_MIN = 3.0     # seconds a test took before its put-back is tried with Undo
+    UNDO_PUT_BACK_STEPS = 12    # Undo steps tried at most
+
+    def _undo_back(self, orig, err0):
+        """Experiment (setting experimentUndoPutBack): put the design back with Fusion's Undo, one step at a time,
+        until every item has its original suppression state, then the marker to the end. Undo brings back the
+        model Fusion kept from before the change, so heavy features the test suppressed or recomputed need not be
+        computed again. Undo runs only after the add-in hands control back to Fusion, so this is a generator.
+        Returns True when the design is back in its original state; otherwise the caller puts it back the usual
+        way from wherever Undo left it."""
+        app = adsk.core.Application.get()
+        mydoc = _safe(lambda: self.des.parentDocument)
+        if mydoc is not None and not _safe(lambda: app.activeDocument == mydoc, False):
+            _safe(mydoc.activate)
+            adsk.doEvents()
+        if mydoc is None or not _safe(lambda: app.activeDocument == mydoc, False):
+            return False            # Undo works on the active tab only
+        cd = _safe(lambda: app.userInterface.commandDefinitions.itemById('UndoCommand'))
+        if cd is None:
+            return False
+        tl = self.tl
+        idx = sorted(orig)
+
+        def snap():
+            st = self._state(idx)
+            return _safe(lambda: tl.markerPosition), tuple(st[i][0] for i in idx)
+
+        for _ in range(self.UNDO_PUT_BACK_STEPS):
+            before = snap()
+            if not _safe(lambda: cd.execute() or True, False):
+                return False
+            for _w in range(20):
+                yield 'undo'
+                if snap() != before:
+                    break
+            else:
+                return False        # nothing changed: nothing left to undo, or Undo did not run
+            if self._flags_back(orig):
+                break
+        else:
+            return False
+        _safe(lambda: tl.moveToEnd())
+        return self._clean(orig, err0)
 
     def _restore_checked(self, orig, err0, tested=None, what=''):
         r = self._restore_checked_now(orig, err0, tested, what)
@@ -2092,6 +2155,7 @@ class Collector:
             active_g = sorted(i for i in orig if not orig[i])
             gpos = (self._next_marker(max(inside) + 1, set(inside), active_g, getattr(self, 'item_proofs', None) or {},
                                       tl.count) if self.TIMELINE_WALK else tl.count)
+            gt0 = time.perf_counter()
             self._set_test_marker(gpos)
             try:
                 self._set_suppressed([g], True)
@@ -2122,6 +2186,17 @@ class Collector:
                 if warned:
                     byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
+            if (_settings().get('experimentUndoPutBack') and
+                    time.perf_counter() - gt0 >= self.UNDO_PUT_BACK_MIN):
+                t0u = time.perf_counter()
+                if (yield from self._undo_back(orig, err0)):
+                    self.g_undo = getattr(self, 'g_undo', 0) + 1
+                    self.g_undo_secs = getattr(self, 'g_undo_secs', 0.0) + time.perf_counter() - t0u
+                    self._memory_refresh(orig, err0)
+                    if self.tl is not tl:
+                        tl = self.tl
+                        tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
+                    continue
             # put back with the marker right after the group's first item: the design is the original one again
             # and Fusion reuses its result instead of recomputing everything after the group
             first = min(inside) if inside else None
@@ -2135,8 +2210,8 @@ class Collector:
                 tl = self.tl
                 tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
         self.gtested = True
-        if False:
-            yield           # a generator like the other steps of the run
+        if getattr(self, 'g_undo', 0):
+            _mem_log('group test: Undo put back %d groups, %.1f s' % (self.g_undo, getattr(self, 'g_undo_secs', 0.0)))
         vol1 = self.body_signature()
         if vol0 != vol1:
             self.warnings.append('Warning: after the group suppression test the bodies differ from before '
@@ -2537,7 +2612,7 @@ def _cache_save(kind, file_id, ver, d):
     if not file_id or ver is None:
         return
     st = _settings()
-    if any(st.get(k) for k, *_ in EXPERIMENTS) or st.get('experimentDeferCompute'):
+    if any(st.get(k) for k, *_ in EXPERIMENTS) or st.get('experimentDeferCompute') or st.get('experimentUndoPutBack'):
         return          # an experiment is on: its results are not trusted until compared, so never reused
     old = _cache_load(kind, file_id, ver)
     if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'pics')):
@@ -3630,7 +3705,15 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
                      'Each test moves the timeline marker and then suppresses the item, and puts it back in three '
                      'steps; each step can make Fusion recompute. With compute deferred Fusion computes once per step '
                      'group. The run log shows the time of each part either way. Experimental: results of such a run '
-                     'are not reused later; compare them with a normal run (tools/compare_pages.py).')):
+                     'are not reused later; compare them with a normal run (tools/compare_pages.py).'),
+                    ('experimentUndoPutBack', 'hgExpUndo', 'Experiment: put back with Undo after slow tests',
+                     'After a test that took more than a few seconds, put the design back with Fusion\'s Undo',
+                     'Switching a feature back on makes Fusion compute again everything after it that the test '
+                     'changed, including heavy features at the end. Undo brings back the model Fusion kept from '
+                     'before the test instead. Checked item by item; when Undo does not bring back exactly the '
+                     'original state, the usual way is used. The run log shows how often it worked and how long it '
+                     'took. Experimental: results of such a run are not reused later; compare them with a normal run '
+                     '(tools/compare_pages.py).')):
                 x = ag.children.addBoolValueInput(iid, label, True, '', bool(_settings().get(key, False)))
                 x.tooltip = tip
                 x.tooltipDescription = desc
@@ -3777,7 +3860,7 @@ class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
         keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest',
                 'hgExpCrash': 'experimentNoCrashRecovery', 'hgExpBody': 'experimentNoBodyCache',
-                'hgExpDefer': 'experimentDeferCompute'}
+                'hgExpDefer': 'experimentDeferCompute', 'hgExpUndo': 'experimentUndoPutBack'}
         if args.input.id in keys:
             st = _settings()
             st[keys[args.input.id]] = bool(args.input.value)
