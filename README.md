@@ -83,6 +83,17 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
   a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.
 - Cancel stops the whole run; no page is generated.
 
+### Experiments
+
+Two of Fusion's hidden settings can be switched off while the suppression tests run, to see whether that saves
+time or memory. Set them in `DependenciesGraph/settings.json`; they are switched back on after each test:
+
+- `"experimentNoCrashRecovery": true`: Fusion's periodic crash-recovery autosave (`Options.CrashRecovery`)
+- `"experimentNoBodyCache": true`: background mass-property calculation (`DebugCommands.BodyCacheUpdateMgr`)
+
+Results of a run with an experiment on are not cached. Keep an experiment only if `tools/compare_pages.py`
+shows the same results as a run without it (both with *Reuse earlier results* unticked).
+
 ## Install
 
 1. Copy the `DependenciesGraph` folder into Fusion's add-ins folder:

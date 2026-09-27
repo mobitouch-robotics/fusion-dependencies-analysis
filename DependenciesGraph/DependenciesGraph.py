@@ -1321,6 +1321,7 @@ class Collector:
     def suppression_test(self, progress, cancelled):
         self._hide_display()
         self._mr_base = _process_memory()
+        exp = _experiments_begin()
         self.t_compute = self.t_state = 0.0
         self.n_compute = 0
         self.n_state_items = 0
@@ -1330,6 +1331,7 @@ class Collector:
             self._undo_n = 0
             return (yield from self._suppression_test(progress, cancelled))
         finally:
+            _experiments_end(exp)
             self._show_display()
             _mem_log('item test times: total %.1f s, %d suppress/restore calls %.1f s, reading states %.1f s, '
                      'state items %d (skipped %d), combined steps %d, undo restores %d (failed %d)' %
@@ -1340,10 +1342,12 @@ class Collector:
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
         self._mr_base = _process_memory()
+        exp = _experiments_begin()
         try:
             self._undo_n = 0
             return (yield from self._group_suppression_test(progress, cancelled))
         finally:
+            _experiments_end(exp)
             self._show_display()
 
     # ------------------------------------------- proven-tail timeline frontier ---
@@ -2413,9 +2417,73 @@ def _tx_on(force=False):
     _mem_log('undo recording switched back on (%s)' % ((_tx_command() or '?').strip()[:80]))
 
 
+# Experiments (settings.json, off by default): Fusion background work switched off while the suppression tests
+# run, and back on right after. Both are hidden Fusion text commands; keep one only if tools/compare_pages.py
+# shows the same results with and without it (switching Options.Transactions off made every test find nothing).
+EXPERIMENTS = (
+    # setting key,              text command,                        off,     on
+    ('experimentNoCrashRecovery', 'Options.CrashRecovery',           '/off',  '/on'),   # periodic crash-recovery autosave
+    ('experimentNoBodyCache',     'DebugCommands.BodyCacheUpdateMgr', '/Off',  '/On'),   # background mass properties
+)
+_EXP_FLAG = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'experiments_on.json')
+
+
+def _text_command(cmd):
+    try:
+        return adsk.core.Application.get().executeTextCommand(cmd) or ''
+    except Exception as ex:
+        _mem_log('%s failed: %s' % (cmd, ex))
+        return None
+
+
+def _experiments_begin():
+    """Switches off what the experiment settings ask for; returns what to switch back on (see _experiments_end).
+    Something Fusion already reports as off is left alone."""
+    st = _settings()
+    undo = []
+    for key, cmd, off, on in EXPERIMENTS:
+        if not st.get(key):
+            continue
+        before = _text_command(cmd)
+        if before is None:
+            continue
+        if re.search(r'\boff\b', before, re.I) and not re.search(r'\bon\b', before, re.I):
+            _mem_log('%s already off (%s): left as it is' % (cmd, before.strip()[:80]))
+            continue
+        if _text_command('%s %s' % (cmd, off)) is None:
+            continue
+        undo.append('%s %s' % (cmd, on))
+        _mem_log('experiment: %s %s (was: %s)' % (cmd, off, before.strip()[:80] or '?'))
+    if undo:
+        # written down, so an interrupted run (Fusion or the add-in stopped mid-test) is undone at the next start
+        try:
+            with open(_EXP_FLAG, 'w', encoding='utf-8') as f:
+                json.dump(undo, f)
+        except Exception:
+            pass
+    return undo
+
+
+def _experiments_end(undo=None):
+    """Switches back on what _experiments_begin switched off; undo=None: what an interrupted run left behind."""
+    if undo is None:
+        try:
+            with open(_EXP_FLAG, 'r', encoding='utf-8') as f:
+                undo = json.load(f)
+        except Exception:
+            return
+    for c in undo or []:
+        _text_command(c)
+        _mem_log('experiment ended: %s' % c)
+    _safe(lambda: os.remove(_EXP_FLAG))
+
+
 def _cache_save(kind, file_id, ver, d):
     if not file_id or ver is None:
         return
+    st = _settings()
+    if any(st.get(k) for k, *_ in EXPERIMENTS):
+        return          # an experiment is on: its results are not trusted until compared, so never reused
     old = _cache_load(kind, file_id, ver)
     if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'pics')):
         return          # never replace a more complete result (e.g. a Full analysis) with a lesser one
@@ -3874,6 +3942,7 @@ def run(context):
     _ui = _app.userInterface
     # a run stopped mid-test (Fusion or the add-in stopped) left the undo recording off: switch it back on
     _safe(lambda: _tx_on(force=True))
+    _safe(lambda: _experiments_end())
     try:
         _build_ui()
     except Exception:
@@ -3895,6 +3964,7 @@ def stop(context):
             _safe(_STEPPER.gen.close)
             _STEPPER.gen = None
         _safe(lambda: _tx_on(force=True))
+        _safe(lambda: _experiments_end())
         _safe(lambda: _ui.palettes.itemById(PANEL_ID).deleteMe())
         _handlers.clear()
     except Exception:
