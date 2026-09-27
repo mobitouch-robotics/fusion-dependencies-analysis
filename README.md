@@ -138,3 +138,6 @@ DependenciesGraph/
   DependenciesGraph.manifest
   resources/DependenciesGraph/ toolbar icons
 ```
+
+How it works inside (scan, suppression tests and their optimisations, linked designs, cache, memory, the page):
+see [dev-documentation.md](dev-documentation.md).
