@@ -1334,6 +1334,8 @@ class Collector:
     # forward until the rest is proven (or the end), put back through the marker. False: the plain way - suppress
     # and put back with the marker at the end of the timeline (slower, same results).
     TIMELINE_WALK = True
+    UPPER_BOUNDS = True     # test blocks of neighbouring items first; their result bounds each item's walk
+    BLOCK_SIZE = 4          # items per block
     MARKER_PAUSE = 0.02     # seconds Fusion gets to redraw after every marker move during the tests
     UI_PAUSE = 0.03         # seconds Fusion gets for clicks and redraws after every suppress / switch back on
 
@@ -1442,26 +1444,32 @@ class Collector:
         total = len(items)
         done = [0]
         known = {}              # tested item -> every active item suppressed together with it (complete, proven)
-        stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0}
+        self._heavy = set()
+        stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0, 'blocks': 0,
+                 'bound_mismatch': 0, 'computed': 0}
 
         def marker_to(m):
             self._set_test_marker(m)
 
-        def probe(S):
+        def probe(S, bound=None):
             """Suppress the items S, move forward until the rest is proven or the end is reached.
-            Returns (suppressed ok, fail message, casc, broke, warned)."""
+            `bound`: the items that can react at all (from a test of a block containing S); the others are proven
+            unaffected and never need computing. Returns (suppressed ok, fail message, casc, broke, warned)."""
             S = sorted(S)
             Sset = set(S)
+            free = (lambda j: False) if bound is None else (lambda j: j not in bound)
             # the marker goes straight to the first place the walk could stop (worked out from the known tails),
             # not right after the item: Fusion then computes up to there in one go
-            pos = (self._next_marker(S[-1] + 1, Sset, active, known, tl.count) if self.TIMELINE_WALK
+            pos = (self._next_marker(S[-1] + 1, Sset, active, known, tl.count, free=free) if self.TIMELINE_WALK
                    else tl.count)
             marker_to(pos)
             fail_msg = None
+            t0 = time.perf_counter()
             try:
                 self._set_suppressed([tl.item(i) for i in S], True)
             except Exception as ex:
                 fail_msg = str(ex)
+            self._note_cost(S[-1] + 1, pos, time.perf_counter() - t0)
             st = self._state(S)
             if not all(st[i][0] for i in S):
                 return False, fail_msg, [], [], []
@@ -1475,13 +1483,19 @@ class Collector:
             # an item no finished test ever took down can never be proven off, so the walk cannot stop before it:
             # go straight past the last such item in one move instead of stepping to it
             if self.TIMELINE_WALK:
-                pos = self._jump_past_unprovable(pos, Sset, active, known)
+                pos = self._jump_past_unprovable(pos, Sset, active, known, free)
             while True:
                 seg = [j for j in active if start <= j < pos and j not in Sset]
                 if seg:
                     sts = self._state(seg)
                     for j in seg:
                         sup, h = sts[j]
+                        if bound is not None and free(j) and (sup or (h == ERR and j not in err0) or
+                                                              (h == WARN and j not in warn0)):
+                            # an item the block test proved unaffected reacts: do not rely on the bound
+                            bound = None
+                            free = lambda j: False
+                            stats['bound_mismatch'] += 1
                         if sup:
                             casc.append(j)
                             if j in known:
@@ -1497,14 +1511,17 @@ class Collector:
                 rest = [j for j in active if j >= pos and j not in Sset]
                 if not rest:
                     break
-                if use_proof and all(j in covered for j in rest):
-                    casc.extend(rest)
+                if (use_proof or bound is not None) and all((use_proof and j in covered) or free(j) for j in rest):
+                    casc.extend(j for j in rest if use_proof and j in covered)
                     stats['stopped_early'] += 1
                     stats['items_not_computed'] += len(rest)
                     break
                 start = pos
-                pos = self._next_marker(pos, Sset, active, known, n, covered, use_proof)
+                pos = self._next_marker(pos, Sset, active, known, n, covered, use_proof, free)
+                t0 = time.perf_counter()
                 marker_to(pos)
+                self._note_cost(start, pos, time.perf_counter() - t0)
+            stats['computed'] += self._work(S[0], min(pos, n))
             return True, fail_msg, casc, broke, warned
 
         def put_back(S, what):
@@ -1538,15 +1555,69 @@ class Collector:
         # from the back: later items are tested first, so their results are there for the earlier ones
         rest = sorted(items, reverse=True)
 
+        # --- blocks: a run of neighbouring items suppressed together first. Whatever one item makes react is
+        # always within what its whole block makes react (suppressing less cannot take more down), so the items
+        # outside the block's reaction are proven unaffected for every item of the block and are never computed
+        # in their tests - a heavy feature the block does not reach is computed once, not once per item.
+        bound_of = {}
+        if self.UPPER_BOUNDS and self.TIMELINE_WALK and len(rest) > 2:
+            blocks, cur = [], []
+            for i in rest:              # rest is back to front
+                cur.append(i)
+                if len(cur) >= self.BLOCK_SIZE:
+                    blocks.append(cur)
+                    cur = []
+            if len(cur) > 1:
+                blocks.append(cur)
+            block_of = {}
+            for b in blocks:
+                for i in b:
+                    block_of[i] = b
+            self._block_of = block_of
+        else:
+            self._block_of = {}
+
+        useless = [0]
+
+        def block_bound(i):
+            b = self._block_of.get(i)
+            if b is None:
+                return None
+            key = b[0]
+            # only worth a test of its own when something slow to compute comes after the block that, going by
+            # the references read, the block does not lead to (the test itself decides; this only picks blocks)
+            if key not in bound_of and useless[0] >= 3:
+                return None
+            if key not in bound_of:
+                reach = self._static_reach(b)
+                if not any(h > max(b) and h not in reach for h in self._heavy):
+                    return None
+            if key not in bound_of:
+                bound_of[key] = None
+                if not cancelled():
+                    progress('%d items at once' % len(b), done[0], total)
+                    ok, _m, bc, bb, bw = probe(b)
+                    if ok:
+                        stats['blocks'] += 1
+                        bound_of[key] = set(b) | set(bc) | set(bb) | set(bw)
+                        # useful only if it keeps some slow item out; after a few that do not, stop trying
+                        if any(h > max(b) and h not in bound_of[key] for h in self._heavy):
+                            useless[0] = 0
+                        else:
+                            useless[0] += 1
+                    put_back(b, '%d items' % len(b))
+            return bound_of[key]
+
         # --- every item on its own
         for i in rest:
             if cancelled():
                 self.warnings.append('Suppression test was cancelled; results are partial.')
                 break
+            bnd = block_bound(i)
             it = tl.item(i)
             progress(it.name, done[0], total)
             done[0] += 1
-            ok, fail_msg, casc, broke, warned = probe([i])
+            ok, fail_msg, casc, broke, warned = probe([i], bnd)
             if not ok:
                 nid = self.tl2node.get(i)
                 if nid:
@@ -1562,9 +1633,10 @@ class Collector:
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
         _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
-                 '%d direct jumps past unprovable items, %d stops chosen from known tails' %
+                 '%d direct jumps past unprovable items, %d stops chosen from known tails, %d blocks tested '
+                 '(%d bound mismatches)' %
                  (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch'],
-                  getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0)))
+                  getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0), stats['blocks'], stats['bound_mismatch']))
         self.test_stats = stats
         self.item_proofs = known
         if False:
@@ -1718,14 +1790,57 @@ class Collector:
         return False
 
 
-    def _jump_past_unprovable(self, pos, S, active, known):
+    def _static_reach(self, idxs):
+        """Timeline items the reference scan links (directly or through others) from the given items."""
+        if getattr(self, '_kids_idx', None) is None:
+            n2i = {v: k for k, v in self.tl2node.items()}
+            kids = {}
+            for (x, y), k in self.edges.items():
+                if k - {'order'} and x in n2i and y in n2i:
+                    kids.setdefault(n2i[x], set()).add(n2i[y])
+            self._kids_idx = kids
+        seen, stack = set(), list(idxs)
+        while stack:
+            x = stack.pop()
+            for y in self._kids_idx.get(x, ()):
+                if y not in seen:
+                    seen.add(y)
+                    stack.append(y)
+        return seen
+
+    HEAVY_SECONDS = 2.0     # a stretch of the timeline that takes this long to compute counts as heavy
+
+    def _note_cost(self, a, b, seconds):
+        """Remember the items of a stretch [a, b) Fusion took long to compute (a block test is only done in
+        front of such items)."""
+        seconds = self._measure(a, b, seconds)
+        items = [j for j in range(a, b) if j in self.tl2node]
+        if not items:
+            return
+        # the stretch's time is split over its items; an item's estimate is the smallest seen (a stretch that
+        # holds one slow item makes all of them look slow once, a later shorter stretch corrects it)
+        est = self.__dict__.setdefault('_cost_est', {})
+        per = seconds / len(items)
+        for j in items:
+            est[j] = min(est.get(j, per), per) if len(items) > 1 else per
+        self._heavy = set(j for j, v in est.items() if v >= self.HEAVY_SECONDS)
+
+    def _measure(self, a, b, seconds):
+        return seconds
+
+    def _work(self, a, b):
+        """Diagnostic: how much was computed between two timeline positions (items after a, before b)."""
+        return max(0, b - a - 1)
+
+    def _jump_past_unprovable(self, pos, S, active, known, free=None):
         """The walk forward can only stop where every remaining item is covered by some finished test. An item
         that is in no test's results can never be covered, so stepping before it is wasted: the marker goes
         straight past the last such item (to the end when it is the last item). Returns the new marker."""
         union = set()
         for v in known.values():
             union |= v
-        blockers = [j for j in active if j >= pos and j not in S and j not in union]
+        free = free or (lambda j: False)
+        blockers = [j for j in active if j >= pos and j not in S and j not in union and not free(j)]
         if not blockers:
             return pos
         target = max(blockers) + 1
@@ -1735,18 +1850,19 @@ class Collector:
             return target
         return pos
 
-    def _next_marker(self, pos, S, active, known, n, covered=frozenset(), use_proof=True):
+    def _next_marker(self, pos, S, active, known, n, covered=frozenset(), use_proof=True, free=None):
         """Where the marker goes next in the walk: the next position where stopping is still possible, using
         every finished test (all known tails). Stopping right after position p needs every active item from p on
         to be proven off - by the items already found off (`covered`) or by items before p whose finished tests
         take it down (they may still turn out off when computed). Positions where that cannot hold even in the
         best case are skipped, so the marker moves from one possible stop to the next and computes nothing a
         finer step would have avoided. Without any possible stop it goes straight to the end."""
-        if not use_proof:
-            return n
-        rest = [j for j in active if j >= pos and j not in S]
+        free = free or (lambda j: False)
+        rest = [j for j in active if j >= pos and j not in S and not free(j)]
         if not rest:
-            return n
+            return pos if pos >= n else min(n, pos)
+        if not use_proof:
+            return min(n, rest[-1] + 1)
         u = set(covered)
         for k, c in enumerate(rest):
             if c in known:
@@ -1756,7 +1872,7 @@ class Collector:
                 if pos < p < n:
                     self.n_cert_jumps = getattr(self, 'n_cert_jumps', 0) + 1
                 return p
-        return n
+        return min(n, rest[-1] + 1)
 
     def _walk_forward(self, orig, S, err0, warn0, start, pos):
         """With the items S suppressed and the marker at `pos`, read what Fusion computed and move the marker
