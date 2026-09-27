@@ -63,9 +63,6 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
   breaks when a group or item is switched off. The page can preview suppressing things without
   touching the design, including groups and items Fusion refuses to suppress (estimated).
 - Features that fail to compute or have warnings are marked, with counts in the header.
-- While the tests run, Fusion's undo recording is switched off (text command `Options.Transactions`) and
-  switched back on right after: every test step would otherwise keep its model data in memory until the
-  design is closed. Set `"transactionsOff": false` in `DependenciesGraph/settings.json` to keep it on.
 
 ### Linked designs
 - Option *Include linked designs* (off by default): every design brought in with Derive or inserted as a

@@ -1320,7 +1320,6 @@ class Collector:
 
     def suppression_test(self, progress, cancelled):
         self._hide_display()
-        tx = _tx_off()
         self.t_compute = self.t_state = 0.0
         self.n_compute = 0
         self.n_state_items = 0
@@ -1330,8 +1329,6 @@ class Collector:
             self._undo_n = 0
             return (yield from self._suppression_test(progress, cancelled))
         finally:
-            if tx:
-                _tx_on()
             self._show_display()
             _mem_log('item test times: total %.1f s, %d suppress/restore calls %.1f s, reading states %.1f s, '
                      'state items %d (skipped %d), combined steps %d, undo restores %d (failed %d)' %
@@ -1341,13 +1338,10 @@ class Collector:
 
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
-        tx = _tx_off()
         try:
             self._undo_n = 0
             return (yield from self._group_suppression_test(progress, cancelled))
         finally:
-            if tx:
-                _tx_on()
             self._show_display()
 
     # ------------------------------------------- proven-tail timeline frontier ---
@@ -2270,7 +2264,7 @@ def _mem_tick(what, every=30.0):
 # ------------------------------------------------------------ result cache ---
 # A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
 # (or another assembly using the same part) takes it from here instead of opening and testing the design again.
-CACHE_VERSION = 3
+CACHE_VERSION = 4      # 4: drops results tested with Fusion's transactions off (they found nothing)
 
 
 def _cache_dir():
@@ -2338,34 +2332,10 @@ def _tx_command(arg=''):
         return None
 
 
-def _tx_off():
-    """While the suppression tests run, Fusion records every suppress, switch back on and marker move as an undo
-    step and keeps the model data of each one as long as the document is open (measured: ~110 MB per recompute
-    of a heavy part, 22 GB over one linked design's test). The tests put the design back themselves and never
-    use Undo, so the recording is switched off for them. Returns True when it was switched off here (and must be
-    switched back on with _tx_on)."""
-    if not _settings().get('transactionsOff', True):
-        return False
-    before = _tx_command()
-    if before is None:
-        return False
-    if re.search(r'\boff\b', before, re.I) and not re.search(r'\bon\b', before, re.I):
-        return False            # already off (by someone else): left as it is
-    if _tx_command('/off') is None:
-        return False
-    try:
-        os.makedirs(os.path.dirname(_TX_FLAG), exist_ok=True)
-        open(_TX_FLAG, 'w').close()
-    except Exception:
-        pass
-    _mem_log('undo recording switched off for the test (was: %s; now: %s)' % (
-        before.strip()[:80] or '?', (_tx_command() or '?').strip()[:80]))
-    return True
-
-
 def _tx_on(force=False):
-    """Switches the undo recording back on after _tx_off; force: also when a run stopped before it could (the
-    flag file is still there, e.g. after Fusion or the add-in was stopped mid-test)."""
+    """Switches Fusion's transaction system back on. An earlier version of the add-in switched it off during the
+    tests (to stop the undo history growing) - with it off, suppressing an item takes nothing down with it, so
+    every test found nothing. force: only when that version left the flag file behind (stopped mid-test)."""
     if force and not os.path.exists(_TX_FLAG):
         return
     _tx_command('/on')
