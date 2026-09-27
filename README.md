@@ -92,6 +92,9 @@ each test:
 - *Experiment: no autosave during tests*: Fusion's periodic crash-recovery autosave (`Options.CrashRecovery`)
 - *Experiment: no background mass properties*: background mass-property calculation
   (`DebugCommands.BodyCacheUpdateMgr`)
+- *Experiment: one recompute per test step*: in the item test, the marker move and the suppression (and the
+  three steps of putting an item back) are made with `Design.isComputeDeferred` on, so Fusion computes once
+  instead of after each step. The run log shows how long each part of the item test took either way.
 
 Results of a run with an experiment on are not cached. Keep an experiment only if `tools/compare_pages.py`
 shows the same results as a run without it (both with *Reuse earlier results* unticked).

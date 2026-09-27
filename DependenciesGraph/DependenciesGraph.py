@@ -1468,7 +1468,9 @@ class Collector:
         known = {}              # tested item -> every active item suppressed together with it (complete, proven)
         self._heavy = set()
         stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0, 'blocks': 0,
-                 'bound_mismatch': 0, 'computed': 0}
+                 'bound_mismatch': 0, 'computed': 0,
+                 'secs_marker0': 0.0, 'secs_suppress': 0.0, 'secs_walk': 0.0, 'secs_back': 0.0}
+        self._defer_on = bool(_settings().get('experimentDeferCompute'))
 
         def marker_to(m):
             self._set_test_marker(m)
@@ -1484,14 +1486,20 @@ class Collector:
             # not right after the item: Fusion then computes up to there in one go
             pos = (self._next_marker(S[-1] + 1, Sset, active, known, tl.count, free=free) if self.TIMELINE_WALK
                    else tl.count)
+            ts = time.perf_counter()
+            deferred = self._defer_begin()
             marker_to(pos)
             fail_msg = None
             t0 = time.perf_counter()
+            stats['secs_marker0'] += t0 - ts
             try:
                 self._set_suppressed([tl.item(i) for i in S], True)
             except Exception as ex:
                 fail_msg = str(ex)
-            self._note_cost(S[-1] + 1, pos, time.perf_counter() - t0)
+            fail_msg = self._defer_end(deferred) or fail_msg
+            t1 = time.perf_counter()
+            stats['secs_suppress'] += t1 - t0
+            self._note_cost(S[-1] + 1, pos, t1 - (ts if deferred else t0))
             st = self._state(S)
             if not all(st[i][0] for i in S):
                 return False, fail_msg, [], [], []
@@ -1542,7 +1550,9 @@ class Collector:
                 pos = self._next_marker(pos, Sset, active, known, n, covered, use_proof, free)
                 t0 = time.perf_counter()
                 marker_to(pos)
-                self._note_cost(start, pos, time.perf_counter() - t0)
+                t1 = time.perf_counter()
+                stats['secs_walk'] += t1 - t0
+                self._note_cost(start, pos, t1 - t0)
             stats['computed'] += self._work(S[0], min(pos, n))
             return True, fail_msg, casc, broke, warned
 
@@ -1558,6 +1568,8 @@ class Collector:
 
         def put_back_now(S, what):
             S = sorted(S)
+            ts = time.perf_counter()
+            deferred = self._defer_begin()
             # a test that ran to the end: switched back on right there (Fusion recognises the original design
             # and reuses its result, measured). One that stopped early: through the marker right after S.
             at_end = (_safe(lambda: tl.markerPosition, -1) or 0) >= tl.count
@@ -1568,6 +1580,8 @@ class Collector:
             except Exception:
                 pass
             _safe(lambda: tl.moveToEnd())
+            self._defer_end(deferred)
+            stats['secs_back'] += time.perf_counter() - ts
             if self._clean(orig, err0):
                 self._undo_n = 0
                 return True
@@ -1667,6 +1681,10 @@ class Collector:
                  '(%d bound mismatches)' %
                  (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch'],
                   getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0), stats['blocks'], stats['bound_mismatch']))
+        _mem_log('item test time: first marker move %.1f s, suppress %.1f s, walk forward %.1f s, put back %.1f s%s; '
+                 'slowest items: %s' % (stats['secs_marker0'], stats['secs_suppress'], stats['secs_walk'],
+                                        stats['secs_back'], ' (deferred compute)' if self._defer_on else '',
+                                        self._top_costs()))
         self.test_stats = stats
         self.item_proofs = known
         if False:
@@ -1902,6 +1920,31 @@ class Collector:
         return seen
 
     HEAVY_SECONDS = 2.0     # a stretch of the timeline that takes this long to compute counts as heavy
+
+    def _defer_begin(self):
+        """Experiment (setting experimentDeferCompute): the steps of one test move (marker, then suppress; or marker
+        back, switch on, marker to the end) are made with Design.isComputeDeferred on, so Fusion computes once
+        when it is switched off again instead of after every step. Returns True when deferred."""
+        if not getattr(self, '_defer_on', False):
+            return False
+        return _safe(lambda: setattr(self.des, 'isComputeDeferred', True) or True, False)
+
+    def _defer_end(self, deferred):
+        """Computes what was deferred; returns the error Fusion reports (a later feature failing), or None."""
+        if not deferred:
+            return None
+        try:
+            self.des.isComputeDeferred = False
+        except Exception as ex:
+            _safe(lambda: setattr(self.des, 'isComputeDeferred', False))
+            return str(ex)
+        return None
+
+    def _top_costs(self, k=5):
+        """The slowest items to compute seen in the tests, for the run log."""
+        est = getattr(self, '_cost_est', None) or {}
+        top = sorted(est.items(), key=lambda x: -x[1])[:k]
+        return ', '.join('%s %.1f s' % (_safe(lambda: self.tl.item(j).name, '#%d' % j), v) for j, v in top) or 'none'
 
     def _note_cost(self, a, b, seconds):
         """Remember the items of a stretch [a, b) Fusion took long to compute (a block test is only done in
@@ -2494,7 +2537,7 @@ def _cache_save(kind, file_id, ver, d):
     if not file_id or ver is None:
         return
     st = _settings()
-    if any(st.get(k) for k, *_ in EXPERIMENTS):
+    if any(st.get(k) for k, *_ in EXPERIMENTS) or st.get('experimentDeferCompute'):
         return          # an experiment is on: its results are not trusted until compared, so never reused
     old = _cache_load(kind, file_id, ver)
     if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'pics')):
@@ -3581,7 +3624,13 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
                      'Switch off Fusion\'s background mass-property calculation while the suppression tests run',
                      'After every recompute Fusion works out mass properties of changed bodies in the background. '
                      'Switched back on right after each test. Experimental: results of such a run are not reused '
-                     'later; compare them with a normal run (tools/compare_pages.py) before relying on it.')):
+                     'later; compare them with a normal run (tools/compare_pages.py) before relying on it.'),
+                    ('experimentDeferCompute', 'hgExpDefer', 'Experiment: one recompute per test step',
+                     'Item test: move the marker and suppress (or put back) with Fusion\'s compute deferred',
+                     'Each test moves the timeline marker and then suppresses the item, and puts it back in three '
+                     'steps; each step can make Fusion recompute. With compute deferred Fusion computes once per step '
+                     'group. The run log shows the time of each part either way. Experimental: results of such a run '
+                     'are not reused later; compare them with a normal run (tools/compare_pages.py).')):
                 x = ag.children.addBoolValueInput(iid, label, True, '', bool(_settings().get(key, False)))
                 x.tooltip = tip
                 x.tooltipDescription = desc
@@ -3727,7 +3776,8 @@ def _unsaved_reason():
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
         keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest',
-                'hgExpCrash': 'experimentNoCrashRecovery', 'hgExpBody': 'experimentNoBodyCache'}
+                'hgExpCrash': 'experimentNoCrashRecovery', 'hgExpBody': 'experimentNoBodyCache',
+                'hgExpDefer': 'experimentDeferCompute'}
         if args.input.id in keys:
             st = _settings()
             st[keys[args.input.id]] = bool(args.input.value)
