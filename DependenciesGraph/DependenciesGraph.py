@@ -853,20 +853,30 @@ class Collector:
             return None
         return (round(a, 5), round(c.x, 4), round(c.y, 4), round(c.z, 4))
 
-    def _all_sigs(self):
-        out = set()
-        for c in self.des.allComponents:
-            for b in c.bRepBodies:
-                for f in b.faces:
-                    out.add(self._face_sig(f))
-        return out
+    @staticmethod
+    def _body_key(b):
+        return (_safe(lambda: b.parentComponent.name, ''), _safe(lambda: b.name, ''))
+
+    def _remember_bodies(self, e):
+        """After an item: the face signatures of the bodies it made or changed, for the next items. Only those
+        bodies are read (reading every face of every body after every item took over a minute on an assembly)."""
+        if e is None or not _has(e, 'faces'):
+            return
+        bs = self.__dict__.setdefault('_body_sigs', {})
+        for b in (_safe(lambda: list(e.bodies)) or []):
+            bs[self._body_key(b)] = set(self._face_sig(f) for f in (_safe(lambda: list(b.faces)) or []))
 
     def _new_faces(self, e):
         """Faces of the feature that did not exist before it. Fusion hands faces that a later feature
         only touched (for example a second cut through the same slot) over to that feature, so
-        e.faces alone can show geometry an earlier feature made."""
+        e.faces alone can show geometry an earlier feature made. Compared with the faces its bodies had the
+        last time an item changed them."""
         faces = _safe(lambda: list(e.faces)) or []
-        new = [f for f in faces if self._face_sig(f) not in self._prev_sigs]
+        bs = self.__dict__.get('_body_sigs', {})
+        prev = set()
+        for b in (_safe(lambda: list(e.bodies)) or []):
+            prev |= bs.get(self._body_key(b), set())
+        new = [f for f in faces if self._face_sig(f) not in prev]
         return new or faces
 
     def capture(self, it, nid):
@@ -877,7 +887,7 @@ class Collector:
             if nid is not None:
                 self._capture(it, nid)
         finally:
-            self._prev_sigs = _safe(self._all_sigs, set())
+            _safe(lambda: self._remember_bodies(_safe(lambda: it.entity)))
 
     def _capture(self, it, nid):
         app = adsk.core.Application.get()
