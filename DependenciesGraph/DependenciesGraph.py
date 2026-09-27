@@ -3570,6 +3570,21 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             lg.tooltipDescription = ('Takes about as long again as their item test. Off: their items are still tested '
                                      'exactly; what suppressing one of their timeline groups does is added up from its '
                                      'items\' results (shown as estimated). This design\'s groups are always tested.')
+            # experiments: Fusion background work off during the tests (see EXPERIMENTS)
+            for key, iid, label, tip, desc in (
+                    ('experimentNoCrashRecovery', 'hgExpCrash', 'Experiment: no autosave during tests',
+                     'Switch off Fusion\'s crash-recovery autosave while the suppression tests run',
+                     'Fusion saves open designs for crash recovery every few minutes; that can take a while on a large '
+                     'assembly. Switched back on right after each test. Experimental: results of such a run are not '
+                     'reused later; compare them with a normal run (tools/compare_pages.py) before relying on it.'),
+                    ('experimentNoBodyCache', 'hgExpBody', 'Experiment: no background mass properties',
+                     'Switch off Fusion\'s background mass-property calculation while the suppression tests run',
+                     'After every recompute Fusion works out mass properties of changed bodies in the background. '
+                     'Switched back on right after each test. Experimental: results of such a run are not reused '
+                     'later; compare them with a normal run (tools/compare_pages.py) before relying on it.')):
+                x = ag.children.addBoolValueInput(iid, label, True, '', bool(_settings().get(key, False)))
+                x.tooltip = tip
+                x.tooltipDescription = desc
             ru = oc.addBoolValueInput('hgReuse', 'Reuse earlier results', True, '', bool(_settings().get('reuse', True)))
             ru.tooltip = 'Take results of saved versions analysed before instead of opening and testing them again'
             ru.tooltipDescription = ('A saved version never changes, so its results stay valid. Applies to linked designs and '
@@ -3711,9 +3726,11 @@ def _unsaved_reason():
 
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
-        if args.input.id in ('hgReuse', 'hgLinkedGroups'):
+        keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest',
+                'hgExpCrash': 'experimentNoCrashRecovery', 'hgExpBody': 'experimentNoBodyCache'}
+        if args.input.id in keys:
             st = _settings()
-            st['reuse' if args.input.id == 'hgReuse' else 'linkedGroupTest'] = bool(args.input.value)
+            st[keys[args.input.id]] = bool(args.input.value)
             _save_settings(st)
             return
         if args.input.id in ('hgSaveChoose', 'hgSaveTemp'):
