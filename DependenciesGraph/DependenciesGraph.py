@@ -1455,7 +1455,7 @@ class Collector:
                     stats['items_not_computed'] += len(rest)
                     break
                 start = pos
-                pos = min(n, pos + self.STEP_ITEMS)
+                pos = self._next_marker(pos, Sset, active, known, n)
                 marker_to(pos)
             return True, fail_msg, casc, broke, warned
 
@@ -1510,9 +1510,9 @@ class Collector:
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
         _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
-                 '%d direct jumps past unprovable items' %
+                 '%d direct jumps past unprovable items, %d jumps to a tail certificate' %
                  (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch'],
-                  getattr(self, 'n_jumps', 0)))
+                  getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0)))
         self.test_stats = stats
         self.item_proofs = known
         if False:
@@ -1683,6 +1683,29 @@ class Collector:
             return target
         return pos
 
+    CERT_JUMP_MODE = 'nearest'   # 'nearest': the closer of the next certificate and STEP_ITEMS; 'cert': always the certificate
+
+    def _next_marker(self, pos, S, active, known, n):
+        """Where the marker goes next in the walk. A finished test whose item takes down every active item after
+        it is a certificate for the whole tail: when the walk finds that item off, the rest is proven. So the
+        next stop is right after the first such item, instead of STEP_ITEMS further (nothing is computed twice;
+        if the item turns out to be on, the walk simply continues from there)."""
+        step = min(n, pos + self.STEP_ITEMS)
+        best = None
+        for c, v in known.items():
+            if c < pos or c in S or (best is not None and c >= best):
+                continue
+            if all(j in v for j in active if j > c and j not in S):
+                best = c
+        if best is None:
+            return step
+        target = min(n, best + 1)
+        if self.CERT_JUMP_MODE == 'nearest':
+            target = min(target, step)
+        if target != step:
+            self.n_cert_jumps = getattr(self, 'n_cert_jumps', 0) + 1
+        return target
+
     def _walk_forward(self, orig, S, err0, warn0, start, pos):
         """With the items S suppressed and the marker at `pos`, read what Fusion computed and move the marker
         forward STEP_ITEMS at a time, until the end or until every remaining active item is proven off by the
@@ -1721,7 +1744,7 @@ class Collector:
                 self.g_stopped_early = getattr(self, 'g_stopped_early', 0) + 1
                 break
             start = pos
-            pos = min(n, pos + self.STEP_ITEMS)
+            pos = self._next_marker(pos, S, active, known, n)
             self._set_test_marker(pos)
         return casc, broke, warned
 
