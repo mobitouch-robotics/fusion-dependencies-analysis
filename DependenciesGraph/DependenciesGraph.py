@@ -2342,8 +2342,20 @@ CACHE_VERSION = 4      # 4: drops results tested with Fusion's transactions off 
 
 
 def _cache_dir():
-    d = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'cache')
-    os.makedirs(d, exist_ok=True)
+    """Kept outside the temporary folder (macOS clears files there it has not touched for a few days) and
+    outside the add-in folder (replaced when a new version is copied in)."""
+    if sys.platform == 'darwin':
+        base = os.path.expanduser('~/Library/Application Support')
+    elif sys.platform.startswith('win'):
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+    else:
+        base = os.environ.get('XDG_CACHE_HOME') or os.path.expanduser('~/.cache')
+    d = os.path.join(base, 'FusionDependenciesGraph', 'cache')
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        d = os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'cache')
+        os.makedirs(d, exist_ok=True)
     return d
 
 

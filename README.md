@@ -94,6 +94,14 @@ time or memory. Set them in `DependenciesGraph/settings.json`; they are switched
 Results of a run with an experiment on are not cached. Keep an experiment only if `tools/compare_pages.py`
 shows the same results as a run without it (both with *Reuse earlier results* unticked).
 
+### Reusing results
+
+A saved version never changes, so what was read and tested in it is kept and reused: a linked design is tested
+once per saved version, and a later run (or another assembly using the same part) takes its result from the
+cache. Each design is kept as soon as it is done, so a cancelled run keeps the designs it finished. The cache is
+in `~/Library/Application Support/FusionDependenciesGraph/cache` (macOS) or
+`%APPDATA%\FusionDependenciesGraph\cache` (Windows); untick *Reuse earlier results* to test everything again.
+
 ## Install
 
 1. Copy the `DependenciesGraph` folder into Fusion's add-ins folder:
