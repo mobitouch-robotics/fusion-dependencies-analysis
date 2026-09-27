@@ -4687,7 +4687,7 @@ function routePreview(items,on,tt){routePreviewClear();if(!on||PB||drag||!select
   return RT;}
 function setRoute(items){routePreviewClear();saveView();route=items?{sel:selected,items}:null;setTimeout(pushHist,0);renderDetails();
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{},focus?{fit:'fit'}:{dur:450});}
-let searchOpen=new Set();let layoutMode='lanes',lanes=[],laneEls={},designFrames=[];const collapsedNodes=new Set();let collapseEverything=false;
+let searchOpen=new Set();let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
 const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
 const compOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component')compOf[e.t]=e.s;});
@@ -4828,9 +4828,13 @@ function renderGraph(fitAfter,centerId){
       const fr=pack(frames.map(f=>({w:f.w,h:f.h,f})),2.4);
       fr.placed.forEach(q=>{const f=q.b.f;let pr=null;
         f.pk.placed.forEach(p=>{const x=q.x+PADX+p.x,y=q.y+padT(f.d)+p.y;if(p.b.picTile)pr={x,y,w:p.b.w,h:p.b.h};else putLane(p.b,x,y);});
-        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),picRect:pr,x:q.x-14,y:q.y,w:f.w+28,h:f.h});});
-      // a derived design's connector sits on the middle of its frame's bottom edge
-      ports.forEach(r=>{const d=laneKey(r.members[0]).split('|')[0];const f=designFrames.find(x=>x.d===d);if(f)pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h-NH/2};});}
+        designFrames.push({d:f.d,title:frameTitle(f.d),pic:picOf(f.d),picRect:pr,x:q.x-14,y:q.y,w:f.w+28,h:f.h,folded:byD[f.d].every(b=>laneBase(b.l.id)==='_folded')});});
+      // a derived design's connector sits on the middle of its frame's bottom edge. An expanded design shows its
+      // fold button there instead: the connector box is hidden and its lines end just under the button
+      hiddenPorts=new Set();
+      ports.forEach(r=>{const d=laneKey(r.members[0]).split('|')[0];const f=designFrames.find(x=>x.d===d);if(!f)return;
+        if(!f.folded&&d!==MAIN_DSG&&groups[d]){pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h+14};hiddenPorts.add(r.id);}
+        else pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h-NH/2};});}
   }else
   Ls.forEach(L=>{const c=cols[L];c.forEach(r=>{const xs=pr[r.id].map(s=>pos[s]?pos[s].x+NW/2:null).filter(v=>v!=null);r.bc=xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;});
     const withBc=c.filter(r=>r.bc!=null);const avg=withBc.length?withBc.reduce((a,r)=>a+r.bc,0)/withBc.length:0;
@@ -4915,7 +4919,14 @@ function renderGraph(fitAfter,centerId){
         const im=document.createElementNS(NS,'image');im.setAttribute('x',px+3);im.setAttribute('y',py+3);im.setAttribute('width',pw-6);im.setAttribute('height',ph-6);im.setAttribute('preserveAspectRatio','xMidYMid meet');im.setAttribute('href',f.pic);im.style.cursor='zoom-in';
         // hovering the small picture shows it large
         im.addEventListener('mouseenter',ev=>picPopShow(f.pic,f.title,ev));im.addEventListener('mousemove',ev=>picPopMove(ev));im.addEventListener('mouseleave',picPopHide);
-        fl.append(pb,im);}});}
+        fl.append(pb,im);}
+      // an expanded linked design: its fold button on the middle of the frame's bottom edge, like every other block
+      if(!isMain&&!f.folded&&groups[f.d]){const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(f.x+f.w/2)+','+(f.y+f.h)+')');
+        const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);c.setAttribute('class','ctogc');const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent='−';
+        const tt=document.createElementNS(NS,'title');tt.textContent='Fold this design into one box';bt.append(c,t,tt);if(search)offFold(bt,tt);
+        bt.addEventListener('mousedown',ev=>ev.stopPropagation());
+        bt.addEventListener('click',ev=>{ev.stopPropagation();const gk=f.d;animatedRerender(()=>{expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});},{});});
+        btnLayer.appendChild(bt);}});}
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
     const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);};
     lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
@@ -5044,6 +5055,7 @@ function renderGraph(fitAfter,centerId){
   // Links of the selected item run above boxes that are not part of its history.
   const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gBadge,gn);nhAnchor=gBadge;   // hover links: above every other link (and faded boxes), below the boxes
   reps.forEach(r=>{const p=pos[r.id];if(!p)return;const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
+    if(hiddenPorts.has(r.id)){g.style.visibility='hidden';g.style.pointerEvents='none';}
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('width',NW);rect.setAttribute('height',NH);rect.setAttribute('rx',5);
     let label,cat;
     // Groups layout, whole block folded: the block itself stands for the group; inside it only a short note
