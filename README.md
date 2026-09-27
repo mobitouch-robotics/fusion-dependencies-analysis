@@ -99,7 +99,9 @@ self-contained HTML file.
 
 ```
 DependenciesGraph/
-  DependenciesGraph.py        add-in: data collection in Fusion + the HTML/JS page template
+  DependenciesGraph.py        add-in: data collection in Fusion, tests, writing the page
+  page_template.html          the generated page (HTML/CSS/JS); the add-in fills in the data
+  progress_panel.html         the progress panel shown in Fusion during a run
   DependenciesGraph.manifest
   resources/DependenciesGraph/ toolbar icons
 ```

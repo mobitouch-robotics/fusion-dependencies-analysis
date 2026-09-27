@@ -1,0 +1,32 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+:root{--bg:#f7f7f5;--fg:#1f1f1d;--mut:#6b6a64;--bar:#e4e2da;--fill:#185fa5;--ok:#1f8a4c;--err:#c0392b;--line:#d9d7cf}
+@media (prefers-color-scheme:dark){:root{--bg:#232322;--fg:#ecebe6;--mut:#a3a29c;--bar:#3a3a38;--fill:#6aa8e8;--ok:#5fcf8f;--err:#ff7b6b;--line:#3a3a38}}
+body{margin:0;padding:10px 12px;font:12px -apple-system,system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--fg)}
+.top{display:flex;align-items:center;gap:8px;margin-bottom:6px}.top b{font-size:13px;flex:1}
+button{font:inherit;padding:3px 10px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--fg);cursor:pointer}
+.bar{height:6px;border-radius:3px;background:var(--bar);overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--fill);transition:width .2s}
+#eta{color:var(--mut);margin:4px 0 10px}
+.row{padding:4px 0;border-top:1px solid var(--line)}.row .h{display:flex;gap:8px;align-items:baseline;margin-bottom:3px}
+.row .n{font-weight:600;flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.row .s{color:var(--mut);font-size:11px;flex:0 1 auto;max-width:55%;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.segs{display:flex;gap:4px}.sg{flex:1;min-width:0}.sl{font-size:10px;color:var(--mut);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row.done .bar i{background:var(--ok)}.row.fail .bar i{background:var(--err)}.row.fail .s{color:var(--err)}.row.wait{opacity:.55}
+</style></head><body>
+<div class="top"><b>Dependencies graph</b><button id="cx">Cancel</button></div>
+<div id="rows"></div>
+<script>
+const rows={};let seq=0;
+// one bar per step, side by side, each with its name under it
+function segs(r,x){const box=r.querySelector('.segs');const L=(x.l&&x.l.length)?x.l:[''];const P=(x.p&&x.p.length)?x.p:[x.f];
+  if(box.childElementCount!==L.length||box.dataset.l!==L.join('|')){box.innerHTML='';L.forEach(l=>{const d=document.createElement('div');d.className='sg';d.innerHTML='<div class="bar"><i></i></div><div class="sl"></div>';d.querySelector('.sl').textContent=l;d.title=l;box.appendChild(d);});box.dataset.l=L.join('|');}
+  [...box.children].forEach((d,j)=>{d.querySelector('i').style.width=(100*(P[j]||0))+'%';});}
+// in progress on top, then waiting, then finished (done or failed); each group keeps the order the designs appeared in
+function sortRows(){const box=document.getElementById('rows');const rank=c=>c==='wait'?1:(c==='done'||c==='fail')?2:0;
+  Object.values(rows).sort((a,b)=>rank(a.dataset.c)-rank(b.dataset.c)||a.dataset.o-b.dataset.o).forEach(r=>box.appendChild(r));}
+function row(k){let r=rows[k];if(!r){r=document.createElement('div');r.className='row wait';r.innerHTML='<div class="h"><span class="n"></span><span class="s"></span></div><div class="segs"></div>';r.dataset.o=seq++;document.getElementById('rows').appendChild(r);rows[k]=r;}return r;}
+window.fusionJavaScriptHandler={handle:function(action,data){try{const d=JSON.parse(data);
+  if(action==='all'){document.getElementById('cx').title=d.t;}
+  if(action==='rows'){d.forEach(x=>{const r=row(x.k);r.querySelector('.n').textContent=x.n;const s=r.querySelector('.s');s.textContent=x.s;s.title=x.s;segs(r,x);r.className='row '+(x.c||'');r.dataset.c=x.c||'';});sortRows();}
+  if(action==='end'){document.getElementById('cx').disabled=true;}
+}catch(e){}return 'ok';}};
+document.getElementById('cx').onclick=()=>{document.getElementById('cx').textContent='Stopping...';document.getElementById('cx').disabled=true;adsk.fusionSendData('cancel','{}');};
+</script></body></html>
