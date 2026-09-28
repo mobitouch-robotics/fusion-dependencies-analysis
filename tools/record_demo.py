@@ -12,6 +12,8 @@ Run it from Terminal:   python3 tools/record_demo.py          (full run)
                                                                           and do only the Safari part)
                         python3 tools/record_demo.py --probe        (with Fusion in front: print which Fusion elements
                                                                      are found on screen, and where)
+                        python3 tools/record_demo.py --elements     (write every control Fusion lists, with its place,
+                                                                     to ~/Downloads/fusion_ui_elements.txt)
                         python3 tools/record_demo.py --calibrate    (only if --probe misses some: point at them once;
                                                                      saved in tools/demo_positions.json)
 
@@ -20,10 +22,10 @@ Needs once:
   * Safari > Settings > Advanced: "Show features for web developers", then
     Develop menu > "Allow JavaScript from Apple Events" (used to find buttons on the page).
   * Fusion open with the design, on the Solid tab, window maximised; nothing else on top.
-  * System Settings > Privacy & Security > Screen Recording: also Terminal. The Fusion elements (the MANAGE tab,
-    the Dependencies Graph panel, the dialog's options, the progress panel) are found on screen by their text,
-    with macOS's own text recognition, wherever Fusion puts them; then through Accessibility; then at positions
-    from --calibrate. Check with --probe.
+  * The Fusion elements (the MANAGE tab, the Dependencies Graph panel, the dialog's options, the progress panel) are
+    found where Fusion puts them: in Fusion's own list of controls (Accessibility, the permission above), else by
+    their text on screen (macOS text recognition; needs Screen Recording for Terminal too), else at positions from
+    --calibrate. Check with --probe.
   * "Include linked designs" and "Reuse earlier results" are switched on by the script (in the add-in's
     settings.json, before the dialog opens); the tour only points at them.
   * Run a Full analysis with linked designs once before recording: the linked designs are then taken from the
@@ -227,16 +229,6 @@ function run(argv){
 
 # Accessibility (System Events): Fusion's windows walked for elements whose name, description, title or value holds
 # a wanted string. Slower than the text recognition; used for what it did not find.
-AX_JXA = r"""function run(argv){const want=JSON.parse(argv[0]);const se=Application('System Events');
- const ps=se.applicationProcesses.whose({bundleIdentifier:'com.autodesk.fusion360'})();if(!ps.length)return '[]';
- const out=[],seen={};let n=0;const txt=e=>{const a=[];for(const f of ['name','description','title','value']){try{const v=e[f]();if(typeof v==='string'&&v)a.push(v);}catch(x){}}return a;};
- const walk=(e,d)=>{if(n++>3000||d>20)return;let ts=[];try{ts=txt(e);}catch(x){}
-  for(const w of want){if(seen[w.text])continue;if(ts.some(t=>w.case?t.includes(w.text):t.toLowerCase().includes(w.text.toLowerCase()))){
-    try{const p=e.position(),s=e.size();out.push({text:w.text,line:ts.join(' | '),role:(()=>{try{return e.role()}catch(x){return ''}})(),
-      x:p[0]+s[0]/2,y:p[1]+s[1]/2,w:s[0],h:s[1]});seen[w.text]=1;}catch(x){}}}
-  if(want.every(w=>seen[w.text]))return;let ks=[];try{ks=e.uiElements();}catch(x){}for(const k of ks)walk(k,d+1);};
- for(const w of ps[0].windows())walk(w,0);return JSON.stringify(out);}"""
-
 _ocr_cache = {'t': 0, 'hits': []}
 MENU_BAR = 30
 
@@ -327,18 +319,123 @@ def ocr_scan(fresh=True, everything=False):
     _ocr_cache.update(t=time.time(), hits=hits)
     return hits
 
-AX_TIMEOUT = 25          # seconds the Accessibility search may take (Fusion has thousands of controls)
+# ---- Fusion's own list of controls (Accessibility), read directly with macOS's AX functions: exact positions in
+# the same coordinates the mouse uses, no screenshot. Needs the Accessibility permission (Terminal has it already).
+AX_MAX_ELEMENTS = 40000       # Fusion has many controls; the walk stops here
+AX_MAX_SECONDS = 20
+
+class _AX:
+    def __init__(self):
+        from ctypes import c_void_p, c_int, c_int32, c_long, c_ulong, c_bool, c_char_p, c_uint32, c_float, POINTER
+        self.AS = AS = ctypes.cdll.LoadLibrary(ctypes.util.find_library('ApplicationServices'))
+        self.CF = CF = ctypes.cdll.LoadLibrary(ctypes.util.find_library('CoreFoundation'))
+        CF.CFStringCreateWithCString.restype = c_void_p; CF.CFStringCreateWithCString.argtypes = [c_void_p, c_char_p, c_uint32]
+        CF.CFGetTypeID.restype = c_ulong; CF.CFGetTypeID.argtypes = [c_void_p]
+        CF.CFStringGetTypeID.restype = c_ulong; CF.CFArrayGetTypeID.restype = c_ulong
+        CF.CFArrayGetCount.restype = c_long; CF.CFArrayGetCount.argtypes = [c_void_p]
+        CF.CFArrayGetValueAtIndex.restype = c_void_p; CF.CFArrayGetValueAtIndex.argtypes = [c_void_p, c_long]
+        CF.CFStringGetLength.restype = c_long; CF.CFStringGetLength.argtypes = [c_void_p]
+        CF.CFStringGetCString.restype = c_bool; CF.CFStringGetCString.argtypes = [c_void_p, c_char_p, c_long, c_uint32]
+        AS.AXIsProcessTrusted.restype = c_bool
+        AS.AXUIElementCreateApplication.restype = c_void_p; AS.AXUIElementCreateApplication.argtypes = [c_int]
+        AS.AXUIElementCopyAttributeValue.restype = c_int32
+        AS.AXUIElementCopyAttributeValue.argtypes = [c_void_p, c_void_p, POINTER(c_void_p)]
+        AS.AXValueGetValue.restype = c_bool; AS.AXValueGetValue.argtypes = [c_void_p, c_uint32, c_void_p]
+        AS.AXUIElementSetMessagingTimeout.restype = c_int32; AS.AXUIElementSetMessagingTimeout.argtypes = [c_void_p, c_float]
+        self._cfs = {}
+        self.STR, self.ARR = CF.CFStringGetTypeID(), CF.CFArrayGetTypeID()
+
+    def cfs(self, name):
+        if name not in self._cfs:
+            self._cfs[name] = self.CF.CFStringCreateWithCString(None, name.encode(), 0x08000100)
+        return self._cfs[name]
+
+    def attr(self, el, name):
+        v = ctypes.c_void_p()
+        return v.value if self.AS.AXUIElementCopyAttributeValue(el, self.cfs(name), ctypes.byref(v)) == 0 else None
+
+    def text(self, el, name):
+        v = self.attr(el, name)
+        if not v or self.CF.CFGetTypeID(v) != self.STR: return ''
+        n = self.CF.CFStringGetLength(v) * 4 + 1
+        buf = ctypes.create_string_buffer(n)
+        return buf.value.decode('utf-8', 'replace') if self.CF.CFStringGetCString(v, buf, n, 0x08000100) else ''
+
+    def box(self, el):
+        class Sz(ctypes.Structure): _fields_ = [('w', ctypes.c_double), ('h', ctypes.c_double)]
+        p, z = self.attr(el, 'AXPosition'), self.attr(el, 'AXSize')
+        pt, sz = P(), Sz()
+        if not p or not z or not self.AS.AXValueGetValue(p, 1, ctypes.byref(pt)) or not self.AS.AXValueGetValue(z, 2, ctypes.byref(sz)):
+            return None
+        return pt.x, pt.y, sz.w, sz.h
+
+    def children(self, el):
+        v = self.attr(el, 'AXChildren')
+        if not v or self.CF.CFGetTypeID(v) != self.ARR: return []
+        return [self.CF.CFArrayGetValueAtIndex(v, i) for i in range(self.CF.CFArrayGetCount(v))]
+
+def fusion_pid():
+    out, _ = _run(['ps', '-axo', 'pid=,comm='], 10)
+    for line in out.splitlines():
+        pid, _, comm = line.strip().partition(' ')
+        if 'Fusion' in comm and '.app/Contents/MacOS/' in comm and 'Helper' not in comm:
+            return int(pid)
+    return None
+
+def ax_elements(quiet=False):
+    """Every control of Fusion's windows that shows text: [(role, texts, x, y, w, h)], x and y its centre, in
+    screen points (the mouse's coordinates)."""
+    t0 = time.time()
+    try:
+        ax = _AX()
+    except Exception as ex:
+        print('  (Accessibility not available: %s)' % ex); return []
+    if not ax.AS.AXIsProcessTrusted():
+        print('  (Accessibility: Terminal is not allowed. System Settings > Privacy & Security > Accessibility)')
+    pid = fusion_pid()
+    if not pid:
+        print('  (Accessibility: Fusion is not running)'); return []
+    app = ax.AS.AXUIElementCreateApplication(pid)
+    ax.AS.AXUIElementSetMessagingTimeout(app, 2.0)
+    out, todo, n = [], [app], 0
+    while todo and n < AX_MAX_ELEMENTS and time.time() - t0 < AX_MAX_SECONDS:
+        el = todo.pop(0); n += 1
+        role = ax.text(el, 'AXRole')
+        if role == 'AXMenuBar': continue                    # the macOS menu bar: not needed
+        texts = [t for t in (ax.text(el, a) for a in ('AXTitle', 'AXDescription', 'AXValue', 'AXHelp')) if t.strip()]
+        if texts:
+            b = ax.box(el)
+            if b and b[2] > 0 and b[3] > 0:
+                out.append((role, texts, b[0] + b[2] / 2, b[1] + b[3] / 2, b[2], b[3]))
+        todo.extend(ax.children(el))
+    if not quiet:
+        print('  (Fusion controls: %d looked at, %d with text, %.1f s%s)' % (
+            n, len(out), time.time() - t0, '' if not todo else '; stopped early'))
+    return out
 
 def ax_scan(names):
-    want = json.dumps([{'text': TARGETS[n]['text'], 'case': False} for n in names])
-    t0 = time.time()
-    print('  (looking for %s through Accessibility, up to %d s...)' % (', '.join(names), AX_TIMEOUT))
-    out, err = _run(['osascript', '-l', 'JavaScript', '-e', AX_JXA, want], AX_TIMEOUT)
-    if err: print('  (Accessibility: %s)' % err[:200])
-    try: hits = json.loads(out or '[]')
-    except Exception: hits = []
-    print('  (Accessibility: %d found in %.1f s)' % (len(hits), time.time() - t0))
+    """The targets' text in Fusion's controls: the control's own box (not an estimate)."""
+    hits = []
+    els = ax_elements()
+    for name in names:
+        text = TARGETS[name]['text']
+        for role, texts, x, y, w, h in els:
+            for t in texts:
+                m = _matches([(t, x, y, w, h)], text)
+                if m:
+                    # the whole control is the element; the matched text is kept for "prefer"
+                    hits.append({'text': text, 'm': m[0]['m'], 'line': t, 'role': role, 'x': x, 'y': y, 'w': w, 'h': h})
+                    break
     return [h for h in hits if h['y'] > MENU_BAR]
+
+def dump_elements():
+    """Fusion's controls with text, into a file (to see what Fusion shows to Accessibility)."""
+    els = ax_elements()
+    f = os.path.expanduser('~/Downloads/fusion_ui_elements.txt')
+    with open(f, 'w', encoding='utf-8') as h:
+        for role, texts, x, y, w, hh in sorted(els, key=lambda e: (round(e[3] / 8), e[2])):
+            h.write('(%5d,%5d) %4dx%-4d %-22s %s\n' % (x, y, w, hh, role, ' | '.join(t.replace('\n', ' ')[:80] for t in texts)))
+    print('Written: %s (%d controls with text)' % (f, len(els)))
 
 def _pick(name, hits, found):
     t = TARGETS[name]
@@ -349,7 +446,8 @@ def _pick(name, hits, found):
     c = exact or c
     if not c: return None
     h = {'top': min, 'bottom': max}.get(t['pick'], max)(c, key=lambda h: h['x'] if t['pick'] == 'right' else h['y'])
-    if t.get('left') is not None:
+    # left of a label's text (a group's fold arrow) - not when Fusion's controls give the group's own clickable control
+    if t.get('left') is not None and h.get('role', 'AXStaticText') in ('AXStaticText', 'AXText', ''):
         w = h.get('w') or len(t['text']) * 6.5            # the label's width; estimated when not reported
         x = h['x'] - w / 2 - t['left']
     else:
@@ -359,13 +457,13 @@ def _pick(name, hits, found):
 _found = {}
 
 def locate(name, fresh=True):
-    """Where a Fusion element is now: found by its text on screen, else through Accessibility, else a calibrated or
-    default position. None when nothing knows (the move is then skipped)."""
+    """Where a Fusion element is now: found in Fusion's own list of controls (Accessibility), else by its text on
+    screen, else a calibrated or default position. None when nothing knows (the move is then skipped)."""
     print('  looking for %s ("%s")...' % (name, TARGETS[name]['text']))
-    p = _pick(name, ocr_scan(fresh), _found)
-    how = 'on screen'
+    p = _pick(name, ax_scan([name]), _found)
+    how = "Fusion's controls"
     if p is None:
-        p = _pick(name, ax_scan([name]), _found); how = 'accessibility'
+        p = _pick(name, ocr_scan(fresh), _found); how = 'on screen'
     if p is None:
         p = FP.get(name); how = 'calibrated/default'
     if p is None:
@@ -377,25 +475,23 @@ def locate(name, fresh=True):
 def probe():
     """What the script finds of Fusion's elements now (bring Fusion to the front, open the dialog, start a run...)."""
     activate('Autodesk Fusion'); wait(1.0)
-    hits = ocr_scan()
-    print('Text recognition on the main display:')
+    print("Fusion's own list of controls (Accessibility):")
+    ax = ax_scan(list(TARGETS))
     for n in TARGETS:
-        p = _pick(n, hits, _found)
+        p = _pick(n, ax, _found)
         if p: _found[n] = p
-        print('  %-16s %-32r %s' % (n, TARGETS[n]['text'], p or '-'))
+        h = next((h for h in ax if h['text'] == TARGETS[n]['text']), None)
+        print('  %-16s %-32r %s%s' % (n, TARGETS[n]['text'], p or '-', ('  [%s: %s]' % (h['role'], h['line'][:50])) if h else ''))
     missing = [n for n in TARGETS if n not in _found]
     if missing:
-        print('Accessibility, for the rest (may take a while):')
-        ax = ax_scan(missing)
+        print('Text recognition on the main display, for the rest:')
+        hits = ocr_scan()
         for n in missing:
-            p = _pick(n, ax, _found)
-            line = next((h for h in ax if h['text'] == TARGETS[n]['text']), None)
-            print('  %-16s %-32r %s%s' % (n, TARGETS[n]['text'], p or '-', ('  [%s: %s]' % (line['role'], line['line'][:60])) if line else ''))
-    lines = sorted(ocr_scan(everything=True), key=lambda h: (round(h['y'] / 12), h['x']))
-    print('Text recognised in the top 250 points of the screen (the toolbar):')
-    for h in [h for h in lines if h['y'] < 250][:60]:
-        print('  (%4d,%4d)  %s' % (h['x'], h['y'], h['line'][:90]))
-    print('(Elements of the dialog or the progress panel are only found while they are open.)')
+            p = _pick(n, hits, _found)
+            if p: _found[n] = p
+            print('  %-16s %-32r %s' % (n, TARGETS[n]['text'], p or '-'))
+    print('(Elements of the dialog or the progress panel are only found while they are open. '
+          'python3 record_demo.py --elements writes every control Fusion lists to a file.)')
 
 def calibrate():
     """Point at each Fusion element in turn and press Enter in Terminal; the positions are saved. Leave the mouse
@@ -1077,6 +1173,8 @@ if __name__ == '__main__':
         calibrate(); sys.exit()
     if '--probe' in sys.argv:
         probe(); sys.exit()
+    if '--elements' in sys.argv:
+        activate('Autodesk Fusion'); wait(1.0); dump_elements(); sys.exit()
     if '--list' in sys.argv:
         print('Steps (start from one with --step N):'); list_steps(); sys.exit()
     START = int(sys.argv[sys.argv.index('--step') + 1]) if '--step' in sys.argv else None
