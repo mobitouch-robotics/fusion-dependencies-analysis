@@ -27,7 +27,7 @@ Start the screen recording during the countdown. Press Ctrl+C in Terminal to sto
 
 What the tour shows, in Fusion: the Manage tab button, the dialog (Full analysis / Quick estimate, Thumbnails,
 Advanced options: Include linked designs, Group test for linked designs, Reuse earlier results) and the progress
-panel (a row per design with its steps, time left, Cancel). In the page (--list for the numbered steps): getting
+panel (a row per design with a bar per step, sorted in progress / waiting / finished; Cancel). In the page (--list for the numbered steps): getting
 around, the design frames of linked designs, the four layouts, hover, selection and side panel, Display options,
 routes, multi-selection, all links and folding, search, filters, the suppression preview, Select in Fusion, the
 legend, history playback.
@@ -491,8 +491,9 @@ def fusion_part():
     say("Let's run the full analysis.")
     t_start = time.time()
     go(fp('full_btn'), 1.1); wait(3.0); hush()
-    say("The progress panel has a row for every design: what is being done, and a bar for each step, "
-        "reading, the item test and the group test. The overall bar shows the time left, and Cancel stops the run.")
+    say("The progress panel has a row for every design: what is being done right now, and a bar for each of its steps, "
+        "reading, the item test and the group test. The design being worked on is at the top, then the ones waiting, "
+        "then the finished ones. Cancel stops the whole run.")
     go(fp('progress_panel'), 1.2, False); hush()
     say("On a big assembly this can take a while. The page is saved as each design is done, so you can look at it early. "
         "When it's finished, it opens in the browser, and the design is left exactly as it was.")

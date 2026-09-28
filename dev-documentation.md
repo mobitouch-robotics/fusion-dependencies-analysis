@@ -176,7 +176,8 @@ setting key), so they are remembered. `settings.json` sits in the add-in folder:
 4. Creates the progress panel (`_ProgressPanel`, falling back to Fusion's progress dialog).
 5. **Steps with weights**: reading (`n_tl * 0.6` with thumbnails, else `0.05`), item test (`n_tl * 1.7`), group
    test (`n_groups * 2.5`), linked designs (placeholder, then re-weighted by `plan()` as designs are found).
-   One overall bar; `time_left()` smooths the estimate (`0.8 * old + 0.2 * new`).
+   The whole run's progress and `time_left()` (smoothed: `0.8 * old + 0.2 * new`) go to Fusion's progress dialog
+   when it is used; the progress panel shows no overall bar, only the time left as the tooltip of its Cancel button.
 6. `Collector(des, progress, thumbs)`, `expand_groups()`, then: `build_nodes`, `scan`, part picture, `scan_components`,
    `scan_parameters`, item test, group test, linked designs.
 7. `finally`: marker back to where it was (end, or `marker0`), groups collapsed back, thumbnail state restored.

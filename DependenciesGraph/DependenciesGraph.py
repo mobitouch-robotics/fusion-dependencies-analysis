@@ -3318,8 +3318,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
 
 
 # ------------------------------------------------------------ progress panel ---
-# A Fusion palette (a small HTML panel) with one line per design: its name, what is happening, and its own bar,
-# plus the whole run's bar, time left and Cancel. Behaves like Fusion's progress dialog (message, progressValue,
+# A Fusion palette (a small HTML panel) with one line per design: its name, what is happening, and a bar per step,
+# plus Cancel (its tooltip shows the whole run's time left). Behaves like Fusion's progress dialog (message, progressValue,
 # wasCancelled, hide) so the run can fall back to that dialog when a palette cannot be made.
 PANEL_ID = 'claudeDesignGraphProgress'
 _HERE = os.path.dirname(os.path.abspath(__file__))
