@@ -743,12 +743,17 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   during the run (Safari's windows must be closed before it; the script warns and waits up to 30 s for that; the
   pages saved while the run goes on are not opened). `--skip-generation` (and `--step` with no page open) open the
   newest page, including the one the add-in records in `last_page.json` (next to the cache folder). Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
-  linked designs (frames, pictures, unfolding one), layouts, hover, selection and side panel, Display options,
+  the side panel and its tabs, linked designs (frames, pictures, unfolding one), layouts (Components as component
+  frames), hover, selection and the Selection tab, Display tab, selecting a whole block,
   routes, multi-selection, all links and folding, search, filters, the suppression preview (including a feature
   whose suppression makes others fail or warn, and the broken / warnings buttons), Select in Fusion, legend,
   playback. Set up for the robot arm's Master assembly: the tour works inside one linked design
   (`LINKED_DESIGN`); boxes are found by their full name (`data-name`) and design (`data-id` prefix, frame
   `data-d`), which the page puts on every box and frame for this.
+  The page part can be checked without a Mac: run the script's functions in headless Chromium through Playwright
+  (its `js` evaluated in the page, its mouse and keys sent to the page, narration printed) and look for the
+  "(skipped, not visible on the page ...)" lines; mind that Chromium reports a 10 px window frame (the
+  `screenX`/`outerWidth` offsets `el_xy` adds) and that Cmd+A is Ctrl+A there.
 
 ## 19. Things that were tried and removed
 
