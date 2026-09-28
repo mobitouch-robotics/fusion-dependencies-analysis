@@ -616,6 +616,11 @@ Main parts, in file order:
   selecting the insert (or anything using it) opens and highlights every item and link that made the part. A
   Derive keeps its handed-over items as the connector's parents; only when none could be matched (no link into the
   connector from its design) does it get the final items like an insert. User parameters are left out.
+  These links (`part: 1`, carried into `EFF` when a chain is made only of them) are followed by selections, but drawn
+  only while the selection's tree passes through that connector into another design (`partPorts`, worked out with
+  `selOpen`), and then only those whose item is in the tree; routes lie inside that tree, so they show them too.
+  Otherwise (nothing selected, hover, All links, a selection that stays inside the design) they are not drawn, and
+  the group panel does not count them.
 * **Hidden connectors**: an expanded linked design's connector box is hidden and its fold button stands in for it.
   The box gets `pt` (the button's centre, relative to the box), and `edgeSegs`/`edgeEnd` treat it as a point:
   links end on the top of the button and leave from its bottom, without spreading their ends. Its route button sits just right

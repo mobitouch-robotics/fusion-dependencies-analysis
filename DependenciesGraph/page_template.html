@@ -567,7 +567,7 @@ let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.c
     if(a.dsg&&b.dsg&&!b.port&&a.g&&b.g&&a.g[0]===b.g[0])builds[a.id]=1;});
   nodes.filter(n=>n.port&&n.g&&n.g.length).forEach(p=>{const X=p.g[0],via=(groups[X]&&groups[X].via)||[];
     if(!via.includes('insert')&&hasIn.has(p.id))return;
-    (byDsg[X]||[]).filter(n=>!builds[n.id]&&n.type!=='UserParameter').forEach(n=>D.edges.push({s:n.id,t:p.id,k:['derive'],syn:1}));});}
+    (byDsg[X]||[]).filter(n=>!builds[n.id]&&n.type!=='UserParameter').forEach(n=>D.edges.push({s:n.id,t:p.id,k:['derive'],syn:1,part:1}));});}
 const expanded=new Set(Object.keys(groups).filter(g=>!groups[g].design)); // graph starts with every group expanded, derived designs folded into one box each
 const $=id=>document.getElementById(id);
 
@@ -587,12 +587,13 @@ function visibleNode(n){return !!n&&catOn[n.cat]!==false;}
 // children (through any number of hidden items). Such joined links are marked via (drawn dotted).
 let EFF=[];
 function computeEff(){const adj={},out=new Map();
-  D.edges.forEach(e=>{if(!byId[e.s]||!byId[e.t])return;const ks=e.k.filter(k=>kindOn[k]!==false);if(!ks.length)return;(adj[e.s]=adj[e.s]||[]).push({t:e.t,k:ks});});
-  const add=(s,t,ks,via)=>{if(s===t)return;const key=s+'>'+t;let x=out.get(key);if(!x){x={s,t,k:[],via:true};out.set(key,x);}ks.forEach(k=>{if(!x.k.includes(k))x.k.push(k);});if(!via)x.via=false;};
-  nodes.forEach(n=>{if(!visibleNode(n))return;const st=(adj[n.id]||[]).map(a=>({t:a.t,k:a.k,via:false}));const seen=new Set();
-    while(st.length){const a=st.pop();if(visibleNode(byId[a.t])){add(n.id,a.t,a.k,a.via);continue;}if(seen.has(a.t))continue;seen.add(a.t);
-      (adj[a.t]||[]).forEach(b=>st.push({t:b.t,k:[...new Set([...a.k,...b.k])],via:true}));}});
-  EFF=[...out.values()];
+  D.edges.forEach(e=>{if(!byId[e.s]||!byId[e.t])return;const ks=e.k.filter(k=>kindOn[k]!==false);if(!ks.length)return;(adj[e.s]=adj[e.s]||[]).push({t:e.t,k:ks,part:!!e.part});});
+  // part: only made of links from a linked design's final items to its connector (see where they are added)
+  const add=(s,t,ks,via,part)=>{if(s===t)return;const key=s+'>'+t;let x=out.get(key);if(!x){x={s,t,k:[],via:true,part:true};out.set(key,x);}ks.forEach(k=>{if(!x.k.includes(k))x.k.push(k);});if(!via)x.via=false;if(!part)x.part=false;};
+  nodes.forEach(n=>{if(!visibleNode(n))return;const st=(adj[n.id]||[]).map(a=>({t:a.t,k:a.k,via:false,part:a.part}));const seen=new Set();
+    while(st.length){const a=st.pop();if(visibleNode(byId[a.t])){add(n.id,a.t,a.k,a.via,a.part);continue;}if(seen.has(a.t))continue;seen.add(a.t);
+      (adj[a.t]||[]).forEach(b=>st.push({t:b.t,k:[...new Set([...a.k,...b.k])],via:true,part:a.part||b.part}));}});
+  EFF=[...out.values()];EFF.forEach(e=>{if(!e.part)delete e.part;});
   // a suppression-test link that another chain of links already implies (e.g. Derive -> component -> joint) adds nothing
   const adj2={};EFF.forEach(e=>{(adj2[e.s]=adj2[e.s]||[]).push(e);});
   EFF=EFF.filter(e=>{if(!(e.k.length===1&&e.k[0]==='suppress'))return true;const seen=new Set([e.s]),st=[e.s];
@@ -789,7 +790,7 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
   }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':g.gskip?'The Whole groups test was not run on linked designs (option "Group test for linked designs"). Its items were tested one by one: suppressing it in the preview adds up their results (estimated).':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Full analysis to see what suppressing this group does.');d.appendChild(x);}
   // reference links crossing the group boundary, counted per other group
   const out={},inn={};
-  EFF.forEach(e=>{const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
+  EFF.forEach(e=>{if(e.part)return;const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
   const toList=m=>Object.entries(m).filter(([k])=>k!=='-').sort((x,y)=>y[1]-x[1]);
   const h4=document.createElement('h3');h4.textContent='References into other groups';d.append(h4,groupLinks(toList(out)));
   const h5=document.createElement('h3');h5.textContent='Referenced from other groups';d.append(h5,groupLinks(toList(inn)));
@@ -1111,7 +1112,7 @@ function setRoute(items){routePreviewClear();saveView();route=items?{sel:selecte
 let searchOpen=new Set();
 // the selection's whole tree is shown: every timeline group holding part of it is open while it is selected (selOpen),
 // except the ones folded by hand during that selection (selShut, forgotten when the selection changes)
-let selOpen=new Set(),selShut=new Set(),selKey='';
+let selOpen=new Set(),selShut=new Set(),selKey='',partTree=null,partPorts=new Set();
 const isOpen=g=>expanded.has(g)||searchOpen.has(g)||(selOpen.has(g)&&!selShut.has(g));
 let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
@@ -1161,6 +1162,10 @@ function renderGraph(fitAfter,centerId){
     const key=ids.join(',')+'|'+(selGroup||'');if(key!==selKey){selKey=key;selShut.clear();}
     // linked designs stay folded or open as they were; only the one holding a selected item opens (to show it)
     const ownD=new Set(ids.map(i=>byId[i]&&byId[i].g&&byId[i].g[0]).filter(g=>g&&groups[g]&&groups[g].design));
+    // a connector's part links (its design's final items -> it) are drawn only while the selection's tree passes through
+    // it into another design (it then links two designs; routes lie inside that tree too), and only those in the tree
+    partTree=tree;partPorts=new Set();const dOf=n=>n.dsg&&n.g&&n.g.length?n.g[0]:'';
+    if(tree)tree.forEach(id=>{const p=byId[id];if(!p||!p.port)return;const X=dOf(p);for(const j of tree){const m=byId[j];if(m&&m!==p&&dOf(m)!==X){partPorts.add(id);break;}}});
     selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>{if(!groups[g]||!groups[g].design||ownD.has(g))selOpen.add(g);});const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
@@ -1168,7 +1173,7 @@ function renderGraph(fitAfter,centerId){
   if(search){hitReps=new Set(reps.filter(r=>r.members.some(matches)).map(r=>r.id));}
   graphHits=hitReps?reps.filter(r=>hitReps.has(r.id)).map(r=>r.id):[];
   const ek={};let redges=[];
-  EFF.forEach(e=>{if(keep&&(!keep.has(e.s)||!keep.has(e.t)))return;const a=rep(byId[e.s]),b=rep(byId[e.t]);if(a===b||!R[a]||!R[b])return;const k=a+'>'+b;if(!ek[k]){ek[k]={s:a,t:b,n:0,src:[]};redges.push(ek[k]);}ek[k].n++;ek[k].src.push(e);});
+  EFF.forEach(e=>{if(keep&&(!keep.has(e.s)||!keep.has(e.t)))return;if(e.part&&!(partPorts.has(e.t)&&partTree&&partTree.has(e.s)))return;const a=rep(byId[e.s]),b=rep(byId[e.t]);if(a===b||!R[a]||!R[b])return;const k=a+'>'+b;if(!ek[k]){ek[k]={s:a,t:b,n:0,src:[]};redges.push(ek[k]);}ek[k].n++;ek[k].src.push(e);});
   if(useTestLinks()){redges=redges.filter(e=>{const gg=R[e.s].isGroup&&R[e.t].isGroup;if(gg)delete ek[e.s+'>'+e.t];return !gg;});
     testUnitLinks().forEach((m,a)=>{if(!R[a]||!R[a].isGroup)return;m.forEach((c,b)=>{if(!R[b])return;const k=a+'>'+b;if(ek[k]){ek[k].src.push({s:a,t:b,k:['suppress']});return;}const x={s:a,t:b,n:c,src:[{s:a,t:b,k:['suppress']}]};ek[k]=x;redges.push(x);});});}
   // collapsed boxes hide everything that depends on them (their whole downstream)
