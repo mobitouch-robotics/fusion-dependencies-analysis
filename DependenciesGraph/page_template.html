@@ -43,13 +43,11 @@ header .hl{max-width:300px}header .hl .meta{font-size:11px;line-height:1.3}
 .seg select{border:0;border-radius:0;padding:4px 8px;background:var(--panel)}
 .srch{display:flex;align-items:center;gap:6px;flex:0 1 260px;min-width:160px}.srch input{flex:1;width:auto;min-width:120px}
 .tools{display:flex;gap:6px;align-items:center;margin-left:auto}
-.pop{position:relative}.popbox{display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:30;min-width:220px;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.16);padding:8px 12px}
-.pop.open .popbox{display:block}.pop.open>button{border-color:var(--accent)}
-.popbox .ph{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px}
-.popbox label.chk{display:flex;padding:3px 0;font-size:13px;color:var(--text)}
-.popbox label.chk.sub{padding-left:22px}.popbox label.chk.off{opacity:.45;pointer-events:none}
-#cats label.chk,#dsgs label.chk{align-items:center;gap:6px;white-space:nowrap}#dsgs{max-height:240px;overflow:auto;padding-right:4px}#dsgs .dname{max-width:230px;overflow:hidden;text-overflow:ellipsis}#dsgs .dsw{width:9px;height:9px;border-radius:50%;flex:none}#dsgs .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}#cats .pill{font-size:12px}#cats .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}
-.fbtns{display:flex;gap:6px;margin:8px 0 4px}.fbtns button{padding:2px 10px;font-size:12px}.fnote{font-size:11px;max-width:240px;margin-top:4px}
+.opts .ph{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:10px 0 4px}.opts .ph:first-child{margin-top:2px}
+.opts label.chk{display:flex;padding:3px 0;font-size:13px;color:var(--text)}
+.opts label.chk.sub{padding-left:22px}.opts label.chk.off{opacity:.45;pointer-events:none}
+#cats label.chk,#dsgs label.chk{align-items:center;gap:6px;white-space:nowrap}#dsgs .dname{max-width:280px;overflow:hidden;text-overflow:ellipsis}#dsgs .dsw{width:9px;height:9px;border-radius:50%;flex:none}#dsgs .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}#cats .pill{font-size:12px}#cats .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}
+.fbtns{display:flex;gap:6px;margin:8px 0 4px}.fbtns button{padding:2px 10px;font-size:12px}.fnote{font-size:11px;margin-top:10px}
 svg .edge.bridge{stroke-dasharray:1.5 4}
 #kinds{display:flex;flex-direction:column}
 .gtools .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
@@ -64,13 +62,21 @@ body{display:flex;flex-direction:column}
 header,#simBar{flex:none}
 main{display:flex;flex:1 1 auto;min-height:0}
 #left{flex:1;min-width:0;position:relative;overflow:hidden}
-#details{width:360px;max-width:40%;border-left:1px solid var(--border);background:var(--panel);overflow-y:auto;overflow-x:hidden;padding:12px 14px}
+/* the right panel: tabs (Selection, Groups, Filter, Display, Legend); closed, it is a narrow strip of the tabs */
+#side{width:380px;max-width:42%;flex:none;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--panel);min-height:0}
+#sideTabs{display:flex;flex-wrap:nowrap;gap:1px;align-items:center;padding:6px 6px 0;border-bottom:1px solid var(--border);flex:none}
+#sideTabs .stab{border:1px solid transparent;border-bottom:0;border-radius:7px 7px 0 0;background:none;padding:5px 7px;font-size:12.5px;white-space:nowrap;color:var(--muted);margin-bottom:-1px}
+#sideTabs .stab:hover{color:var(--text)}#sideTabs .stab.on{background:var(--panel);border-color:var(--border);color:var(--text);font-weight:600;position:relative}
+#sideTabs .stab .cnt{font-size:10.5px;color:var(--muted);font-weight:400}
+#sideClose{margin-left:auto;border:0;background:none;padding:2px 4px;font-size:15px;color:var(--muted)}#sideClose:hover{color:var(--text)}
+.spane{display:none;flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;padding:12px 14px}.spane.on{display:block}
+.spane[data-pane="groups"]{padding:6px 4px}
+body.sidemin #side{width:34px}
+body.sidemin #sideTabs{flex-direction:column;align-items:stretch;border-bottom:0;padding:6px 3px;gap:4px}
+body.sidemin #sideTabs .stab{writing-mode:vertical-rl;border:1px solid var(--border);border-radius:7px;padding:9px 3px;margin:0;font-weight:400;background:var(--panel2);color:var(--text)}
+body.sidemin #sideTabs .stab.on{font-weight:400}body.sidemin #sideTabs .stab .cnt{display:none}
+body.sidemin #sideClose{margin:0 0 4px;order:-1}body.sidemin .spane{display:none!important}
 #details h2,#details .name{overflow-wrap:anywhere}
-body.nosel #details{display:none}
-#gpanel{position:absolute;left:10px;top:10px;width:300px;max-height:calc(100% - 20px);display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--border);border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.1);z-index:5}
-#gpanel .gph{display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px}
-#gpanel .gph button{margin-left:auto;padding:0 8px}
-#gpanel.min #gpList{display:none}#gpanel.min .gph{border-bottom:0}
 #gpList{overflow:auto;padding:4px 0}
 .gprow{display:flex;align-items:center;gap:6px;padding:3px 8px;font-size:12px;cursor:pointer;white-space:nowrap}
 .gprow:hover{background:var(--panel2)}.gprow.sel{background:var(--panel2);box-shadow:inset 3px 0 0 var(--sel)}
@@ -79,9 +85,6 @@ body.nosel #details{display:none}
 .gprow.dim .gn{opacity:.5;text-decoration:line-through}
 #info{position:fixed;left:12px;right:12px;bottom:12px;z-index:15;max-height:38vh;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:12px 44px 12px 16px;display:none}
 body.infoopen #info{display:block}
-#legend{position:fixed;right:12px;top:64px;bottom:12px;width:min(560px,calc(100vw - 24px));z-index:16;overflow:auto;background:var(--panel);border:1px solid var(--border);border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.22);padding:12px 16px 20px;display:none}
-body.legendopen #legend{display:block}
-#legend .x{position:absolute;top:8px;right:8px;width:28px;height:28px;padding:0;font-size:16px;line-height:1}
 #legend h2{font-size:16px;margin:0 0 4px}#legend h3{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:18px 0 6px;border-bottom:1px solid var(--border);padding-bottom:4px}
 #legend .lgintro{margin-bottom:6px}
 .lgrow{display:flex;gap:12px;align-items:center;padding:5px 0}.lgrow .lgsw{flex:none;width:118px;display:flex;align-items:center;gap:6px;white-space:nowrap;flex-wrap:wrap}
@@ -281,11 +284,6 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
   <div class="srch"><input type="search" id="search" placeholder="Search features…"><span id="sNav" style="display:none;gap:4px;align-items:center"><span id="sCount" class="cnt"></span><button id="sPrev" title="Previous match (Shift+Enter)">‹</button><button id="sNext" title="Next match (Enter)">›</button></span></div>
   <div id="health" style="display:none"></div>
   <div class="tools">
-    <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
-      <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div id="dsgFilter" style="display:none"><div class="ph">Linked designs</div><div id="dsgs"></div><div class="fbtns"><button id="dsgAll">All</button><button id="dsgNone">None</button></div></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
-    <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
-      <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus" checked> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="chk" style="display:flex;gap:10px;align-items:center;padding:3px 0;font-size:13px" title="Where the view goes when you select something">Zoom to<label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomObj"> selected object</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomTree" checked> selected tree</label></div><label class="chk" title="Hovering a box rings it in gold, with its direct parents and children and the links between them"><input type="checkbox" id="hovRel" checked> Highlight parents and children on hover</label><label class="chk" title="Timeline layout: moving the mouse close to the left or right edge of the graph scrolls the row that way (faster the closer you get)"><input type="checkbox" id="edgeScroll" checked> Scroll at the left / right edge (Timeline)</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn"> What uses it</label><label class="chk sub off" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked disabled> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label><label class="chk" title="Show every link all the time. When off, only the links of the selection, of the hovered box, and the lines joining a group box to its items are drawn."><input type="checkbox" id="allLinks"> All links (grey)</label></div></div>
-    <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
     <button id="infoBtn" title="How to use, warnings">Info</button>
   </div>
 </header>
@@ -297,17 +295,22 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     <div id="graphwrap">
       <svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs>
       </defs><g id="vp"></g></svg>
-      <div id="gpanel"><div class="gph"><b>Timeline groups</b><span class="cnt" id="gpCount"></span><button id="gpToggle" title="Show/hide the group list">–</button></div><div id="gpList"></div></div>
       <div class="gtools">
         <button id="expAll" title="Expand all timeline groups">Expand all</button><button id="colAll" title="Collapse all timeline groups">Collapse all</button><span class="sep"></span><button id="pbStart" title="Play the whole history of the design (P)">▶ Play</button><span class="sep"></span><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it">Fit</button>
       </div>
       <div id="pbCard"><img alt=""><div class="cap"></div></div><div id="pbBar"><button id="pbPrev" title="Back one step (←)">⏮</button><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
     </div>
   </div>
-  <aside id="details"></aside>
+  <aside id="side">
+    <div id="sideTabs"><button class="stab on" data-tab="sel" id="tabSel" title="What is selected">Selection</button><button class="stab" data-tab="groups" id="tabGroups" title="Timeline groups: select, fold or switch off a group">Groups <span class="cnt" id="gpCount"></span></button><button class="stab" data-tab="filter" id="filterBtn" title="Which kinds of items and which linked designs to show">Filter</button><button class="stab" data-tab="disp" id="dispBtn" title="Display options">Display</button><button class="stab" data-tab="legend" id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button><button id="sideClose" title="Hide the panel">»</button></div>
+    <div class="spane on" data-pane="sel" id="details"></div>
+    <div class="spane" data-pane="groups"><div id="gpList"></div></div>
+    <div class="spane opts" data-pane="filter" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div id="dsgFilter" style="display:none"><div class="ph">Linked designs</div><div id="dsgs"></div><div class="fbtns"><button id="dsgAll">All</button><button id="dsgNone">None</button></div></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div>
+    <div class="spane opts" data-pane="disp" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus" checked> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="chk" style="display:flex;gap:10px;align-items:center;padding:3px 0;font-size:13px" title="Where the view goes when you select something">Zoom to<label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomObj"> selected object</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomTree" checked> selected tree</label></div><label class="chk" title="Hovering a box rings it in gold, with its direct parents and children and the links between them"><input type="checkbox" id="hovRel" checked> Highlight parents and children on hover</label><label class="chk" title="Timeline layout: moving the mouse close to the left or right edge of the graph scrolls the row that way (faster the closer you get)"><input type="checkbox" id="edgeScroll" checked> Scroll at the left / right edge (Timeline)</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn"> What uses it</label><label class="chk sub off" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked disabled> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label><label class="chk" title="Show every link all the time. When off, only the links of the selection, of the hovered box, and the lines joining a group box to its items are drawn."><input type="checkbox" id="allLinks"> All links (grey)</label></div>
+    <div class="spane" data-pane="legend" id="legend"><div id="legendBody"></div></div>
+  </aside>
 </main>
 <div id="info"><button class="x" id="infoClose" title="Close">×</button><div id="infoBody"></div></div>
-<div id="legend"><button class="x" id="legendClose" title="Close (Esc)">×</button><h2>Legend</h2><div id="legendBody"></div></div>
 <script>
 const D = /*__DATA__*/null;
 (function(){
@@ -500,7 +503,7 @@ function colorOfGroup(gid){const p=groupPath(gid);let g=groups[gid];let guard=0;
 function groupTag(g){if(g.fail)return ['breaks '+(g.fail.node&&byId[g.fail.node]?byId[g.fail.node].name:(g.fail.name||'a feature')),'bad'];if(g.empty)return ['empty',''];if(!g.dsupp)return ['',''];
   const b=(g.dbreak||[]).length;if(!g.dsupp.length&&!b)return ['independent','ok'];return [(g.dsupp.length?'+'+g.dsupp.length+' outside':'')+(b?(g.dsupp.length?', ':'')+b+' fail':''),b?'bad':''];}
 function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';const gs=D.groups.slice().sort((a,b)=>a.first-b.first);$('gpCount').textContent=gs.length;
-  $('gpanel').style.display=gs.length?'':'none';
+  $('tabGroups').style.display=gs.length?'':'none';
   gs.forEach(g=>{const mem=groupMembers(g.id);if(!mem.length&&!g.empty)return;const r=document.createElement('div');r.className='gprow'+(selGroup===g.id?' sel':'');
     const depth=groupPath(g.id).length-1;r.style.paddingLeft=(8+depth*14)+'px';
     const extG=!!(groups[g.id]&&(groups[g.id].design||groups[g.id].loose));   // a whole linked design (its frame): no test result, nothing to simulate
@@ -838,7 +841,7 @@ function renderMultiDetails(d){const mem=groupMembers('_sel');const mset=new Set
   const bx=document.createElement('button');bx.textContent='Clear selection';bx.onclick=clearSel;b.appendChild(bx);d.appendChild(b);}
 function linkList(list,dir){const ul=document.createElement('ul');if(!list.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
   list.forEach(e=>{const n=byId[dir==='up'?e.s:e.t];const li=document.createElement('li');li.appendChild(pill(n));const a=document.createElement('span');a.className='name '+stateCls(n);a.textContent=n.name;a.onclick=()=>select(n.id);li.appendChild(a);const k=document.createElement('span');k.className='k';k.textContent=e.k.map(x=>KIND[x]||x).join(', ');li.appendChild(k);li.addEventListener('mouseenter',()=>panelLinkHover(e.s,e.t,true));li.addEventListener('mouseleave',()=>panelLinkHover(e.s,e.t,false));ul.appendChild(li);});return ul;}
-function setInfo(open){if(open&&document.body.classList.contains('legendopen'))setLegend(false);document.body.classList.toggle('infoopen',!!open);$('infoBtn').classList.toggle('on',!!open);}
+function setInfo(open){document.body.classList.toggle('infoopen',!!open);$('infoBtn').classList.toggle('on',!!open);}
 function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.createElement('div');cols.className='cols';
   const c1=document.createElement('div');c1.innerHTML='<h2>Dependencies graph</h2><div class="kv">Click an item or group in the tree, or a box in the graph, to see its details; Cmd+click (Mac) or Ctrl+click adds or removes items to select several. Click empty space in the graph to deselect.</div>';
   const gen=document.createElement('div');gen.className='hint';
@@ -856,31 +859,45 @@ function renderInfo(){const b=$('infoBody');b.innerHTML='';const cols=document.c
 // ---------- select in Fusion ----------
 // The add-in listens on 127.0.0.1 (port and secret token are written into the page when it is generated).
 // Timeline items are selected through their timeline entry, components through their occurrence; parameters
-// cannot be selected in Fusion.
+// cannot be selected in Fusion. An item of a linked design is selected in that design: Fusion opens it (the version
+// and configuration the page shows) and selects it there by its timeline index there.
 const FSEL=(D.meta&&D.meta.sel)||null;
-function fusionSpec(id){const n=byId[id];if(!n)return null;if(n.tl!=null)return {tl:n.tl,name:n.name,tok:n.tok||''};if(n.occ)return {occ:n.occ};return null;}
+function fusionSpec(id){const n=byId[id];if(!n)return null;if(n.tl!=null)return {tl:n.tl,name:n.name,tok:n.tok||''};if(n.occ)return {occ:n.occ};
+  if(n.dsg&&!n.port&&(n.stl!=null||n.socc)){const g=groups[n.g[0]];if(!g||!g.fid)return null;
+    return {d:g.id,it:n.stl!=null?{tl:n.stl,name:n.name,tok:n.stok||''}:{occ:n.socc}};}
+  return null;}
 // the selection with what it highlights around itself (Display > Around the selection)
 function branchIds(base){const out=new Set(base);base.forEach(id=>{relOf(id,'up').forEach(i=>out.add(i));relOf(id,'down').forEach(i=>out.add(i));});return [...out].filter(i=>byId[i]&&byId[i].type!=='UserParameters');}
 function selectInFusion(ids,st){const say=(t,bad)=>{st.textContent=t;st.style.color=bad?'var(--err)':'';};
   if(!FSEL){say('This page was made by an older add-in. Generate it again to select in Fusion.',true);return;}
-  const items=[];let skipped=0;[...new Set(ids)].forEach(i=>{const x=fusionSpec(i);if(x)items.push(x);else if(byId[i])skipped++;});
-  const sk=skipped?' · '+skipped+' parameter'+(skipped===1?'':'s')+' cannot be selected':'';
-  if(!items.length){say('Nothing here can be selected in Fusion'+(skipped?' (parameters cannot be selected)':'')+'.',true);return;}
-  say('Selecting '+items.length+' in Fusion…');
+  // Fusion shows one document at a time: the items of the design of the first one that can be selected
+  const specs=[...new Set(ids)].map(i=>[i,fusionSpec(i)]);const first=specs.find(x=>x[1]);
+  if(!first){const nParam=specs.filter(([i])=>byId[i]&&byId[i].cat==='param').length;
+    say('Nothing here can be selected in Fusion'+(nParam===specs.length?' (parameters cannot be selected)':(specs.length===1&&byId[specs[0][0]]&&byId[specs[0][0]].port?' (a whole linked design: select its items)':''))+'.',true);return;}
+  const dk=first[1].d||'';const items=specs.filter(([,x])=>x&&(x.d||'')===dk).map(([,x])=>x.d?x.it:x);
+  const nOther=specs.filter(([,x])=>x&&(x.d||'')!==dk).length,skipped=specs.filter(([i,x])=>!x&&byId[i]).length;
+  const sk=(nOther?' · '+nOther+' in other designs left out':'')+(skipped?' · '+skipped+' that cannot be selected':'');
+  const dg=dk?groups[dk]:null;const req={token:FSEL.token,doc:D.meta.doc,items};
+  if(dg)Object.assign(req,{fid:dg.fid,ver:dg.ver,cfg:dg.cfg||null,dname:dg.name});
+  say('Selecting '+items.length+' in Fusion'+(dg?' (in '+dg.name+')':'')+'…');
   const ctl=typeof AbortController!=='undefined'?new AbortController():null;if(ctl)setTimeout(()=>ctl.abort(),20000);
-  fetch('http://127.0.0.1:'+FSEL.port+'/select',{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({token:FSEL.token,doc:D.meta.doc,items}),signal:ctl?ctl.signal:undefined})
-    .then(r=>r.json()).then(r=>{if(!r.ok)say(r.error||'Fusion refused the selection.',true);else say('Selected '+r.selected+' in Fusion'+(r.missing?' · '+r.missing+' not found in the design':'')+sk+'.');})
+  fetch('http://127.0.0.1:'+FSEL.port+'/select',{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify(req),signal:ctl?ctl.signal:undefined})
+    .then(r=>r.json()).then(r=>{if(!r.ok)say(r.error||'Fusion refused the selection.',true);else say((r.opened?'Opened '+(r.doc||'the design')+' and selected ':'Selected ')+r.selected+' in Fusion'+(dg&&!r.opened?' (in '+(r.doc||dg.name)+')':'')+(r.missing?' · '+r.missing+' not found in the design':'')+sk+'.');})
     .catch(()=>say('Could not reach Fusion. Is Fusion running with the Dependencies Graph add-in?',true));}
 function fusionRow(d,ids){const w=document.createElement('div');w.style.cssText='margin-top:8px;display:flex;gap:6px;flex-wrap:wrap';
   const st=document.createElement('div');st.className='kv';st.style.marginTop='4px';
   const b1=document.createElement('button');b1.textContent='Select in Fusion';b1.title='Select '+(ids.length===1?'this item':'these '+ids.length+' items')+' in Fusion (timeline or browser)';b1.onclick=()=>selectInFusion(ids,st);
   const b2=document.createElement('button');b2.textContent='Select branch in Fusion';b2.title='Also select what is highlighted around the selection (Display > Around the selection)';b2.onclick=()=>selectInFusion(branchIds(ids),st);
   w.append(b1,b2);d.append(w,st);}
+let lastSelKey='',sideTab='sel';
 function renderDetails(){
+  // a new selection shows the Selection tab (not from the Groups tab: selecting there is part of using it)
+  {const k=(selected||'')+'|'+(selGroup||'')+'|'+multi.join(',');if(k!==lastSelKey){lastSelKey=k;
+    if((selected||selGroup)&&sideTab!=='sel'&&sideTab!=='groups')showTab('sel',document.body.classList.contains('sidemin'));}}
   pbSync();const d=$('details');d.innerHTML='';
   if(selGroup&&groups[selGroup]){document.body.classList.remove('nosel');setInfo(false);renderGroupDetails(d);fusionRow(d,groupMembers(selGroup).filter(visibleNode).map(x=>x.id));return;}
   document.body.classList.toggle('nosel',!selected);
-  if(!selected){renderInfo();return;}
+  if(!selected){renderInfo();d.innerHTML='<div class="kv" style="padding:6px 2px;line-height:1.5">Nothing selected. Click a box in the graph (or an item in the tree) to see what it depends on, what uses it and what suppressing it would do. Cmd/Ctrl+click adds more items; a group from the Groups tab can be selected too.</div>';return;}
   setInfo(false);
   const n=byId[selected];
   const h=document.createElement('h2');h.textContent=n.name;h.className=stateCls(n);h.prepend(iconEl(n,18));d.appendChild(h);
@@ -1381,7 +1398,7 @@ function renderGraph(fitAfter,centerId){
         bt.addEventListener('click',ev=>{ev.stopPropagation();const gk=f.d;animatedRerender(()=>{selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});},{});});
         btnLayer.appendChild(bt);}});}
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
-    const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);};
+    const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_root'||((id==='_none'||id==='_params')&&!groups[id]);};   // this design's Not in a group / User parameters: selectable like a group
     lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.07;stroke:'+col+';stroke-opacity:.45;stroke-width:1.5');
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const DSG=groups[l.id]&&groups[l.id].design;if(DSG){bg.setAttribute('style','fill:'+col+';fill-opacity:.05;stroke:'+col+';stroke-opacity:.8;stroke-width:3;stroke-dasharray:10 5');tx.setAttribute('style','font-size:17px;font-weight:800;fill:'+col);}
@@ -1395,7 +1412,13 @@ function renderGraph(fitAfter,centerId){
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
           bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else{selShut.delete(gk);expanded.add(gk);}},{});});
           l.btn=bt;}}
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM&&!(groups[l.id]&&groups[l.id].design))select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
+      // a component's block (Components layout, the root component's too) selects the whole component: all its items
+      const compBlock=CM&&!(groups[l.id]&&groups[l.id].design)&&(byId[l.id]||laneBase(l.id)==='_root');const clickable=compBlock||!noLane(l.id);
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=clickable?'pointer':'default';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);
+      if(clickable)lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;
+        if(compBlock){const ids=nodes.filter(n=>visibleNode(n)&&laneKey(n)===l.id).map(n=>n.id);if(!ids.length)return;
+          if(ev.metaKey||ev.ctrlKey)toggleMulti(ids);else if(ids.length===1)select(ids[0]);else setMulti(ids);return;}
+        selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');ge.setAttribute('class','elayer');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');geHi.setAttribute('class','elayer');const gBadge=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
@@ -1611,7 +1634,7 @@ function renderGraph(fitAfter,centerId){
   vp.appendChild(btnLayer);
   if(fitAfter)fit(centerId?rep(byId[centerId]):null);
 }
-function fit(centerRep,only){const ids=(only&&only.length?only:Object.keys(pos)).filter(i=>pos[i]);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;
+function fit(centerRep,only){const ids=(only&&only.length?only:Object.keys(pos)).filter(i=>pos[i]);if(!ids.length)return;const LP=0;const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;
   if(centerRep&&pos[centerRep]){T.k=1;T.x=LP+W/2-(pos[centerRep].x+NW/2);T.y=H/2-(pos[centerRep].y+NH/2);applyT();return;}
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;ids.forEach(i=>{const p=pos[i];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});if(layoutMode==='time')y0-=tlArcTop;
   if(!(only&&only.length))designFrames.forEach(f=>{x0=Math.min(x0,f.x);y0=Math.min(y0,f.y);x1=Math.max(x1,f.x+f.w);y1=Math.max(y1,f.y+f.h);});   // the design frames' titles and pictures too
@@ -1619,7 +1642,7 @@ function fit(centerRep,only){const ids=(only&&only.length?only:Object.keys(pos))
 // zoom and centre on the given boxes (animated); a single item is shown at a readable size
 let anim=null;
 function focusOn(repIds,dur0,alignTop){const ps=repIds.map(r=>pos[r]).filter(Boolean);if(!ps.length)return;
-  const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
+  const LP=0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;ps.forEach(p=>{x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});
   // the design frames around these boxes (titles, pictures) are part of what is shown
@@ -1640,7 +1663,7 @@ function picPopMove(ev){if(!picPop||picPop.style.display==='none')return;const r
   let x=ev.clientX+18,y=ev.clientY+18;if(x+r.width>W-8)x=ev.clientX-r.width-18;if(y+r.height>H-8)y=Math.max(8,H-r.height-8);picPop.style.left=Math.max(8,x)+'px';picPop.style.top=y+'px';}
 function picPopHide(){if(picPop)picPop.style.display='none';}
 // animated zoom to a rectangle of the graph (in graph coordinates)
-function zoomToRect(x0,y0,x1,y1,dur){const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
+function zoomToRect(x0,y0,x1,y1,dur){const LP=0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;const k=Math.max(0.03,Math.min(1.2,(W-40)/(x1-x0||1),(H-80)/(y1-y0||1)));
   const tx=LP+(W-(x1-x0)*k)/2-x0*k,ty=50+Math.max(0,(H-60-(y1-y0)*k)/2)-y0*k;
   const s0={x:T.x,y:T.y,k:T.k},t0=performance.now();if(anim)cancelAnimationFrame(anim);
@@ -1658,7 +1681,7 @@ window.dgDesignsOnly=keep=>{collapseEverything=false;collapsedNodes.clear();selS
 // or (no id) around the selection, halfway to the middle of the current view; nothing changes when the view is already that close (force: set exactly k anyway). dgZoom(): the current zoom
 window.dgZoom=()=>T.k;
 window.dgZoomAround=(id,k,dur,force)=>{const n=byId[id||selected];if(!n)return false;const r=lastVisRep(rep(n));const p=pos[r];if(!p)return false;
-  if(T.k>=k&&!force)return true;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
+  if(T.k>=k&&!force)return true;const LP=0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;let cx=p.x+NW/2,cy=p.y+NH/2;
   // the selection (no id): halfway between it and the middle of the current view (after Fit: its whole tree), so the tree stays in sight
   if(!id){cx=(cx+(LP+W/2-T.x)/T.k)/2;cy=(cy+(H/2-T.y)/T.k)/2;}
@@ -1670,7 +1693,7 @@ window.dgZoomAround=(id,k,dur,force)=>{const n=byId[id||selected];if(!n)return f
 window.dgFocus=(id,dur)=>{if(!pos[id])return false;focusOn([id],dur||600);return true;};
 // first view: like Fit, but never zoomed out further than MIN_START_ZOOM (top of the graph, centred)
 const MIN_START_ZOOM=0.55;
-function fitInitial(){const ids=Object.keys(pos);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
+function fitInitial(){const ids=Object.keys(pos);if(!ids.length)return;const LP=0;
   const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;ids.forEach(i=>{const p=pos[i];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);y1=Math.max(y1,p.y+NH);});if(layoutMode==='time')y0-=tlArcTop;
   designFrames.forEach(f=>{x0=Math.min(x0,f.x);y0=Math.min(y0,f.y);x1=Math.max(x1,f.x+f.w);y1=Math.max(y1,f.y+f.h);});
   const k=Math.max(MIN_START_ZOOM,Math.min(1.2,(W-40)/(x1-x0||1),(H-80)/(y1-y0||1)));T.k=k;T.x=LP+(W-(x1-x0)*k)/2-x0*k;T.y=60-y0*k;
@@ -1681,7 +1704,7 @@ function fitInitial(){const ids=Object.keys(pos);if(!ids.length)return;const gp=
 function showInGraph(getReps){setView('graph');renderGraph(false);
   let ids=[...new Set(getReps())];if(ids.some(r=>!pos[r])&&collapsedNodes.size){collapsedNodes.clear();renderGraph(false);ids=[...new Set(getReps())];}
   requestAnimationFrame(()=>focusOn(ids));}
-function fitWidth(only){const ids=(only&&only.length?only:Object.keys(pos)).filter(i=>pos[i]);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;const W=(svg.clientWidth||800)-LP;
+function fitWidth(only){const ids=(only&&only.length?only:Object.keys(pos)).filter(i=>pos[i]);if(!ids.length)return;const LP=0;const W=(svg.clientWidth||800)-LP;
   let x0=1e9,y0=1e9,x1=-1e9;ids.forEach(i=>{const p=pos[i];x0=Math.min(x0,p.x);y0=Math.min(y0,p.y);x1=Math.max(x1,p.x+NW);});
   T.k=Math.max(0.03,Math.min(1.5,(W-40)/(x1-x0||1)));T.x=LP+20-x0*T.k;T.y=60-y0*T.k;applyT();}
 // Fit / Fit width: with something selected, fit the selection and everything highlighted with it; animated
@@ -1702,7 +1725,7 @@ svg.addEventListener('click',()=>{if(moved)return;if(selected||selGroup)clearSel
 // items already built to the next one, which then fades in. The camera follows the dots.
 let PB=null;const PBS=[0.5,1,2,4];
 const PB_A={pre:0.3,other:0.06,edgePre:0.16,edgeOther:0.03};
-function pbLP(){const gp=$('gpanel');return (gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;}
+function pbLP(){return 0;}
 function pbSync(){const b=$('pbStart');if(!b)return;const ok=!!(selected&&byId[selected]);b.disabled=false;
   if(!ok&&selGroup&&groups[selGroup]){b.title=selGroup==='_sel'?'Play how the selected items were built from their dependencies (P)':'Play how this timeline group was built from its dependencies (P)';return;}
   b.title=ok?'Play how the selected item was built from its dependencies (P)':'Play the whole history of the design (P). Select an item first to play only how that item was built.';}
@@ -2004,10 +2027,17 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     row('<span class="simb b">● fails</span><span class="simb w">▲ warning</span>','Tree markers','Same meaning as the red and orange markers on the boxes.'),
   ]);
   b.innerHTML=h;}
-function setLegend(open){document.body.classList.toggle('legendopen',!!open);$('legendBtn').classList.toggle('on',!!open);if(open){setInfo(false);renderLegend();}}
-$('legendBtn').onclick=()=>setLegend(!document.body.classList.contains('legendopen'));
-$('legendClose').onclick=()=>setLegend(false);
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('legendopen')){e.stopImmediatePropagation();setLegend(false);}},true);
+// the right panel's tabs; the open tab and whether the panel is open are remembered (this browser only)
+const sideStore=(k,v)=>{try{if(v===undefined)return localStorage.getItem('dg.'+k);localStorage.setItem('dg.'+k,v);}catch(e){return null;}};
+function sideOpen(open){document.body.classList.toggle('sidemin',!open);$('sideClose').textContent=open?'»':'«';$('sideClose').title=open?'Hide the panel':'Show the panel';
+  sideStore('side',open?'1':'0');}
+function showTab(t,keepClosed){sideTab=t;document.querySelectorAll('#sideTabs .stab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));
+  document.querySelectorAll('#side .spane').forEach(p=>p.classList.toggle('on',p.dataset.pane===t));
+  if(t==='legend')renderLegend();if(!keepClosed)sideOpen(true);sideStore('tab',t);}
+function setLegend(open){if(open)showTab('legend');else if(sideTab==='legend')showTab('sel');}
+document.querySelectorAll('#sideTabs .stab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+$('sideClose').onclick=()=>sideOpen(document.body.classList.contains('sidemin'));
+{const t=sideStore('tab');if(t&&document.querySelector('#sideTabs .stab[data-tab="'+t+'"]')&&t!=='sel')showTab(t,true);if(sideStore('side')==='0')sideOpen(false);}
 function setView(v){view=v;$('vTree').classList.toggle('on',v==='tree');$('vGraph').classList.toggle('on',v==='graph');$('tree').style.display=v==='tree'?'':'none';$('graphwrap').style.display=v==='graph'?'block':'none';$('treeCtrl').style.display=v==='tree'?'':'none';$('layoutSeg').style.display=v==='graph'?'':'none';renderDetails();if(v==='tree')renderTree();setTimeout(updateSearchNav,0);}
 function refresh(){buildAdj();renderDetails();if(view==='tree')renderTree();else renderGraph(false);}
 $('vTree').onclick=()=>setView('tree');
@@ -2025,7 +2055,6 @@ if(hasThumbs)$('thumbCtrl').style.display='';
 $('infoBtn').onclick=()=>{const open=!document.body.classList.contains('infoopen');if(open){renderInfo();}setInfo(open);};
 $('infoClose').onclick=()=>setInfo(false);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){if(document.body.classList.contains('infoopen'))setInfo(false);else if(route&&route.sel===selected)setRoute(null);else if(selected||selGroup)clearSel();}});
-$('gpToggle').onclick=()=>{const m=$('gpanel').classList.toggle('min');$('gpToggle').textContent=m?'+':'–';};
 $('showThumbs').onchange=e=>{const v=e.target.checked;const ch=()=>{showThumbs=v;document.body.classList.toggle('nothumbs',!showThumbs);peekHide();renderDetails();};
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(ch,{fit:'fit',dur:480});else{ch();if(view==='graph')renderGraph(true);}};
 $('pullTog').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{pullTogether=v;},{dur:450});else pullTogether=v;};
@@ -2061,10 +2090,9 @@ $('fit').onclick=()=>{const r=(selected||selGroup)?selRelated:null;fitAnimated((
 $('hBack').onclick=()=>goHist(-1);$('hNext').onclick=()=>goHist(1);
 document.addEventListener('keydown',e=>{if(e.target&&(e.target.tagName==='INPUT'||e.target.tagName==='SELECT'))return;if(e.altKey&&e.key==='ArrowLeft'){e.preventDefault();goHist(-1);}else if(e.altKey&&e.key==='ArrowRight'){e.preventDefault();goHist(1);}});
 window.addEventListener('mouseup',e=>{if(e.button===3){e.preventDefault();goHist(-1);}else if(e.button===4){e.preventDefault();goHist(1);}});
-document.querySelectorAll('.pop>button').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=b.parentElement;const o=!p.classList.contains('open');document.querySelectorAll('.pop.open').forEach(x=>x.classList.remove('open'));if(o)p.classList.add('open');});
-document.querySelectorAll('.popbox').forEach(x=>x.addEventListener('click',e=>e.stopPropagation()));
-document.addEventListener('mousedown',e=>{if(!e.target.closest||!e.target.closest('.pop'))document.querySelectorAll('.pop.open').forEach(x=>x.classList.remove('open'));},true);
-function updateFilterBtn(){const cs=Object.keys(catOn);const off=cs.filter(c=>!catOn[c]);const nd=Object.keys(dsgOff).length;$('filterBtn').textContent='Filter '+(off.length?'('+(cs.length-off.length)+'/'+cs.length+') ':'')+(nd?'('+nd+' design'+(nd>1?'s':'')+' hidden) ':'')+'▾';}
+function updateFilterBtn(){const cs=Object.keys(catOn);const off=cs.filter(c=>!catOn[c]);const nd=Object.keys(dsgOff).length;const n=off.length+nd;
+  $('filterBtn').textContent='Filter'+(n?' ('+n+' off)':'');
+  $('filterBtn').title=n?[off.length?off.length+' of '+cs.length+' kinds of items hidden':'',nd?nd+' linked design'+(nd>1?'s':'')+' hidden':''].filter(Boolean).join(', '):'Which kinds of items and which linked designs to show';}
 function updateLinksBtn(){updateFilterBtn();}
 function setLayout(m){layoutMode=m;$('laneBtn').classList.toggle('on',m==='lanes');$('compBtn').classList.toggle('on',m==='comps');$('layDeps').classList.toggle('on',m==='deps');$('layTime').classList.toggle('on',m==='time');renderGraph(false);fitInitial();}
 $('layDeps').onclick=()=>setLayout('deps');

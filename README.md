@@ -22,7 +22,7 @@ timeline groups, components, parameters and optional suppression tests.
 - **Thumbnails** of the model after each timeline step, and one picture per component.
 - **Links** for every kind of reference (sketch, profile, plane, faces/edges, body, feature, parameter,
   component, joint, suppression test). *Same body, later* (timeline order only) can be switched on in
-  the Display menu.
+  the Display tab.
 
 ### Layouts and navigation
 - **Depth**, **Groups** (one block per timeline group), **Components** (one block per component) and
@@ -31,23 +31,30 @@ timeline groups, components, parameters and optional suppression tests.
 - **Folding**: timeline groups, components, *Not in a group* and *User parameters* fold into one box;
   any box can fold what depends on it. *Collapse all* / *Expand all*. A line going into a folded box shows
   how many of the items folded into it the line leads to.
-- **Filter menu**: show or hide any kind of item, and any linked design as a whole. Hidden items are skipped,
+- **Side panel** on the right, with tabs: *Selection* (what is selected: what it depends on, what uses it, what
+  suppressing it does), *Groups* (the timeline groups: select, fold or switch off one), *Filter*, *Display* and
+  *Legend*. `»` folds it to a narrow strip of the tabs; a tab opens it again.
+- **Filter tab**: show or hide any kind of item, and any linked design as a whole. Hidden items are skipped,
   not cut out: their links are joined through to the items they connect (dotted lines), so selections and routes
   still pass through a hidden design.
+- **Selecting a block**: a click on a timeline group's block (also *Not in a group* and *User parameters*) selects
+  the whole group; in the Components layout, a click on a component's block selects all its items.
 - **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
 - **Multiple selection**: Cmd+click (Mac) / Ctrl+click adds or removes items; several selected items are
   highlighted and played back together, and for two related items the side panel offers their routes.
 - **Hover** a box to highlight it in gold with its direct parents and children and the links between them; the
-  rest is dimmed meanwhile, like when hovering a route button (can be switched off in the Display menu).
+  rest is dimmed meanwhile, like when hovering a route button (can be switched off in the Display tab).
 - **Routes**: with an item selected, every other box of its tree gets a small route button; click it to
   highlight every route between the two (orange), with the number of routes. `Esc` hides them.
 - **Select in Fusion**: the side panel can select the item(s) in Fusion (timeline entry or browser), or the
   whole branch highlighted around the selection. The page talks to the add-in on 127.0.0.1 with a secret key
-  written into the page when it is generated; parameters cannot be selected in Fusion.
-- **Zoom on select**: to the selected object or to its whole tree (Display menu).
+  written into the page when it is generated; parameters cannot be selected in Fusion. An item of a linked
+  design is selected in that design: Fusion switches to it, or opens it (the version and configuration the page
+  shows).
+- **Zoom on select**: to the selected object or to its whole tree (Display tab).
 - **Back / forward** through selections, restoring the zoom and position you had.
-- **Legend** explaining every colour, icon, outline, marker and line.
+- **Legend** tab explaining every colour, icon, outline, marker and line.
 - **Display options**: thumbnails, only the selected branch, moving related boxes closer to the selection,
   what the selection highlights around itself (what it depends on / what uses it, each either direct only
   or the whole chain), all links (off by default: only the links of the selection and of the hovered box

@@ -627,7 +627,8 @@ RESET_JS = """(()=>{
   const set=(id,v)=>{const e=document.getElementById(id);if(e&&e.checked!==v){e.checked=v;e.dispatchEvent(new Event('change',{bubbles:true}));}};
   set('focus',true);set('relUp',true);set('relUpAll',true);set('relDn',false);set('allLinks',false);
   if([...document.querySelectorAll('#cats input')].some(i=>!i.checked)&&q('#catAll'))q('#catAll').click();
-  if(q('#legend')&&q('#legend').classList.contains('open')&&q('#legendClose'))q('#legendClose').click();
+  if(document.body.classList.contains('sidemin')&&q('#sideClose'))q('#sideClose').click();   // the side panel open,
+  if(q('#tabSel'))q('#tabSel').click();                                                          // on its Selection tab
   if(q('#laneBtn')&&!q('#laneBtn').classList.contains('on'))q('#laneBtn').click();
   const rs=[...document.querySelectorAll('#simBar button')].find(b=>b.textContent==='Reset');if(rs)rs.click();
   const svg=q('#graph');if(svg)svg.dispatchEvent(new MouseEvent('click',{bubbles:true}));
@@ -740,14 +741,14 @@ def step_3():
     press(sel('#hBack'), 1.3, 2.0); hush()
 
 def step_4():
-    """Display menu: What uses it"""
-    topic("The Display menu decides what a selection shows around it. Let's also turn on what uses it.")
+    """Display tab: What uses it"""
+    topic("The side panel's Display tab decides what a selection shows around it. Let's also turn on what uses it.")
     press(sel('#dispBtn'), 1.1, 1.0)
     hush(); press(by_text('#dispBox label', 'What uses it', False), 1.0, 1.5)
     say("Now the items built on top of the selection are highlighted too, joined to it by green arrows.", True)
     wait(1.5)
     press(by_text('#dispBox label', 'What uses it', False), 0.6, 1.0)
-    press(sel('#dispBtn'), 0.9, 1.0)
+    press(sel('#tabSel'), 0.9, 1.0)
 
 def step_5():
     """Routes"""
@@ -771,10 +772,10 @@ def step_5():
 def step_6():
     """Only the selected branch off + Cmd+click multi-select"""
     topic("By default, only the selected branch is shown. "
-          "Turning off Only the selected branch, in the Display menu, shows it inside the whole design instead.")
+          "Turning off Only the selected branch, in the Display tab, shows it inside the whole design instead.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'Only the selected branch', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0)
     say("The related boxes move next to the selection, and the rest of the design stays around them, dimmed.", True)
     wait(0.8)
     topic("Now items from other branches can be reached too. Holding command while clicking adds one to the selection. "
@@ -786,7 +787,7 @@ def step_6():
     say("Let's turn Only the selected branch back on. The view is cleaner with it.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'Only the selected branch', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0); hush(); wait(0.6)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0); hush(); wait(0.6)
     say("A click on empty space, or Escape, clears the selection.")
     xy = empty_xy()
     if xy: go(xy, 1.2)
@@ -798,10 +799,10 @@ def step_6():
 def step_7():
     """All links, then Collapse all / Expand all"""
     topic("With nothing selected, links only appear on hover. "
-          "All links, in the Display menu, shows every link at once, in grey.")
+          "All links, in the Display tab, shows every link at once, in grey.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0, 0.5)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0, 0.5)
     say("That's the whole web of dependencies.", True); wait(0.8)
     topic("Collapse all folds every timeline group into one box. "
           "Now the links show how the groups depend on each other, and the number on a line says how many links it stands for.")
@@ -811,7 +812,7 @@ def step_7():
     say("Let's turn All links off again. Hover and selection usually tell more.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); hush()
+    press(sel('#tabSel'), 0.9, 0.5); hush()
 
 def step_8():
     """Search"""
@@ -824,15 +825,15 @@ def step_8():
 
 def step_9():
     """Filters"""
-    topic("The Filter menu hides whole kinds of items. Let's hide the parameters and the construction geometry.")
+    topic("The Filter tab hides whole kinds of items, or whole linked designs. Let's hide the parameters and the construction geometry.")
     hush(); press(sel('#filterBtn'), 1.2, 0.8)
     press(by_text('#cats label', 'Parameter', False), 1.0, 1.0)
     press(by_text('#cats label', 'Construction', False), 0.8, 1.0)
-    press(sel('#filterBtn'), 0.9, 0.5); view_design(1.0, 0.5)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0, 0.5)
     say("The graph is smaller now. Hidden items are skipped, not cut out: their links are joined through them.", True)
     wait(0.8)
     say("All shows everything again.")
-    press(sel('#filterBtn'), 1.0, 0.8); press(sel('#catAll'), 0.8, 1.0); press(sel('#filterBtn'), 0.8, 0.5)
+    press(sel('#filterBtn'), 1.0, 0.8); press(sel('#catAll'), 0.8, 1.0); press(sel('#tabSel'), 0.8, 0.5)
     view_design(1.0); hush()
 
 def step_preview():
@@ -879,9 +880,9 @@ def step_select_in_fusion():
 
 def step_legend():
     """Legend"""
-    topic("And the Legend explains every colour, outline, marker and line.")
+    topic("And the Legend tab of the side panel explains every colour, outline, marker and line.")
     press(sel('#legendBtn'), 1.2, 3.0); hush()
-    press(sel('#legendClose'), 1.0, 1.0)
+    press(sel('#tabSel'), 1.0, 1.0)
 
 def playback_done():
     return js("(()=>{const n=document.getElementById('pbNext');const on=document.body.classList.contains('pbon');"
@@ -923,7 +924,7 @@ STEPS = [
     ('Layouts: Depth, Components, Timeline, Groups', 'clear', step_layouts),
     ('Hover', 'clear', step_2),
     ('Select an item, side panel, Back', 'clear', step_3),
-    ('Display menu: What uses it', 'item', step_4),
+    ('Display tab: What uses it', 'item', step_4),
     ('Routes', 'item', step_5),
     ('Only the selected branch off + Cmd+click multi-select', 'item', step_6),
     ('All links, then Collapse all / Expand all', 'clear', step_7),

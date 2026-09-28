@@ -484,8 +484,9 @@ becomes its frame on the page.
   parameters like `Width_Ref` → `Width`).
 * Deepest designs first; each gets a group (frame) with `design: True`, its picture and `via` (derive/insert).
   Node ids and group references are prefixed; `o` is shifted (`-1e6 + rank * 1e4`) so linked designs come before
-  the main design; `tl` is set to `None` (no Select in Fusion: not in this design's timeline), the original
-  index kept as `stl`; the page previews suppressions of any item with `tl` or `stl` (`inTl`). A `fail.node`
+  the main design; `tl` is set to `None` (not in this design's timeline), the original index kept as `stl` (and
+  the entity token as `stok`, a component's occurrence path as `socc`); the design's group carries `fid`, `ver`
+  and `cfg` (its configuration row) for Select in Fusion; the page previews suppressions of any item with `tl` or `stl` (`inTl`). A `fail.node`
   reference gets the design's prefix too.
   User parameters of a linked design only when something uses them.
 * Each design gets a **connector** node `x<k>:@` (`type: DerivedDesign`, `port: True`): the items handed over lead
@@ -594,11 +595,15 @@ The page is a local file in the browser; it asks the add-in to select items in F
   restart; any free port as fallback) in a daemon thread.
 * Every page carries the port and a secret token (`meta.sel`). The token (`_sel_token`) is stored in the temporary
   folder and stays the same between sessions. Requests without it get 403.
-* `GET /ping?token=...` checks the connection. `POST /select {token, doc, items[{tl, name, tok} | {occ}], add}`
+* `GET /ping?token=...` checks the connection. `POST /select {token, doc, items[{tl, name, tok} | {occ}], add,
+  fid?, ver?, cfg?, dname?}`
   queues a job and fires `SEL_EVENT_ID`; the HTTP thread waits up to 15 s for the answer.
 * `_do_select` runs on Fusion's main thread: checks the active document is the page's design (name without
   version), finds items by timeline index + name (`_flat_timeline` walks groups without expanding them), else by
-  entity token, components by occurrence path, and adds them to the active selection. CORS and
+  entity token, components by occurrence path, and adds them to the active selection. With `fid` (items of a linked
+  design; the page sends one design's items at a time, those of the first item that can be selected) `_linked_doc`
+  first switches to that document when it is open at that version, else opens it in a tab of its own and activates
+  its configuration row; the answer says whether it was opened. CORS and
   `Access-Control-Allow-Private-Network` headers let a `file://` page call it.
 
 ## 15. The generated page
@@ -627,7 +632,16 @@ Main parts, in file order:
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
 * **Hover dims the rest**: while a box is hovered (`svg.nhov`), boxes other than it and its direct parents and children (`nhc`, `nhr`) and the original links are dimmed; the highlighted links are copies drawn on top. The route preview does the same (`rpvon`).
-* **Hiding linked designs** (Filter menu, "Linked designs", when the page has any): a design switched off (`dsgOff`)
+* **Side panel** (`#side`): tabs *Selection* (`#details`), *Groups* (`#gpList`), *Filter* (`#filterBox`),
+  *Display* (`#dispBox`) and *Legend* (`#legend`) - the former floating group list, popovers and legend overlay.
+  `showTab(t)`, `sideOpen(open)`; `body.sidemin` folds it to a strip of vertical tabs. The open tab and the
+  open/closed state are kept in `localStorage` (`dg.tab`, `dg.side`). A new selection shows the Selection tab
+  (not while the Groups tab is open: selecting there is part of using it; a closed panel stays closed).
+  The graph no longer has anything over its left side, so the fitting functions use no left offset.
+* **Selecting blocks**: a block's title area selects its timeline group (this design's *Not in a group* and
+  *User parameters* too); in the Components layout a component's block (the root component's too) selects all
+  its items (`setMulti`; one item: `select`).
+* **Hiding linked designs** (Filter tab, "Linked designs", when the page has any): a design switched off (`dsgOff`)
   hides all its items and its connector through `visibleNode`, so, like any hidden item, it is skipped, not cut
   out: `computeEff` joins links (and so selections and routes) through it, and its frame is not drawn. The Filter
   button counts the hidden designs.
