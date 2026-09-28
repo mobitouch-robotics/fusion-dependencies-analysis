@@ -611,6 +611,10 @@ Main parts, in file order:
   `loose: true`), like this design's pseudo groups `_none` / `_params`: they fold into one box with the block's fold
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
+* **Hiding linked designs** (Filter menu, "Linked designs", when the page has any): a design switched off (`dsgOff`)
+  hides all its items and its connector through `visibleNode`, so, like any hidden item, it is skipped, not cut
+  out: `computeEff` joins links (and so selections and routes) through it, and its frame is not drawn. The Filter
+  button counts the hidden designs.
 * **Whole part behind a connector**: when the page loads, an insert's connector gets links (`derive`, `syn: 1`,
   not counted in the header) from its design's final items - those no other item of that design builds on - so
   selecting the insert (or anything using it) opens and highlights every item and link that made the part. A
