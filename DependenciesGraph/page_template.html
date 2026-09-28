@@ -167,6 +167,9 @@ svg .edge.hov{stroke:var(--hov)!important}   /* hovered link: gold, same colour 
 svg .nd.hov{opacity:1!important}
 /* hovered box: its direct parents and children stay bright, everything else fades */
 svg.nhov .nd.nhc,svg.nhov .nd.nhr{opacity:1!important}
+/* hovering a box dims what is not its direct parents and children (like the route preview); the highlighted links
+   are copies drawn on top, so the originals dim with the rest */
+svg.nhov .nd:not(.nhc):not(.nhr):not(.dim){opacity:.35}svg.nhov .edge:not(.nhl):not(.dim),svg.nhov .ecount:not(.nhl):not(.dim){opacity:.3}
 svg .nhov-ov{pointer-events:none}
 /* while a box is hovered, the other links step back a little (their layers at 80%) */
 svg .elayer{transition:opacity .2s ease}svg.nhov .elayer{opacity:.8}

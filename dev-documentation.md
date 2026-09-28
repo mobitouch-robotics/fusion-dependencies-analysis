@@ -611,6 +611,7 @@ Main parts, in file order:
   `loose: true`), like this design's pseudo groups `_none` / `_params`: they fold into one box with the block's fold
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
+* **Hover dims the rest**: while a box is hovered (`svg.nhov`), boxes other than it and its direct parents and children (`nhc`, `nhr`) and the original links are dimmed; the highlighted links are copies drawn on top. The route preview does the same (`rpvon`).
 * **Hiding linked designs** (Filter menu, "Linked designs", when the page has any): a design switched off (`dsgOff`)
   hides all its items and its connector through `visibleNode`, so, like any hidden item, it is skipped, not cut
   out: `computeEff` joins links (and so selections and routes) through it, and its frame is not drawn. The Filter

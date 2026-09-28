@@ -38,8 +38,8 @@ timeline groups, components, parameters and optional suppression tests.
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
 - **Multiple selection**: Cmd+click (Mac) / Ctrl+click adds or removes items; several selected items are
   highlighted and played back together, and for two related items the side panel offers their routes.
-- **Hover** a box to highlight it in gold with its direct parents and children and the links between them
-  (can be switched off in the Display menu).
+- **Hover** a box to highlight it in gold with its direct parents and children and the links between them; the
+  rest is dimmed meanwhile, like when hovering a route button (can be switched off in the Display menu).
 - **Routes**: with an item selected, every other box of its tree gets a small route button; click it to
   highlight every route between the two (orange), with the number of routes. `Esc` hides them.
 - **Select in Fusion**: the side panel can select the item(s) in Fusion (timeline entry or browser), or the
