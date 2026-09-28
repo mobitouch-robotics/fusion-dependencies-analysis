@@ -24,7 +24,8 @@ Needs once:
     the Dependencies Graph panel, the dialog's options, the progress panel) are found on screen by their text,
     with macOS's own text recognition, wherever Fusion puts them; then through Accessibility; then at positions
     from --calibrate. Check with --probe.
-  * In the dialog, tick "Include linked designs" once (it is remembered): the tour only points at it.
+  * "Include linked designs" and "Reuse earlier results" are switched on by the script (in the add-in's
+    settings.json, before the dialog opens); the tour only points at them.
   * Run a Full analysis with linked designs once before recording: the linked designs are then taken from the
     earlier run (Reuse earlier results), so the recorded run takes minutes, not hours.
 Start the screen recording during the countdown. Press Ctrl+C in Terminal to stop at any time.
@@ -190,7 +191,8 @@ FP = load_points()
 # ---- finding Fusion's elements on screen --------------------------------------------------------------------
 # Each element by the text it shows (any upper/lower case: Fusion versions differ). pick: which match when there are
 # several (top / bottom / right: the right-most). below: only matches under that element (the panel's menu opens under
-# the panel name). Text in the macOS menu bar (the top MENU_BAR points) is never used.
+# the panel name). left: that many points left of the label's first letter (a group's fold arrow). Text in the
+# macOS menu bar (the top MENU_BAR points) is never used.
 TARGETS = {
     'manage_tab':      dict(text='Manage', pick='top'),
     'graph_panel':     dict(text='Dependencies Graph', pick='top'),
@@ -198,7 +200,7 @@ TARGETS = {
     'full_text':       dict(text='Full analysis', pick='top'),
     'quick_text':      dict(text='Quick estimate', pick='top'),
     'thumbs':          dict(text='Thumbnails', pick='top'),
-    'advanced':        dict(text='Advanced options', pick='top'),
+    'advanced':        dict(text='Advanced options', pick='top', left=12),   # its fold arrow, left of the label
     'linked':          dict(text='Include linked designs', pick='top'),
     'linked_groups':   dict(text='Group test for linked designs', pick='top'),
     'reuse':           dict(text='Reuse earlier results', pick='top'),
@@ -290,7 +292,8 @@ def _pick(name, hits, found):
     if ref: c = [h for h in c if h['y'] > ref[1] + 5]
     if not c: return None
     h = {'top': min, 'bottom': max}.get(t['pick'], max)(c, key=lambda h: h['x'] if t['pick'] == 'right' else h['y'])
-    return (round(h['x']), round(h['y']))
+    x = h['x'] - h.get('w', 0) / 2 - t['left'] if t.get('left') is not None else h['x']
+    return (round(x), round(h['y']))
 
 _found = {}
 
@@ -558,12 +561,49 @@ def intro():
         "and it can preview what suppressing a feature would do, without touching the design.", True)
     wait(1.2)
 
+def open_advanced(p):
+    """Opens the dialog's Advanced options with the arrow left of its label; checks it opened (its options are then
+    on screen) and otherwise tries a little further left, then the label itself."""
+    label_x = p[0] + TARGETS['advanced']['left']       # back to the label's left edge
+    for dx in (0, -8, None):
+        xy = (p[0] + dx, p[1]) if dx is not None else (label_x + 40, p[1])
+        go(xy, 1.1); wait(1.2)
+        if _pick('linked', ocr_scan(), _found): return True
+        print('  (Advanced options did not open with a click at %s)' % (xy,))
+    return False
+
+# ---- the add-in's options for the recording: written into its settings.json before the dialog opens (the dialog
+# reads them each time it opens), so "Include linked designs" is ticked and earlier results are reused.
+DEMO_SETTINGS = {'derived': True, 'reuse': True}
+
+def addin_settings_files():
+    """settings.json of every Dependencies Graph add-in Fusion can load: its add-ins folder, and this repository."""
+    import glob
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dirs = glob.glob(os.path.expanduser('~/Library/Application Support/Autodesk/*/API/AddIns/*'))
+    dirs.append(os.path.join(here, 'DependenciesGraph'))
+    return [os.path.join(d, 'settings.json') for d in dirs if os.path.exists(os.path.join(d, 'DependenciesGraph.py'))]
+
+def set_demo_options():
+    for f in addin_settings_files():
+        try:
+            with open(f, encoding='utf-8') as h: st = json.load(h)
+        except Exception:
+            st = {}
+        st.update(DEMO_SETTINGS)
+        try:
+            with open(f, 'w', encoding='utf-8') as h: json.dump(st, h)
+            print('  options set in', f)
+        except Exception as ex:
+            print('  (could not write %s: %s)' % (f, ex))
+
 def fusion_part():
     activate('Autodesk Fusion')
     move(1300, 760, 0.8)
     say("Let's build the graph for this design. The add-in lives on the Manage tab.")
     activate('Autodesk Fusion')
     print('Fusion part: Manage tab, Dependencies Graph, options, Full analysis, progress panel')
+    set_demo_options()          # Include linked designs ticked, earlier results reused
     go(locate('manage_tab'), 1.5); wait(1.0)
     # the panel's name opens its menu, with the command in it
     go(locate('graph_panel'), 1.2); wait(1.0)
@@ -580,8 +620,7 @@ def fusion_part():
     p = locate('advanced', False)
     if p:
         say("Advanced options holds the rest.")
-        go(p, 1.1); wait(1.2); hush()
-        ocr_scan()                              # the group is open now
+        open_advanced(p); hush()
         p = locate('linked', False)
         if p:
             say("Include linked designs also reads every design this one links, through Derive features or inserted "
