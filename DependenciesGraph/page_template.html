@@ -1158,7 +1158,8 @@ const hasDesigns=nodes.some(n=>n.dsg);
 const MAIN_DSG='_main';
 function dsgOfNode(n){return n&&n.dsg&&n.g&&n.g.length?n.g[0]:MAIN_DSG;}
 function laneBase(id){return id&&id.includes('|')?id.split('|')[1]:id;}
-function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
+function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];if(byId[id]&&!groups[id])return dsgOfNode(byId[id]);   // a component's block (Components layout): its design
+  let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
 function laneKey(n){if(!n)return null;
   if(n.dsg&&n.g&&n.g.length){const X=n.g[0];if(layoutMode==='comps')return compOf[n.id]||X+'|_root';
     if(n.port)return X+'|_port';return n.g.length>1?n.g[1]:(n.type==='UserParameter'?X+'|_params':X+'|_none');}
