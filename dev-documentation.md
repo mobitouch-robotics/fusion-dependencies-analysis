@@ -466,6 +466,10 @@ copied in.
   linked designs failed, nor for a linked design whose test failed part-way or was cancelled.
 * `reuse: false` (dialog: *Reuse earlier results* unticked) ignores the cache when loading; results are still
   saved.
+* Every decision is written to `run_log.txt` (`cache <kind> v<version> (<file id>): ...`): none saved, saved by an
+  older add-in version, not enough for this run (which test is missing), saved, not saved and why (experiments on,
+  a more complete result already saved, the design had to be put back the slow way, linked designs failed, write
+  error). With experiments on, the page also gets a warning that nothing was kept.
 
 ## 11. Memory
 

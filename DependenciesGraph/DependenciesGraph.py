@@ -2518,15 +2518,36 @@ def _cache_path(kind, file_id, ver):
     return os.path.join(_cache_dir(), '%s_%s_v%s.json' % (kind, safe, ver))
 
 
-def _cache_load(kind, file_id, ver):
-    if not file_id or ver is None or not _settings().get('reuse', True):
+def _cache_load(kind, file_id, ver, quiet=False):
+    """The saved result, or None; every decision is noted in the run log (quiet: not)."""
+    note = (lambda m: None) if quiet else (lambda m: _mem_log('cache %s v%s (%s): %s' % (kind, ver, file_id, m)))
+    if not file_id or ver is None:
+        note('no file id or version: not reusable')
+        return None
+    if not _settings().get('reuse', True):
+        note('not used (Reuse earlier results is off)')
+        return None
+    p = _cache_path(kind, file_id, ver)
+    if not os.path.exists(p):
+        note('none saved')
         return None
     try:
-        with open(_cache_path(kind, file_id, ver), 'r', encoding='utf-8') as f:
+        with open(p, 'r', encoding='utf-8') as f:
             d = json.load(f)
-        return d if d.get('cv') == CACHE_VERSION else None
-    except Exception:
+    except Exception as ex:
+        note('could not be read: %s' % ex)
         return None
+    if d.get('cv') != CACHE_VERSION:
+        note('saved by an older version of the add-in: not used')
+        return None
+    return d
+
+
+def _experiments_on():
+    """The experiment settings that are on (their results are never saved for reuse)."""
+    st = _settings()
+    keys = [k for k, *_ in EXPERIMENTS] + ['experimentDeferCompute', 'experimentUndoPutBack']
+    return [k for k in keys if st.get(k)]
 
 
 def _breathe(seconds=0.15):
@@ -2647,11 +2668,20 @@ def _experiments_end(undo=None):
 def _cache_save(kind, file_id, ver, d):
     if not file_id or ver is None:
         return
-    st = _settings()
-    if any(st.get(k) for k, *_ in EXPERIMENTS) or st.get('experimentDeferCompute') or st.get('experimentUndoPutBack'):
+    note = lambda m: _mem_log('cache %s v%s (%s): %s' % (kind, ver, file_id, m))
+    exp = _experiments_on()
+    if exp:
+        note('not saved: experiments on (%s)' % ', '.join(exp))
         return          # an experiment is on: its results are not trusted until compared, so never reused
-    old = _cache_load(kind, file_id, ver)
-    if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'pics')):
+    try:
+        with open(_cache_path(kind, file_id, ver), 'r', encoding='utf-8') as f:
+            old = json.load(f)
+        if old.get('cv') != CACHE_VERSION:
+            old = None
+    except Exception:
+        old = None
+    if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'gtest', 'pics')):
+        note('not saved: a more complete result is already saved')
         return          # never replace a more complete result (e.g. a Full analysis) with a lesser one
     try:
         d = dict(d)
@@ -2660,8 +2690,9 @@ def _cache_save(kind, file_id, ver, d):
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump(d, f)
         os.replace(tmp, _cache_path(kind, file_id, ver))
-    except Exception:
-        pass
+        note('saved')
+    except Exception as ex:
+        note('could not be saved: %s' % ex)
 
 
 class _CachedDesign:
@@ -2931,6 +2962,11 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 apply_link(rec, e['prefix'], e['depth'] + 1)
             log('from cache %s' % name)
             return
+        if c:
+            _mem_log('cache design (%s): saved result not enough for this run (needs%s%s%s)' % (
+                name, ' item test' if exact and not c.get('exact') else '',
+                ' group test' if groups_test and not c.get('gtest') else '',
+                ' pictures' if pictures and not c.get('pics') else ''))
         if progress:
             progress('Opening ' + name, n_done, n_done + len(queue) + 1)
         _prow(e['key'], name, 'Opening...', 0.02, '', step_labels(), 0)
@@ -3481,11 +3517,17 @@ def generate(mode='both', thumbs=True, derived=False):
             _safe(lambda: progress_dlg.hide())
             progress_dlg = None
             return []
+        if _experiments_on():
+            col.warnings.append('Experiments were on (Advanced options): the results of this run were not saved for '
+                                'reuse, so the next run tests everything again. Untick them to keep results.')
         data = col.result(doc_name, exact, time.time() - t0)
         progress_dlg.hide()
         progress_dlg = None
         if not getattr(col, 'recovered', 0) and not getattr(col, 'derived_failed', False):
             _cache_save(kinds[0], m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
+        else:
+            _mem_log('cache %s: not saved (%s)' % (kinds[0], 'the design had to be put back the slow way'
+                                                   if getattr(col, 'recovered', 0) else 'linked designs failed'))
         return _write_page(data, path, out_dir)
     except Exception:
         if progress_dlg:
