@@ -605,6 +605,11 @@ Main parts, in file order:
   `loose: true`), like this design's pseudo groups `_none` / `_params`: they fold into one box with the block's fold
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
+* **Whole part behind a connector**: when the page loads, an insert's connector gets links (`derive`, `syn: 1`,
+  not counted in the header) from its design's final items - those no other item of that design builds on - so
+  selecting the insert (or anything using it) opens and highlights every item and link that made the part. A
+  Derive keeps its handed-over items as the connector's parents; only when none could be matched (no link into the
+  connector from its design) does it get the final items like an insert. User parameters are left out.
 * **Hidden connectors**: an expanded linked design's connector box is hidden and its fold button stands in for it.
   The box gets `pt` (the button's centre, relative to the box), and `edgeSegs`/`edgeEnd` treat it as a point:
   links end on the top of the button and leave from its bottom, without spreading their ends.

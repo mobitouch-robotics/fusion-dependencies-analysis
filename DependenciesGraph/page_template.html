@@ -557,6 +557,17 @@ const kindsPresent=[...new Set(D.edges.flatMap(e=>e.k))].filter(k=>KIND[k]);
 const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // every kind is always on; only "Same body, later" can be switched (Display menu)
 // links found by the suppression test are real dependencies: always shown, no toggle
 let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.cat]=true;});let view='tree', selected=null, selGroup=null, focus=true, search='';
+// A linked design's connector stands for the whole part it brings in. An insert brings in all of it, so the connector
+// is linked from the design's final items (the ones nothing else in it builds on): following the links up from the
+// connector - and from the insert that uses it - reaches every item that made the part. A Derive hands over some
+// items (those links come with the data); when none could be matched, it is linked like an insert.
+{const byDsg={},builds={},hasIn=new Set();
+  nodes.forEach(n=>{if(n.dsg&&!n.port&&n.g&&n.g.length)(byDsg[n.g[0]]=byDsg[n.g[0]]||[]).push(n);});
+  D.edges.forEach(e=>{const a=byId[e.s],b=byId[e.t];if(!a||!b)return;if(b.port)hasIn.add(b.id);
+    if(a.dsg&&b.dsg&&!b.port&&a.g&&b.g&&a.g[0]===b.g[0])builds[a.id]=1;});
+  nodes.filter(n=>n.port&&n.g&&n.g.length).forEach(p=>{const X=p.g[0],via=(groups[X]&&groups[X].via)||[];
+    if(!via.includes('insert')&&hasIn.has(p.id))return;
+    (byDsg[X]||[]).filter(n=>!builds[n.id]&&n.type!=='UserParameter').forEach(n=>D.edges.push({s:n.id,t:p.id,k:['derive'],syn:1}));});}
 const expanded=new Set(Object.keys(groups).filter(g=>!groups[g].design)); // graph starts with every group expanded, derived designs folded into one box each
 const $=id=>document.getElementById(id);
 
