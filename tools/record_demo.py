@@ -189,14 +189,16 @@ def load_points():
 FP = load_points()
 
 # ---- finding Fusion's elements on screen --------------------------------------------------------------------
-# Each element by the text it shows (any upper/lower case: Fusion versions differ). pick: which match when there are
+# Each element by the text it shows, as a whole word or words, in any upper/lower case (Fusion versions differ);
+# prefer: when that exact spelling is on screen too, only it counts (the toolbar writes tab and panel names in
+# capitals, the panel's menu the command in mixed case). pick: which match when there are
 # several (top / bottom / right: the right-most). below: only matches under that element (the panel's menu opens under
 # the panel name). left: that many points left of the label's first letter (a group's fold arrow). Text in the
 # macOS menu bar (the top MENU_BAR points) is never used.
 TARGETS = {
-    'manage_tab':      dict(text='Manage', pick='top'),
-    'graph_panel':     dict(text='Dependencies Graph', pick='top'),
-    'graph_btn':       dict(text='Dependencies Graph', pick='top', below='graph_panel'),
+    'manage_tab':      dict(text='Manage', prefer='MANAGE', pick='top'),
+    'graph_panel':     dict(text='Dependencies Graph', prefer='DEPENDENCIES GRAPH', pick='top'),
+    'graph_btn':       dict(text='Dependencies Graph', prefer='Dependencies Graph', pick='top', below='graph_panel'),
     'full_text':       dict(text='Full analysis', pick='top'),
     'quick_text':      dict(text='Quick estimate', pick='top'),
     'thumbs':          dict(text='Thumbnails', pick='top'),
@@ -220,8 +222,9 @@ function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
  for(let i=0;i<res.count;i++){const c=res.objectAtIndex(i).topCandidates(1).objectAtIndex(0);const t=c.string.js;
   if(!want.length){const b=res.objectAtIndex(i).boundingBox;out.push({text:'',line:t,x:(b.origin.x+b.size.width/2)*W,y:(1-b.origin.y-b.size.height/2)*H});continue;}
   for(const w of want){const hay=w.case?t:t.toLowerCase(),ned=w.case?w.text:w.text.toLowerCase();let k=hay.indexOf(ned);
-   while(k>=0){const o=c.boundingBoxForRangeError($.NSMakeRange(k,ned.length),null);
-    if(o&&!o.isNil()){const b=o.boundingBox;out.push({text:w.text,line:t,x:(b.origin.x+b.size.width/2)*W,
+   while(k>=0){const L=/[A-Za-z0-9]/,whole=(k===0||!L.test(t[k-1]))&&(k+ned.length>=t.length||!L.test(t[k+ned.length]));
+    const o=whole?c.boundingBoxForRangeError($.NSMakeRange(k,ned.length),null):null;
+    if(o&&!o.isNil()){const b=o.boundingBox;out.push({text:w.text,m:t.substr(k,ned.length),line:t,x:(b.origin.x+b.size.width/2)*W,
      y:(1-b.origin.y-b.size.height/2)*H,w:b.size.width*W,h:b.size.height*H});}
     k=hay.indexOf(ned,k+1);}}}
  return JSON.stringify(out);}"""
@@ -290,6 +293,8 @@ def _pick(name, hits, found):
     c = [h for h in hits if h['text'] == t['text']]
     ref = found.get(t.get('below')) if t.get('below') else None
     if ref: c = [h for h in c if h['y'] > ref[1] + 5]
+    exact = [h for h in c if t.get('prefer') and h.get('m') == t['prefer']]
+    c = exact or c
     if not c: return None
     h = {'top': min, 'bottom': max}.get(t['pick'], max)(c, key=lambda h: h['x'] if t['pick'] == 'right' else h['y'])
     if t.get('left') is not None:
