@@ -41,7 +41,8 @@ SKIP_INTRO = '--skip-intro' in sys.argv
 # ---- scenario: edit the texts/timings here ---------------------------------------------------
 # Fusion: screen points (the mouse's coordinates) for the maximised Fusion window on the Mac mini, measured from a
 # screenshot with the dialog docked on the right (screen = 1.0158 x picture - (55.3, 5.7), fitted on labels whose
-# real positions were known). The dialog's points are with Advanced options open. --calibrate re-measures them on
+# real positions were known). Thumbnails, Save to and Choose file are taken with Advanced options closed (as the
+# tour reaches them), the rest with it open (opening it widens the label column). --calibrate re-measures them on
 # another Mac (saved in tools/demo_positions.json, which overrides these).
 FUSION_POINTS = [
     # name,               point,          what to point at when calibrating
@@ -50,15 +51,14 @@ FUSION_POINTS = [
     ('thumbs',            (1492, 488),    'in the dialog: the "Thumbnails" label'),
     ('save_to',           (1712, 523),    'in the dialog: the "Save to" file path'),
     ('choose_file',       (1584, 556),    'in the dialog: the "Choose file..." button'),
-    ('advanced',          (1459, 597),    'in the dialog: the arrow left of "Advanced options"'),
-    # Advanced options open: its three rows push what follows down by about 94 points
-    ('linked',            (1522, 629),    'Advanced options open: the "Include linked designs" label'),
-    ('linked_box',        (1649, 629),    'Advanced options open: the "Include linked designs" checkbox'),
+    ('advanced',          (1460, 597),    'in the dialog: the arrow left of "Advanced options"'),
+    ('linked',            (1521, 628),    'Advanced options open: the "Include linked designs" label'),
+    ('linked_box',        (1648, 628),    'Advanced options open: the "Include linked designs" checkbox'),
     ('linked_groups',     (1540, 660),    'Advanced options open: the "Group test for linked designs" label'),
-    ('reuse',             (1517, 691),    'Advanced options open: the "Reuse earlier results" label'),
-    ('full_text',         (1503, 731),    'Advanced options open: the "Full analysis" description text'),
-    ('quick_text',        (1510, 822),    'Advanced options open: the "Quick estimate" description text'),
-    ('full_btn',          (1768, 879),    'the "Full analysis" button (do not click it)'),
+    ('reuse',             (1516, 690),    'Advanced options open: the "Reuse earlier results" label'),
+    ('full_text',         (1503, 734),    'Advanced options open: the "Full analysis" description text'),
+    ('quick_text',        (1509, 819),    'Advanced options open: the "Quick estimate" description text'),
+    ('full_btn',          (1767, 896),    'the "Full analysis" button (do not click it)'),
     ('progress_panel',    (1671, 502),    'during a run: the middle of the progress panel'),
 ]
 POSITIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo_positions.json')
