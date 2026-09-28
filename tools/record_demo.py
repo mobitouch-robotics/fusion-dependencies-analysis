@@ -27,10 +27,11 @@ Start the screen recording during the countdown. Press Ctrl+C in Terminal to sto
 
 What the tour shows, in Fusion: the Manage tab button, the dialog (Full analysis / Quick estimate, Thumbnails,
 Advanced options: Include linked designs, Group test for linked designs, Reuse earlier results) and the progress
-panel (a row per design with a bar per step, sorted in progress / waiting / finished; Cancel). In the page (--list for the numbered steps): getting
-around, the design frames of linked designs, the four layouts, hover, selection and side panel, Display options,
-routes, multi-selection, all links and folding, search, filters, the suppression preview, Select in Fusion, the
-legend, history playback.
+panel (a row per design with a bar per step, sorted in progress / waiting / finished; Cancel). In the page (--list for the numbered steps): the
+side panel and its tabs, getting around, the design frames of linked designs, the four layouts (Components as
+component frames), hover, selection and the Selection tab, selecting a whole block, the Display tab, routes,
+multi-selection, all links and folding, search, the Filter tab (kinds and linked designs), the suppression preview,
+Select in Fusion, the Legend tab, history playback.
 """
 import ctypes, ctypes.util, json, os, subprocess, sys, time
 
@@ -76,7 +77,8 @@ SECOND_ITEM = 'Gearbox screws'          # Cmd+clicked, from another branch (Only
 SEARCH = 'endstop'
 SUPPRESS_ITEM = 'Stepper motor screws'   # switched off in the suppression preview (a sketch with a long cascade)
 BREAK_ITEM = 'Derived from Parameters v47'   # switching it off makes features fail (red) and warn (amber)
-FUSION_ITEM = 'Component Insert J2 assembly v49:1'   # an item of the Master assembly itself: Select in Fusion
+FUSION_ITEM = 'Component Insert J2 assembly'   # an item of the Master assembly itself: Select in Fusion (name start: the version changes)
+BLOCK_GROUP = 'Holes_And_Nut_Pockets'   # the timeline group holding ITEM: its block is selected as a whole
 ANALYSIS_TIMEOUT = 1800             # seconds to wait for the page to open in Safari
 # ------------------------------------------------------------------------------------------------
 
@@ -308,7 +310,8 @@ DSG_ID = ("(n=>{const t=[...document.querySelectorAll('#graph g.dframes text')].
 FIND_G = ("((n,w)=>{const d=w==='main'?'':%s;const mine=g=>{const i=g.dataset.id||'';return w==='main'?/^n\\d+$/.test(i):"
           "(d?i.startsWith(d.toLowerCase()+':'):true);};const gs=[...document.querySelectorAll('#graph g.nd')].sort((a,b)=>mine(b)-mine(a));"
           "const lab=g=>(g.querySelector(':scope > text')||{}).textContent||'';"
-          "return gs.find(g=>g.dataset.name===n)||gs.find(g=>lab(g)===n)||gs.find(g=>lab(g).endsWith('\u2026')&&n.startsWith(lab(g).slice(0,-1)));})('%s','%s')")
+          "return gs.find(g=>g.dataset.name===n)||gs.find(g=>lab(g)===n)||gs.find(g=>lab(g).endsWith('\u2026')&&n.startsWith(lab(g).slice(0,-1)))"
+          "||gs.find(g=>(g.dataset.name||'').startsWith(n));})('%s','%s')")
 
 def find_g(name, where=None):
     return FIND_G % (DSG_ID % LINKED_DESIGN, name, where or '')
@@ -320,8 +323,9 @@ def route_btn(name): return "%s?.querySelector('.rbtn circle')" % find_g(name)
 def power_btn(name): return "%s?.querySelector('g.act')" % find_g(name)
 
 # The + button of the linked design's folded box, and the − on its frame when it is open.
-UNFOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-for=\"g'+d+'\"]'):null;})()"
-FOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-d=\"'+d+'\"]'):null;})()"
+# (their circle: the button group also holds text beside it, so its centre can miss the circle)
+UNFOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-for=\"g'+d+'\"] circle'):null;})()"
+FOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-d=\"'+d+'\"] circle'):null;})()"
 def unfold_btn(): return UNFOLD_BTN % (DSG_ID % LINKED_DESIGN)
 def fold_btn(): return FOLD_BTN % (DSG_ID % LINKED_DESIGN)
 
@@ -336,6 +340,11 @@ ANY_ROUTE_BTN = ("(()=>{const vis=c=>{const b=c.getBoundingClientRect();const g=
                  "return cs.sort((a,b)=>d(b)-d(a))[0];})()")
 
 def sel(css): return "document.querySelector('%s')" % css
+
+# The title of a block (a timeline group's, or in the Components layout a component's frame) by its name.
+def block_title(name):
+    return ("[...document.querySelectorAll('#graph text')].find(t=>t.parentNode&&t.parentNode.style.cursor==='pointer'"
+            "&&t.firstChild&&t.firstChild.nodeValue&&t.firstChild.nodeValue.startsWith('%s'))" % name)
 
 def by_text(css, text, exact=True):
     return "[...document.querySelectorAll('%s')].find(e=>e.textContent.trim()%s'%s')" % (
@@ -627,7 +636,8 @@ RESET_JS = """(()=>{
   const set=(id,v)=>{const e=document.getElementById(id);if(e&&e.checked!==v){e.checked=v;e.dispatchEvent(new Event('change',{bubbles:true}));}};
   set('focus',true);set('relUp',true);set('relUpAll',true);set('relDn',false);set('allLinks',false);
   if([...document.querySelectorAll('#cats input')].some(i=>!i.checked)&&q('#catAll'))q('#catAll').click();
-  if(q('#legend')&&q('#legend').classList.contains('open')&&q('#legendClose'))q('#legendClose').click();
+  if(document.body.classList.contains('sidemin')&&q('#sideClose'))q('#sideClose').click();   // the side panel open,
+  if(q('#tabSel'))q('#tabSel').click();                                                          // on its Selection tab
   if(q('#laneBtn')&&!q('#laneBtn').classList.contains('on'))q('#laneBtn').click();
   const rs=[...document.querySelectorAll('#simBar button')].find(b=>b.textContent==='Reset');if(rs)rs.click();
   const svg=q('#graph');if(svg)svg.dispatchEvent(new MouseEvent('click',{bubbles:true}));
@@ -667,6 +677,21 @@ def step_0():
         say("First, let's close the info bar at the bottom.")
         press(sel('#infoClose'), 1.2, 1.0); hush()
 
+def step_panel():
+    """The side panel and its tabs"""
+    topic("On the right is the side panel. Its tabs hold everything around the graph: the Selection, the timeline "
+          "Groups, the Filter, the Display options and the Legend.")
+    for t in ('#tabSel', '#tabGroups', '#filterBtn', '#dispBtn', '#legendBtn'):
+        hover(sel(t), 0.5, 0.5)
+    hush()
+    say("The Groups tab lists the timeline groups of every design. Each can be selected, folded, or switched off "
+        "in the preview from here.")
+    press(sel('#tabGroups'), 0.8, 1.2)
+    hover("document.querySelector('#gpList .gprow:nth-child(3)')", 0.9, 1.5); hush()
+    say("The arrows button hides the panel to a narrow strip of the tabs, for more room.")
+    hover(sel('#sideClose'), 0.9, 1.5); hush()
+    press(sel('#tabSel'), 0.9, 0.8)
+
 def step_1():
     """Getting around: drag, zoom, Fit"""
     topic("Drag the background to move around, and scroll to zoom.")
@@ -686,11 +711,14 @@ def step_linked():
         "that brings the design in: a Derive feature, or an inserted component.")
     wait(1.0); hush()
     say("Let's open the J2 arm, the design this tour looks at.")
-    zoom_on(unfold_btn(), 18, 1.2); press(unfold_btn(), 0.6, 2.0)
+    # its folded frame, zoomed to (the + button is tiny in the whole assembly's view), then its + button
+    if js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,900)?'1':'')()" % (DSG_ID % LINKED_DESIGN)) == '1': wait(1.4)
+    else: zoom_on(unfold_btn(), 18, 1.2)
+    press(unfold_btn(), 0.9, 2.0)
     view_design(k=None); hush()
-    say("It opens with its timeline groups, each a block inside its frame, showing its features. "
-        "The minus button on the frame folds it again.")
-    hover(fold_btn(), 1.2, 2.0); hush()
+    say("It opens with its timeline groups, each a block inside its frame, showing its features, each with its own "
+        "picture. The minus button at the bottom of the frame folds it again.")
+    wait(1.0); hush()
     move(*graph_xy(.92, .12), 0.8)
 
 def step_layouts():
@@ -699,7 +727,8 @@ def step_layouts():
     hush()
     say("Depth arranges the boxes in rows, by how deep each one is in the dependencies.")
     press(sel('#layDeps'), 1.2, 1.0); view_design(0.9, 0.4); hush()
-    say("Components gives every component a block.")
+    say("Components works like Groups, but with components: a component is a frame, and its timeline groups are "
+        "blocks inside it, or single entries when folded.")
     press(sel('#compBtn'), 1.0, 1.0); view_design(0.9, 0.4); hush()
     say("And Timeline puts every item in one row, in timeline order, with the longer links arcing above it.")
     press(sel('#layTime'), 1.0, 1.0); view_design(0.9, 0.4); hush()
@@ -708,7 +737,8 @@ def step_layouts():
 
 def step_2():
     """Hover"""
-    topic("Hovering a box shows its direct links: blue arrows lead in from the items it uses, and green arrows lead out to the items that use it.")
+    topic("Hovering a box shows its direct links: blue arrows lead in from the items it uses, and green arrows lead "
+          "out to the items that use it. The rest dims for a moment.")
     zoom_on(box(HOVER_BOXES[0]), 200, 0.9); hush(); wait(0.3)
     for i, name in enumerate(HOVER_BOXES):
         xy = el_xy(box(name))
@@ -739,15 +769,25 @@ def step_3():
     say("And the back button returns to the previous selection, like in a browser.")
     press(sel('#hBack'), 1.3, 2.0); hush()
 
+def step_blocks():
+    """Selecting a whole block"""
+    topic("A click on a block's title selects the whole timeline group: everything in it, and everything it depends on.")
+    zoom_on(block_title(BLOCK_GROUP), 160, 1.2); hush()
+    press(block_title(BLOCK_GROUP), 0.6, 2.0)
+    say("The side panel shows what suppressing the whole group would do. In the Components layout, a component's "
+        "title selects the whole component the same way.")
+    move(*graph_xy(.92, .12), 0.9); hover(by_text('#details h3', 'Suppressing', False), 1.0, 2.0); hush()
+    clear_selection()
+
 def step_4():
-    """Display menu: What uses it"""
-    topic("The Display menu decides what a selection shows around it. Let's also turn on what uses it.")
+    """Display tab: What uses it"""
+    topic("The side panel's Display tab decides what a selection shows around it. Let's also turn on what uses it.")
     press(sel('#dispBtn'), 1.1, 1.0)
     hush(); press(by_text('#dispBox label', 'What uses it', False), 1.0, 1.5)
     say("Now the items built on top of the selection are highlighted too, joined to it by green arrows.", True)
     wait(1.5)
     press(by_text('#dispBox label', 'What uses it', False), 0.6, 1.0)
-    press(sel('#dispBtn'), 0.9, 1.0)
+    press(sel('#tabSel'), 0.9, 1.0)
 
 def step_5():
     """Routes"""
@@ -771,10 +811,10 @@ def step_5():
 def step_6():
     """Only the selected branch off + Cmd+click multi-select"""
     topic("By default, only the selected branch is shown. "
-          "Turning off Only the selected branch, in the Display menu, shows it inside the whole design instead.")
+          "Turning off Only the selected branch, in the Display tab, shows it inside the whole design instead.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'Only the selected branch', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0)
     say("The related boxes move next to the selection, and the rest of the design stays around them, dimmed.", True)
     wait(0.8)
     topic("Now items from other branches can be reached too. Holding command while clicking adds one to the selection. "
@@ -786,7 +826,7 @@ def step_6():
     say("Let's turn Only the selected branch back on. The view is cleaner with it.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'Only the selected branch', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0); hush(); wait(0.6)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0); hush(); wait(0.6)
     say("A click on empty space, or Escape, clears the selection.")
     xy = empty_xy()
     if xy: go(xy, 1.2)
@@ -798,10 +838,10 @@ def step_6():
 def step_7():
     """All links, then Collapse all / Expand all"""
     topic("With nothing selected, links only appear on hover. "
-          "All links, in the Display menu, shows every link at once, in grey.")
+          "All links, in the Display tab, shows every link at once, in grey.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0, 0.5)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0, 0.5)
     say("That's the whole web of dependencies.", True); wait(0.8)
     topic("Collapse all folds every timeline group into one box. "
           "Now the links show how the groups depend on each other, and the number on a line says how many links it stands for.")
@@ -811,7 +851,7 @@ def step_7():
     say("Let's turn All links off again. Hover and selection usually tell more.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); hush()
+    press(sel('#tabSel'), 0.9, 0.5); hush()
 
 def step_8():
     """Search"""
@@ -824,15 +864,17 @@ def step_8():
 
 def step_9():
     """Filters"""
-    topic("The Filter menu hides whole kinds of items. Let's hide the parameters and the construction geometry.")
+    topic("The Filter tab hides whole kinds of items, or whole linked designs. Let's hide the parameters and the construction geometry.")
     hush(); press(sel('#filterBtn'), 1.2, 0.8)
     press(by_text('#cats label', 'Parameter', False), 1.0, 1.0)
     press(by_text('#cats label', 'Construction', False), 0.8, 1.0)
-    press(sel('#filterBtn'), 0.9, 0.5); view_design(1.0, 0.5)
+    press(sel('#tabSel'), 0.9, 0.5); view_design(1.0, 0.5)
     say("The graph is smaller now. Hidden items are skipped, not cut out: their links are joined through them.", True)
     wait(0.8)
-    say("All shows everything again.")
-    press(sel('#filterBtn'), 1.0, 0.8); press(sel('#catAll'), 0.8, 1.0); press(sel('#filterBtn'), 0.8, 0.5)
+    say("All shows everything again. Below, whole linked designs can be hidden the same way: links, and routes, still "
+        "pass through them.")
+    press(sel('#filterBtn'), 1.0, 0.8); press(sel('#catAll'), 0.8, 1.0); hover(sel('#dsgs'), 0.8, 2.0)
+    press(sel('#tabSel'), 0.8, 0.5)
     view_design(1.0); hush()
 
 def step_preview():
@@ -870,7 +912,8 @@ def step_select_in_fusion():
     """Select in Fusion"""
     topic("Selections can go back to Fusion. Let's select the J2 assembly insert, in the master assembly itself.")
     zoom_on(box(FUSION_ITEM, 'main'), 170, 1.3); press(box(FUSION_ITEM, 'main'), 0.6, 1.5); hush()
-    say("Select in Fusion, in the side panel, selects it in the timeline and the browser.")
+    say("Select in Fusion, in the side panel, selects it in the timeline and the browser. For an item of a linked "
+        "design, Fusion opens that design and selects it there.")
     press(by_text('#details button', 'Select in Fusion'), 1.2, 1.5); hush()
     if not DRY:
         activate('Autodesk Fusion'); wait(3.0)
@@ -879,9 +922,9 @@ def step_select_in_fusion():
 
 def step_legend():
     """Legend"""
-    topic("And the Legend explains every colour, outline, marker and line.")
+    topic("And the Legend tab of the side panel explains every colour, outline, marker and line.")
     press(sel('#legendBtn'), 1.2, 3.0); hush()
-    press(sel('#legendClose'), 1.0, 1.0)
+    press(sel('#tabSel'), 1.0, 1.0)
 
 def playback_done():
     return js("(()=>{const n=document.getElementById('pbNext');const on=document.body.classList.contains('pbon');"
@@ -918,14 +961,16 @@ def step_11():
 
 STEPS = [
     ('Close the info bar', None, step_0),
+    ('The side panel and its tabs', None, step_panel),
     ('Getting around: drag, zoom, Fit', 'folded', step_1),
     ('Linked designs: frames, pictures, unfolding one', 'folded', step_linked),
     ('Layouts: Depth, Components, Timeline, Groups', 'clear', step_layouts),
     ('Hover', 'clear', step_2),
     ('Select an item, side panel, Back', 'clear', step_3),
-    ('Display menu: What uses it', 'item', step_4),
+    ('Display tab: What uses it', 'item', step_4),
     ('Routes', 'item', step_5),
     ('Only the selected branch off + Cmd+click multi-select', 'item', step_6),
+    ('Selecting a whole block', 'clear', step_blocks),
     ('All links, then Collapse all / Expand all', 'clear', step_7),
     ('Search', 'clear', step_8),
     ('Filters', 'clear', step_9),

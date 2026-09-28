@@ -3294,7 +3294,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             if src.get('show_loc'):
                 nm = '%s (%s)' % (nm, src['loc'])
             target.groups.append({'id': gid, 'name': nm, 'first': base, 'parent': None, 'design': True,
-                                'pic': src.get('pic'), 'via': sorted(src.get('via') or [])})
+                                'pic': src.get('pic'), 'via': sorted(src.get('via') or []),
+                                # to select its items in Fusion: the design is opened (that version, that configuration)
+                                'fid': src.get('fid'), 'ver': src.get('read_ver'), 'cfg': src.get('config_row')})
             # a source design's user parameters only when something uses them (a big design can have hundreds)
             used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a in src['into'])
             pre = lambda ids: [sp + x for x in ids]
@@ -3324,8 +3326,12 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 m['dsg'] = nm
                 if n.get('tl') is not None:
                     m['stl'] = n['tl']
-                m['tl'] = None                   # not in this design's timeline: no suppression preview, no Select in Fusion
+                m['tl'] = None                   # not in this design's timeline: no suppression preview
                 m['tok'] = ''
+                if n.get('tok'):
+                    m['stok'] = n['tok']         # Select in Fusion opens the design and finds it by timeline index or this
+                if n.get('occ'):
+                    m['socc'] = n['occ']
                 m.pop('occ', None)
                 m['info'] = ((n.get('info') or '') + (' · ' if n.get('info') else '') + 'in ' + nm).strip()
                 target.nodes.append(m)
@@ -3920,12 +3926,50 @@ def _flat_timeline(tl):
     return out
 
 
+def _linked_doc(req):
+    """The document of a linked design (items the page shows in its frame): switched to when it is open at that
+    version, else opened in a tab of its own; its configuration row activated. (doc, opened) or an error string."""
+    fid, ver, cfg = req.get('fid'), req.get('ver'), req.get('cfg')
+    name = req.get('dname') or 'the linked design'
+    for d in (_safe(lambda: list(_app.documents)) or []):
+        df = _safe(lambda: d.dataFile)
+        if _safe(lambda: df.id) == fid and (ver is None or _safe(lambda: df.versionNumber) == ver) and not cfg:
+            _safe(d.activate)
+            adsk.doEvents()
+            return d, False
+    df = _safe(lambda: _app.data.findFileById(fid))
+    if df is None:
+        return 'Could not find %s in your Fusion data.' % name
+    target = next((v for v in (_safe(lambda: list(df.versions)) or []) if _safe(lambda: v.versionNumber) == ver), df)
+    try:
+        doc = _app.documents.open(target, True)
+    except Exception as ex:
+        return 'Could not open %s: %s' % (name, ex)
+    _safe(doc.activate)
+    adsk.doEvents()
+    if cfg:
+        des = adsk.fusion.Design.cast(_safe(lambda: doc.products.itemByProductType('DesignProductType')))
+        table = _safe(lambda: des.configurationTopTable)
+        rows = _safe(lambda: [table.rows.item(k) for k in range(table.rows.count)]) or []
+        row = next((r for r in rows if _safe(lambda: r.name) == cfg), None)
+        if row is None or not _safe(lambda: row.activate() is not False, False):
+            return 'Opened %s, but could not switch to its configuration %s.' % (name, cfg)
+        adsk.doEvents()
+    return doc, True
+
+
 def _do_select(req):
+    opened = False
+    if req.get('fid'):
+        r = _linked_doc(req)
+        if isinstance(r, str):
+            return {'ok': False, 'error': r}
+        opened = r[1]
     des = adsk.fusion.Design.cast(_safe(lambda: _app.activeProduct))
     doc = _safe(lambda: _app.activeDocument)
     want = re.sub(r'\s+v\d+$', '', req.get('doc') or '')
     have = re.sub(r'\s+v\d+$', '', _safe(lambda: doc.name, '') or '')
-    if des is None or (want and want != have):
+    if des is None or (want and want != have and not req.get('fid')):
         return {'ok': False, 'error': 'Open "%s" in Fusion (Design workspace) first.' % (want or 'the design')}
     flat = _flat_timeline(des.timeline)
     root = des.rootComponent
@@ -3959,7 +4003,7 @@ def _do_select(req):
         except Exception:
             missing += 1
     _safe(lambda: _app.activeViewport.refresh())
-    return {'ok': True, 'selected': n, 'missing': missing}
+    return {'ok': True, 'selected': n, 'missing': missing, 'opened': opened, 'doc': _safe(lambda: doc.name, '')}
 
 
 class _SelHandler(adsk.core.CustomEventHandler):

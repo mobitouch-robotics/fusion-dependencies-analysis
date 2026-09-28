@@ -484,8 +484,9 @@ becomes its frame on the page.
   parameters like `Width_Ref` → `Width`).
 * Deepest designs first; each gets a group (frame) with `design: True`, its picture and `via` (derive/insert).
   Node ids and group references are prefixed; `o` is shifted (`-1e6 + rank * 1e4`) so linked designs come before
-  the main design; `tl` is set to `None` (no Select in Fusion: not in this design's timeline), the original
-  index kept as `stl`; the page previews suppressions of any item with `tl` or `stl` (`inTl`). A `fail.node`
+  the main design; `tl` is set to `None` (not in this design's timeline), the original index kept as `stl` (and
+  the entity token as `stok`, a component's occurrence path as `socc`); the design's group carries `fid`, `ver`
+  and `cfg` (its configuration row) for Select in Fusion; the page previews suppressions of any item with `tl` or `stl` (`inTl`). A `fail.node`
   reference gets the design's prefix too.
   User parameters of a linked design only when something uses them.
 * Each design gets a **connector** node `x<k>:@` (`type: DerivedDesign`, `port: True`): the items handed over lead
@@ -594,11 +595,15 @@ The page is a local file in the browser; it asks the add-in to select items in F
   restart; any free port as fallback) in a daemon thread.
 * Every page carries the port and a secret token (`meta.sel`). The token (`_sel_token`) is stored in the temporary
   folder and stays the same between sessions. Requests without it get 403.
-* `GET /ping?token=...` checks the connection. `POST /select {token, doc, items[{tl, name, tok} | {occ}], add}`
+* `GET /ping?token=...` checks the connection. `POST /select {token, doc, items[{tl, name, tok} | {occ}], add,
+  fid?, ver?, cfg?, dname?}`
   queues a job and fires `SEL_EVENT_ID`; the HTTP thread waits up to 15 s for the answer.
 * `_do_select` runs on Fusion's main thread: checks the active document is the page's design (name without
   version), finds items by timeline index + name (`_flat_timeline` walks groups without expanding them), else by
-  entity token, components by occurrence path, and adds them to the active selection. CORS and
+  entity token, components by occurrence path, and adds them to the active selection. With `fid` (items of a linked
+  design; the page sends one design's items at a time, those of the first item that can be selected) `_linked_doc`
+  first switches to that document when it is open at that version, else opens it in a tab of its own and activates
+  its configuration row; the answer says whether it was opened. CORS and
   `Access-Control-Allow-Private-Network` headers let a `file://` page call it.
 
 ## 15. The generated page
@@ -627,7 +632,27 @@ Main parts, in file order:
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
 * **Hover dims the rest**: while a box is hovered (`svg.nhov`), boxes other than it and its direct parents and children (`nhc`, `nhr`) and the original links are dimmed; the highlighted links are copies drawn on top. The route preview does the same (`rpvon`).
-* **Hiding linked designs** (Filter menu, "Linked designs", when the page has any): a design switched off (`dsgOff`)
+* **Top bar**: besides the view, layout and history controls, the graph's own buttons (`#graphSeg`: Expand all, Collapse all, Play, Fit, with line icons `.bi`), shown in the Graph view only.
+* **Side panel** (`#side`): tabs *Selection* (`#details`), *Groups* (`#gpList`), *Filter* (`#filterBox`),
+  *Display* (`#dispBox`) and *Legend* (`#legend`) - the former floating group list, popovers and legend overlay.
+  `showTab(t)`, `sideOpen(open)`; `body.sidemin` folds it to a strip of vertical tabs. The open tab and the
+  open/closed state are kept in `localStorage` (`dg.tab`, `dg.side`). A new selection shows the Selection tab
+  (not while the Groups tab is open: selecting there is part of using it; a closed panel stays closed).
+  The graph no longer has anything over its left side, so the fitting functions use no left offset.
+* **Selecting blocks**: a block's title area selects its timeline group (this design's *Not in a group* and
+  *User parameters* too); in the Components layout a component's title selects the whole component (its group).
+* **Components layout** (`comps`): the Groups layout with components in place of timeline groups, through a second
+  group path per item built at load (`gc`): its design, its component group (`K:<component item>`, `comp: true`;
+  items of no component `K:<design>:root`, "Root component"), then its timeline groups as copies inside that
+  component (`K:<component>/<group>`, `tcopy`: the real group). `gp(n)` gives the path the layout uses (`gc` while
+  the Components layout is on, else `g`); `rep`, `laneKey`, `selOpen` and the playback order use it, so folding,
+  blocks, frames and selection work as in the Groups layout. `laneKey` (via `compLane`) puts an item in its
+  component's top-level timeline group's block, or in the component's own block outside groups; a folded group
+  copy is an entry in its parent's block. A component with group blocks is packed into a frame of its own inside
+  its design (`compFrames`: title selects the component, button folds it; its own block is titled *Not in a
+  group*); a component without groups stays one plain block. Selecting or switching off (preview) a copy acts
+  on the real timeline group; a component group has no preview. Connectors and user parameters keep their blocks.
+* **Hiding linked designs** (Filter tab, "Linked designs", when the page has any): a design switched off (`dsgOff`)
   hides all its items and its connector through `visibleNode`, so, like any hidden item, it is skipped, not cut
   out: `computeEff` joins links (and so selections and routes) through it, and its frame is not drawn. The Filter
   button counts the hidden designs.
@@ -657,7 +682,7 @@ Main parts, in file order:
   related boxes together, hover (gold), routes between two items, link routing that bends links to avoid lying on
   top of each other and orders link ends on boxes to reduce crossings (cached while boxes stay in place), and
   animated re-rendering (`animatedRerender`).
-* **History playback**: dots travel along links to each next item in timeline order; the camera follows.
+* **History playback**: dots travel along links to each next item in timeline order; the camera follows. The ring around an item being built (`pbPulse`) has the colour of its kind; a linked design's connector rings the design's whole frame (like a block's ring, `pbLanePulse`).
 * **Legend**.
 
 ## 16. Data format
@@ -719,12 +744,17 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   during the run (Safari's windows must be closed before it; the script warns and waits up to 30 s for that; the
   pages saved while the run goes on are not opened). `--skip-generation` (and `--step` with no page open) open the
   newest page, including the one the add-in records in `last_page.json` (next to the cache folder). Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
-  linked designs (frames, pictures, unfolding one), layouts, hover, selection and side panel, Display options,
+  the side panel and its tabs, linked designs (frames, pictures, unfolding one), layouts (Components as component
+  frames), hover, selection and the Selection tab, Display tab, selecting a whole block,
   routes, multi-selection, all links and folding, search, filters, the suppression preview (including a feature
   whose suppression makes others fail or warn, and the broken / warnings buttons), Select in Fusion, legend,
   playback. Set up for the robot arm's Master assembly: the tour works inside one linked design
   (`LINKED_DESIGN`); boxes are found by their full name (`data-name`) and design (`data-id` prefix, frame
   `data-d`), which the page puts on every box and frame for this.
+  The page part can be checked without a Mac: run the script's functions in headless Chromium through Playwright
+  (its `js` evaluated in the page, its mouse and keys sent to the page, narration printed) and look for the
+  "(skipped, not visible on the page ...)" lines; mind that Chromium reports a 10 px window frame (the
+  `screenX`/`outerWidth` offsets `el_xy` adds) and that Cmd+A is Ctrl+A there.
 
 ## 19. Things that were tried and removed
 
