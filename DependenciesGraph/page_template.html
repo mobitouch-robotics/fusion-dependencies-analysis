@@ -1109,8 +1109,8 @@ function routePreview(items,on,tt){routePreviewClear();if(!on||PB||drag||!select
 function setRoute(items){routePreviewClear();saveView();route=items?{sel:selected,items}:null;setTimeout(pushHist,0);renderDetails();
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{},focus?{fit:'fit'}:{dur:450});}
 let searchOpen=new Set();
-// the selection's whole tree is shown: every group or linked design holding part of it is open while it is selected
-// (selOpen), except the ones folded by hand during that selection (selShut, forgotten when the selection changes)
+// the selection's whole tree is shown: every timeline group holding part of it is open while it is selected (selOpen),
+// except the ones folded by hand during that selection (selShut, forgotten when the selection changes)
 let selOpen=new Set(),selShut=new Set(),selKey='';
 const isOpen=g=>expanded.has(g)||searchOpen.has(g)||(selOpen.has(g)&&!selShut.has(g));
 let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
@@ -1159,7 +1159,9 @@ function renderGraph(fitAfter,centerId){
     else if(selGroup&&groups[selGroup]&&!groups[selGroup].design){const mem=groupMembers(selGroup).map(n=>n.id);
       tree=new Set([...mem,...mem.flatMap(i=>[...relOf(i,'down'),...relOf(i,'up')])]);}
     const key=ids.join(',')+'|'+(selGroup||'');if(key!==selKey){selKey=key;selShut.clear();}
-    selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>selOpen.add(g));const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
+    // linked designs stay folded or open as they were; only the one holding a selected item opens (to show it)
+    const ownD=new Set(ids.map(i=>byId[i]&&byId[i].g&&byId[i].g[0]).filter(g=>g&&groups[g]&&groups[g].design));
+    selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>{if(!groups[g]||!groups[g].design||ownD.has(g))selOpen.add(g);});const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
   let reps=Object.values(R).sort((a,b)=>a.o-b.o);

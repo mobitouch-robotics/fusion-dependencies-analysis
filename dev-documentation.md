@@ -600,9 +600,10 @@ Main parts, in file order:
   it may fail (estimated). Items of linked designs can be previewed like the design's own (`inTl`: `tl` or `stl`);
   whole linked designs (frames) cannot.
 * **The selection's whole tree is shown**: while an item, several items or a group is selected, every timeline
-  group and linked design holding part of its tree (what the Display options highlight around it) is open
-  (`selOpen`, used by `isOpen` next to `expanded` and `searchOpen`), so the tree shows as its real boxes and links
-  instead of folded boxes. Folding one by hand during that selection keeps it folded (`selShut`, forgotten when the
+  group holding part of its tree (what the Display options highlight around it) is open (`selOpen`, used by
+  `isOpen` next to `expanded` and `searchOpen`), so the tree shows as its real boxes and links instead of folded
+  boxes. Linked designs keep the state they had (a folded one stays one box in the tree); only the design holding
+  a selected item opens, so that item can be shown. Folding one by hand during that selection keeps it folded (`selShut`, forgotten when the
   selection changes); deselecting folds everything back as it was.
 * **A linked design's loose items**: its items outside its timeline groups, and its user parameters, get a group
   of their own inside its frame when the page loads (`X8~none` "Not in a group", `X8~params` "User parameters",
