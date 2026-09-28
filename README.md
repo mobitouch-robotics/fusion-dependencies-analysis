@@ -71,12 +71,45 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
 - Each linked design has a connector on its frame: the items a Derive hands over (sketches, bodies,
   parameters) lead into it, and it leads into the Derive feature or the insert item. Linked designs start
   folded into one box; + opens them. Designs without a timeline (e.g. library parts) show only their frame.
-- With *Full analysis*, linked designs get the same suppression tests. Each is read and tested in a
+- With *Full analysis*, linked designs get the item test; the *Whole groups* test too with *Group test for
+  linked designs* (Advanced options, off by default: it takes about as long again; without it a linked
+  group's preview adds up its items' results, marked estimated). Each is read and tested in a
   hidden copy of the version that is used, closed without saving; a linked design you have open in a
   tab is read as it is and not tested.
+- Fusion keeps every test step's model data until a document is closed, so while a linked design is tested
+  its hidden copy is closed and the same version opened again each time Fusion has grown by 4 GB
+  (`"memoryRefreshGB"` in `DependenciesGraph/settings.json`; 0 switches it off).
 - In the Groups and Components layouts every design is a frame of its own, with its timeline groups and
   a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.
-- Cancel stops the whole run; no page is generated.
+- The page is written while the run goes on: once this design is done and again after each linked design (at
+  most every 10 s), over the same file, marked "Still being generated". Open it (or reload it) at any time to see
+  what is done; it opens in the browser when the run finishes.
+- Cancel stops the whole run; no page is opened. A page already written during the run is brought up to where it
+  stopped and marked "Cancelled".
+
+### Test speed-ups
+
+The suppression tests always use these (they started as experiments; there is no toggle in the dialog):
+
+- Fusion's periodic crash-recovery autosave (`Options.CrashRecovery`) and background mass-property calculation
+  (`DebugCommands.BodyCacheUpdateMgr`) are switched off while a test runs and back on right after.
+- In the item test, the marker move and the suppression (and the three steps of putting an item back) are made
+  with `Design.isComputeDeferred` on, so Fusion computes once instead of after each step.
+- After a test that took more than 3 s, the design is put back with Fusion's Undo (one step at a time, until
+  every item has its original state) instead of switching the item back on, which makes Fusion compute the heavy
+  features after it again. Checked; the usual way when Undo does not bring back exactly the original state.
+
+To switch one off (for example to check whether it changes results with `tools/compare_pages.py`), add to
+`DependenciesGraph/settings.json`: `"features": {"experimentUndoPutBack": false}` (keys:
+`experimentNoCrashRecovery`, `experimentNoBodyCache`, `experimentDeferCompute`, `experimentUndoPutBack`).
+
+### Reusing results
+
+A saved version never changes, so what was read and tested in it is kept and reused: a linked design is tested
+once per saved version, and a later run (or another assembly using the same part) takes its result from the
+cache. Each design is kept as soon as it is done, so a cancelled run keeps the designs it finished. The cache is
+in `~/Library/Application Support/FusionDependenciesGraph/cache` (macOS) or
+`%APPDATA%\FusionDependenciesGraph\cache` (Windows); untick *Reuse earlier results* to test everything again.
 
 ## Install
 
@@ -90,7 +123,7 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
 ## Use
 
 Open a parametric design and run **Dependencies Graph**. Choose whether to capture thumbnails, then press
-**Full analysis** (runs the suppression tests: every link is a real dependency; takes minutes) or
+**Full analysis** (runs the suppression tests: every link is a real dependency; takes minutes on a small design, much longer on a large assembly with linked designs) or
 **Quick estimate** (references only; takes seconds). The design is restored afterwards (the tests suppress and unsuppress items and
 the pictures change visibility, so save your work first). The result opens in your browser as a
 self-contained HTML file.
@@ -99,7 +132,12 @@ self-contained HTML file.
 
 ```
 DependenciesGraph/
-  DependenciesGraph.py        add-in: data collection in Fusion + the HTML/JS page template
+  DependenciesGraph.py        add-in: data collection in Fusion, tests, writing the page
+  page_template.html          the generated page (HTML/CSS/JS); the add-in fills in the data
+  progress_panel.html         the progress panel shown in Fusion during a run
   DependenciesGraph.manifest
   resources/DependenciesGraph/ toolbar icons
 ```
+
+How it works inside (scan, suppression tests and their optimisations, linked designs, cache, memory, the page):
+see [dev-documentation.md](dev-documentation.md).
