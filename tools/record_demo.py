@@ -323,8 +323,9 @@ def route_btn(name): return "%s?.querySelector('.rbtn circle')" % find_g(name)
 def power_btn(name): return "%s?.querySelector('g.act')" % find_g(name)
 
 # The + button of the linked design's folded box, and the − on its frame when it is open.
-UNFOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-for=\"g'+d+'\"]'):null;})()"
-FOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-d=\"'+d+'\"]'):null;})()"
+# (their circle: the button group also holds text beside it, so its centre can miss the circle)
+UNFOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-for=\"g'+d+'\"] circle'):null;})()"
+FOLD_BTN = "(()=>{const d=%s;return d?document.querySelector('#graph g.ctog[data-d=\"'+d+'\"] circle'):null;})()"
 def unfold_btn(): return UNFOLD_BTN % (DSG_ID % LINKED_DESIGN)
 def fold_btn(): return FOLD_BTN % (DSG_ID % LINKED_DESIGN)
 
@@ -710,7 +711,10 @@ def step_linked():
         "that brings the design in: a Derive feature, or an inserted component.")
     wait(1.0); hush()
     say("Let's open the J2 arm, the design this tour looks at.")
-    zoom_on(unfold_btn(), 18, 1.2); press(unfold_btn(), 0.6, 2.0)
+    # its folded frame, zoomed to (the + button is tiny in the whole assembly's view), then its + button
+    if js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,900)?'1':'')()" % (DSG_ID % LINKED_DESIGN)) == '1': wait(1.4)
+    else: zoom_on(unfold_btn(), 18, 1.2)
+    press(unfold_btn(), 0.9, 2.0)
     view_design(k=None); hush()
     say("It opens with its timeline groups, each a block inside its frame, showing its features, each with its own "
         "picture. The minus button on the frame folds it again.")
