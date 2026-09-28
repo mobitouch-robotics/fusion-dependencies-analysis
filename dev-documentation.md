@@ -300,6 +300,11 @@ User parameters are always kept; derived ones only when linked.
   uses is shown. Sketches and construction geometry are forced visible (`_force_visible`). New faces are
   selected (highlighted) when the item is shown with geometry it did not make (a cut, a fillet).
 * `_shot` saves the viewport as JPEG (PNG fallback), read back as a data URI.
+* When a picture shows given bodies, `_isolate_rest` also switches off (through `_set`, restored after each picture)
+  every occurrence not holding or inside the pictured bodies' occurrence (only the topmost of each such branch;
+  a component used more than once: its first occurrence; bodies of the root component: all occurrences), mesh
+  bodies, and the sketch, construction, joint and joint origin folders of every component (a sketch or plane's own
+  picture switches its folder on again). Occurrences are listed for each picture, as the read walk rolls the timeline.
 * `thumbs_end` restores camera, visibility, selection.
 
 `_part_picture()` takes one isometric picture of the whole part (main design and every linked design), used on
@@ -309,10 +314,11 @@ Linked designs get a picture of every item too (with Thumbnails on), taken the s
 but only in a copy the add-in opened (`Collector(des, None, pictures and mine)`: a design you have open is neither
 rolled nor on show). `merge` carries them into the page's `thumbs` under the prefixed ids (on a copy of the dict:
 a page written while the run goes on shares it with the main design). The design cache keeps them (`thumbs`,
-`ithumbs`). A design cached by an earlier run without them (`pics` but no `ithumbs`) is opened and read once more
-for the pictures only: its test results are taken from the cache, the pictures kept where the fresh read's item id
-has the same name, and the cache is updated. A whole-page result generated before (no `lthumbs`) is not reused
-when linked designs and thumbnails are on.
+`ithumbs` = `THUMB_VERSION`). A design cached without them, or with pictures of an older kind (`ithumbs` other than
+`THUMB_VERSION`), is opened and read once more for the pictures only: its test results are taken from the cache, the
+pictures kept where the fresh read's item id has the same name, and the cache is updated. A whole-page result whose
+pictures are of an older kind (`tver`) is not reused when thumbnails are on. Bump `THUMB_VERSION` when the way
+pictures are taken changes.
 
 ## 8. Suppression tests
 
