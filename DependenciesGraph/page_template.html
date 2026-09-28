@@ -1633,6 +1633,19 @@ window.dgZoomToDesign=(d,dur)=>{const f=designFrames.find(f=>f.d===d);if(!f)retu
 // all and then folding each design renders the whole assembly again and again)
 window.dgDesignsOnly=keep=>{collapseEverything=false;collapsedNodes.clear();selShut.clear();expanded.clear();
   Object.keys(groups).forEach(g=>{if(!groups[g].design||g===keep)expanded.add(g);});if(view==='graph')renderGraph(true);else renderTree();return true;};
+// zoom in to at least `k` around a box (an item id, shown through the box that stands for it), keeping it in the middle,
+// or (no id) around the selection, halfway to the middle of the current view; nothing changes when the view is already that close (force: set exactly k anyway). dgZoom(): the current zoom
+window.dgZoom=()=>T.k;
+window.dgZoomAround=(id,k,dur,force)=>{const n=byId[id||selected];if(!n)return false;const r=lastVisRep(rep(n));const p=pos[r];if(!p)return false;
+  if(T.k>=k&&!force)return true;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
+  const W=(svg.clientWidth||800)-LP,H=svg.clientHeight||600;let cx=p.x+NW/2,cy=p.y+NH/2;
+  // the selection (no id): halfway between it and the middle of the current view (after Fit: its whole tree), so the tree stays in sight
+  if(!id){cx=(cx+(LP+W/2-T.x)/T.k)/2;cy=(cy+(H/2-T.y)/T.k)/2;}
+  const tx=LP+W/2-cx*k,ty=H/2-cy*k;
+  const s0={x:T.x,y:T.y,k:T.k},t0=performance.now(),d=dur||700;if(anim)cancelAnimationFrame(anim);
+  const step=now=>{const a=Math.min(1,(now-t0)/d),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;
+    T.k=s0.k+(k-s0.k)*e;T.x=s0.x+(tx-s0.x)*e;T.y=s0.y+(ty-s0.y)*e;applyT();if(a<1)anim=requestAnimationFrame(step);else anim=null;};
+  anim=requestAnimationFrame(step);return true;};
 window.dgFocus=(id,dur)=>{if(!pos[id])return false;focusOn([id],dur||600);return true;};
 // first view: like Fit, but never zoomed out further than MIN_START_ZOOM (top of the graph, centred)
 const MIN_START_ZOOM=0.55;

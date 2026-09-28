@@ -382,12 +382,27 @@ def el_width(finder):
     r = js("(()=>{const e=(%s);return e?String(e.getBoundingClientRect().width):'';})()" % finder)
     return float(r) if r else None
 
-def view_design(dur=1.0):
-    """Brings the tour back into view without showing the whole assembly (far too much for the video): with a
-    selection, Fit (it fits the selection); without, a zoom to the tour's linked design frame. Pages from an add-in
-    without that hook: Fit."""
+CLOSE_ZOOM = 0.7          # the zoom most of the tour is shown at (1 = boxes at full size; Fit on this assembly is ~0.1)
+SEL_ZOOM = 0.6            # with a selection (its tree needs a little more room)
+
+def box_id(name):
+    """The data-id of the box of a tour item (in the tour's linked design first), or ''."""
+    return js("(()=>{const g=%s;return g?g.dataset.id:'';})()" % find_g(name)) or ''
+
+def view_design(dur=1.0, k=CLOSE_ZOOM, near=None):
+    """Brings the tour back into view at a readable zoom, never the whole assembly (far too much for the video).
+    With a selection: Fit (it fits the selection), then closer (SEL_ZOOM) if that left it far away, halfway between
+    the selection and the middle of its tree.
+    Without: around the box `near` (the tour's item by default) at zoom k. k=None: the whole tour design's frame
+    (its width). Pages from an add-in without these hooks: Fit."""
     if has_selection():
-        press(sel('#fit'), dur, 1.5); return
+        press(sel('#fit'), dur, 1.2)
+        if k and js("(()=>window.dgZoomAround&&window.dgZoomAround('',%s,800)?'1':'')()" % min(k, SEL_ZOOM)) == '1': wait(1.0)
+        return
+    if k:
+        bid = box_id(near or ITEM)
+        if bid and js("(()=>window.dgZoomAround&&window.dgZoomAround('%s',%s,800,true)?'1':'')()" % (bid, k)) == '1':
+            wait(1.2); return
     if js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,700)?'1':'')()" % (DSG_ID % LINKED_DESIGN)) == '1':
         wait(1.3)
     else:
@@ -637,8 +652,12 @@ def prepare(state):
     designs_state(state != 'folded')
     if state == 'item':
         js("(()=>{const g=%s;if(g)g.dispatchEvent(new MouseEvent('click',{bubbles:true}));})()" % find_g(ITEM)); wait(1.2)
-    if state == 'folded' or not js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,1)?'1':'')()" % (DSG_ID % LINKED_DESIGN)):
+    if state == 'folded':
         js("document.getElementById('fit').click()")
+    elif not js("(()=>window.dgZoomAround&&window.dgZoomAround(%s,%s,1,true)?'1':'')()" % (
+            "''" if state == 'item' else "'%s'" % box_id(ITEM), CLOSE_ZOOM)):
+        if not js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,1)?'1':'')()" % (DSG_ID % LINKED_DESIGN)):
+            js("document.getElementById('fit').click()")
     wait(1.2)
     move(*graph_xy(.92, .12), 0.6)
 
@@ -668,7 +687,7 @@ def step_linked():
     wait(1.0); hush()
     say("Let's open the J2 arm, the design this tour looks at.")
     zoom_on(unfold_btn(), 18, 1.2); press(unfold_btn(), 0.6, 2.0)
-    view_design(); hush()
+    view_design(k=None); hush()
     say("It opens with its timeline groups, each a block inside its frame, showing its features. "
         "The minus button on the frame folds it again.")
     hover(fold_btn(), 1.2, 2.0); hush()
@@ -679,13 +698,13 @@ def step_layouts():
     topic("The graph has four layouts. Groups, the default, gives every timeline group a block of its own.")
     hush()
     say("Depth arranges the boxes in rows, by how deep each one is in the dependencies.")
-    press(sel('#layDeps'), 1.2, 1.0); view_design(0.9); hush()
+    press(sel('#layDeps'), 1.2, 1.0); view_design(0.9, 0.4); hush()
     say("Components gives every component a block.")
-    press(sel('#compBtn'), 1.0, 1.0); view_design(0.9); hush()
+    press(sel('#compBtn'), 1.0, 1.0); view_design(0.9, 0.4); hush()
     say("And Timeline puts every item in one row, in timeline order, with the longer links arcing above it.")
-    press(sel('#layTime'), 1.0, 1.0); view_design(0.9); hush()
+    press(sel('#layTime'), 1.0, 1.0); view_design(0.9, 0.4); hush()
     say("Back to Groups.")
-    press(sel('#laneBtn'), 1.0, 1.0); view_design(0.9); hush()
+    press(sel('#laneBtn'), 1.0, 1.0); view_design(0.9, 0.4); hush()
 
 def step_2():
     """Hover"""
@@ -782,13 +801,13 @@ def step_7():
           "All links, in the Display menu, shows every link at once, in grey.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0)
+    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0, 0.5)
     say("That's the whole web of dependencies.", True); wait(0.8)
     topic("Collapse all folds every timeline group into one box. "
           "Now the links show how the groups depend on each other, and the number on a line says how many links it stands for.")
     press(sel('#colAll'), 1.3, 1.5); press(sel('#fit'), 1.0, 1.0); hush(); wait(2.0)
     say("Expand all opens everything again, every linked design too. Here, let's just open the J2 arm again.")
-    hush(); designs_state(True); view_design(1.0)
+    hush(); designs_state(True); view_design(1.0, 0.5)
     say("Let's turn All links off again. Hover and selection usually tell more.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
@@ -809,7 +828,7 @@ def step_9():
     hush(); press(sel('#filterBtn'), 1.2, 0.8)
     press(by_text('#cats label', 'Parameter', False), 1.0, 1.0)
     press(by_text('#cats label', 'Construction', False), 0.8, 1.0)
-    press(sel('#filterBtn'), 0.9, 0.5); view_design(1.0)
+    press(sel('#filterBtn'), 0.9, 0.5); view_design(1.0, 0.5)
     say("The graph is smaller now. Hidden items are skipped, not cut out: their links are joined through them.", True)
     wait(0.8)
     say("All shows everything again.")
@@ -822,7 +841,7 @@ def step_preview():
           "never the design.")
     zoom_on(power_btn(SUPPRESS_ITEM), 18, 1.3); hush()
     say("Let's switch off the stepper motor screws sketch.")
-    press(power_btn(SUPPRESS_ITEM), 0.6, 1.5); view_design(1.0); hush()
+    press(power_btn(SUPPRESS_ITEM), 0.6, 1.5); view_design(1.0, 0.55, SUPPRESS_ITEM); hush()
     say("Everything Fusion suppressed along with it in the test is crossed out and dashed, and features that would fail "
         "to compute are marked in red. The bar at the top counts them.")
     hover(sel('#simBar'), 1.2, 2.0); hush()
@@ -832,7 +851,7 @@ def step_preview():
           "or compute with a warning, and the test records that too. Let's switch off the Derive feature that brings "
           "in the parameters.")
     zoom_on(power_btn(BREAK_ITEM), 18, 1.3); hush()
-    press(power_btn(BREAK_ITEM), 0.6, 1.5); view_design(1.0)
+    press(power_btn(BREAK_ITEM), 0.6, 1.5); view_design(1.0, 0.55, BREAK_ITEM)
     say("Nothing is suppressed this time, but ten features would fail to compute, and six more would warn. "
         "The buttons at the top count them.")
     hover(sel('#health .hb'), 1.2, 1.5); hush()
