@@ -305,6 +305,15 @@ User parameters are always kept; derived ones only when linked.
 `_part_picture()` takes one isometric picture of the whole part (main design and every linked design), used on
 the page's design frames.
 
+Linked designs get a picture of every item too (with Thumbnails on), taken the same way while their read walk runs,
+but only in a copy the add-in opened (`Collector(des, None, pictures and mine)`: a design you have open is neither
+rolled nor on show). `merge` carries them into the page's `thumbs` under the prefixed ids (on a copy of the dict:
+a page written while the run goes on shares it with the main design). The design cache keeps them (`thumbs`,
+`ithumbs`). A design cached by an earlier run without them (`pics` but no `ithumbs`) is opened and read once more
+for the pictures only: its test results are taken from the cache, the pictures kept where the fresh read's item id
+has the same name, and the cache is updated. A whole-page result generated before (no `lthumbs`) is not reused
+when linked designs and thumbnails are on.
+
 ## 8. Suppression tests
 
 ### What is recorded
