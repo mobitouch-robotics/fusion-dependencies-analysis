@@ -656,7 +656,16 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   Node ids of linked designs depend on the order they were found, so for runs with a different set of linked
   designs, compare by design name + item type + name instead.
 * `tools/record_demo.py` (macOS): drives the mouse through Fusion and Safari (Apple Events) to record the demo
-  video; screen positions are set at the top of the script.
+  video, with spoken narration. Fusion: the Manage tab button, the dialog (Full analysis / Quick estimate,
+  Thumbnails, Advanced options: Include linked designs, Group test for linked designs, Reuse earlier results) and
+  the progress panel, at screen points recorded once with `--calibrate` (saved in `tools/demo_positions.json`;
+  points not calibrated are skipped). Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
+  linked designs (frames, pictures, unfolding one), layouts, hover, selection and side panel, Display options,
+  routes, multi-selection, all links and folding, search, filters, the suppression preview (including a feature
+  whose suppression makes others fail or warn, and the broken / warnings buttons), Select in Fusion, legend,
+  playback. Set up for the robot arm's Master assembly: the tour works inside one linked design
+  (`LINKED_DESIGN`); boxes are found by their full name (`data-name`) and design (`data-id` prefix, frame
+  `data-d`), which the page puts on every box and frame for this.
 
 ## 19. Things that were tried and removed
 

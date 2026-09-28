@@ -1313,7 +1313,7 @@ function renderGraph(fitAfter,centerId){
       const tt=document.createElementNS(NS,'title');tt.textContent='Timeline group: '+(groups[h.gid]?groups[h.gid].name:h.gid);rc.appendChild(tt);gb.appendChild(rc);});}
   if(designFrames.length){const fl=document.createElementNS(NS,'g');fl.setAttribute('class','dframes');vp.appendChild(fl);
     designFrames.forEach(f=>{const isMain=f.d===MAIN_DSG;const col=isMain?'var(--accent)':(gColor[f.d]||'var(--muted)');
-      const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',f.x);bg.setAttribute('y',f.y);bg.setAttribute('width',f.w);bg.setAttribute('height',f.h);bg.setAttribute('rx',18);
+      const bg=document.createElementNS(NS,'rect');bg.dataset.d=f.d;bg.setAttribute('x',f.x);bg.setAttribute('y',f.y);bg.setAttribute('width',f.w);bg.setAttribute('height',f.h);bg.setAttribute('rx',18);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.035;stroke:'+col+';stroke-opacity:.85;stroke-width:3.5;stroke-dasharray:'+(isMain?'none':'14 7'));
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',f.x+26);tx.setAttribute('y',f.y+46);tx.setAttribute('style','font-size:26px;font-weight:800;fill:'+col);
       tx.textContent=f.title;
@@ -1325,7 +1325,7 @@ function renderGraph(fitAfter,centerId){
         im.addEventListener('mouseenter',ev=>picPopShow(f.pic,f.title,ev));im.addEventListener('mousemove',ev=>picPopMove(ev));im.addEventListener('mouseleave',picPopHide);
         fl.append(pb,im);}
       // an expanded linked design: its fold button on the middle of the frame's bottom edge, like every other block
-      if(!isMain&&!f.folded&&groups[f.d]){const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(f.x+f.w/2)+','+(f.y+f.h)+')');
+      if(!isMain&&!f.folded&&groups[f.d]){const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.dataset.d=f.d;bt.setAttribute('transform','translate('+(f.x+f.w/2)+','+(f.y+f.h)+')');
         const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);c.setAttribute('class','ctogc');const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent='−';
         const tt=document.createElementNS(NS,'title');tt.textContent='Fold this design into one box';bt.append(c,t,tt);if(search)offFold(bt,tt);
         bt.addEventListener('mousedown',ev=>ev.stopPropagation());
@@ -1458,7 +1458,7 @@ function renderGraph(fitAfter,centerId){
   // layers, bottom to top: other links, dimmed boxes, links of the selection, boxes of the selection.
   // Links of the selected item run above boxes that are not part of its history.
   const gnDim=document.createElementNS(NS,'g'),gn=document.createElementNS(NS,'g');vp.append(gnDim,geHi,gBadge,gn);nhAnchor=gBadge;   // hover links: above every other link (and faded boxes), below the boxes
-  reps.forEach(r=>{const p=pos[r.id];if(!p)return;const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.setAttribute('transform','translate('+p.x+','+p.y+')');
+  reps.forEach(r=>{const p=pos[r.id];if(!p)return;const g=document.createElementNS(NS,'g');nodeEls[r.id]=g;g.setAttribute('class','nd');g.dataset.id=r.id;if(!r.isGroup&&r.members&&r.members[0])g.dataset.name=r.members[0].name;g.setAttribute('transform','translate('+p.x+','+p.y+')');
     if(hiddenPorts.has(r.id)){g.style.visibility='hidden';g.style.pointerEvents='none';}
     const rect=document.createElementNS(NS,'rect');rect.setAttribute('width',NW);rect.setAttribute('height',NH);rect.setAttribute('rx',5);
     let label,cat;
@@ -1518,7 +1518,7 @@ function renderGraph(fitAfter,centerId){
       ['mousedown','dblclick'].forEach(ev=>bt.addEventListener(ev,e=>e.stopPropagation()));
       bt.addEventListener('click',e=>{e.stopPropagation();peekHide();a.fn();});g.appendChild(bt);});
     if(laneFold){}
-    else if(r.isGroup){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
+    else if(r.isGroup){const gid=r.id.slice(1);const open=!!r.header;const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.dataset.for=r.id;bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?7:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
       const tt=document.createElementNS(NS,'title');tt.textContent=open?'Collapse this timeline group into one box':'Expand this timeline group to show its items';bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
