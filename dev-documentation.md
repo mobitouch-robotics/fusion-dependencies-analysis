@@ -378,11 +378,26 @@ for that test (`bound_mismatch`).
 **6. Putting back (`put_back`).** The marker goes back right after the first suppressed item, the item is
 switched on, the marker moves to the end. The design is then the original one again and Fusion reuses the
 result it already has (measured ~0.1 s instead of ~11 s for a full recompute). If the test ran to the end, the item
-is switched back on right there. Then `_clean` is checked; if anything differs, `_restore_checked` runs:
-`_restore` (switch on everything that should be on, groups included, then switch off what was off, one
-`setSuppressed` each), again, then item by item. If that still fails: a warning ("Could not put the design back
-after testing X"), `recovered += 1`, and the result is not cached. The design is never closed and reopened
-while it is being tested (§19).
+is switched back on right there. Then `_clean` is checked. During a test it is strict (`_begin_checks`): the
+same suppression, no new error, **no new warning, and every body with the volume it had before**
+(`body_signature`, time in the log as "body volume checks"). A feature that lost a reference after being switched
+back on often only warns and keeps its last good geometry, or computes a slightly different body; the earlier
+check (suppression and errors only) let that through and every later test ran on a changed design.
+
+If the suppression flags differ, `_restore_checked` runs (`_restore`: switch on everything that should be on,
+groups included, then switch off what was off; again; then item by item). If the flags are right but the design is
+not clean, switching on again cannot help, so it goes straight to **`_repair`**:
+
+1. Undo until clean (`_undo_back(until_clean=True)`, up to `UNDO_REPAIR_STEPS` = 30): Undo brings back the model
+   with its references. Every state with the original suppression that is clean is the original design, even one
+   from before an earlier test, so undoing further than this test is harmless.
+2. For the hidden copy of a linked design: reopen the saved version (`_reopen_hidden`, shared with the memory
+   refresh). If even the reopened copy is not clean (the saved version computes differently from when the tests
+   started: a feature that is not stable), what it shows becomes the new baseline (`_rebaseline`) with a warning.
+3. Otherwise a warning ("Could not put the design back after testing X"), `recovered += 1`.
+
+The main design is never closed and reopened while it is being tested (§19); for it, Undo is the last step. The
+item test log line counts repairs with Undo, reopens and designs not put back.
 
 **7. After each put-back:** `_memory_refresh` (§11).
 
@@ -413,9 +428,11 @@ feature or inserted as a linked component, and the designs those link, at any de
 
 **Queue.** `note_links(col)` lists, for an open design, its Derive features (`_derive_features`, with what each
 hands over: timeline object names, body names, component names, derived parameter names) and its outermost
-linked occurrences (`_linked_occurrences`). Each linked file gets one queue entry keyed by its **cloud file id**
-(`dataFile.id`, a `urn:`), never by name: names repeat across folders and projects. Each gets a prefix `x<k>:` for
-its node ids and a group `X<k>` that becomes its frame on the page.
+linked occurrences (`_linked_occurrences`). Each linked file **and saved version** gets one queue entry, keyed
+`<cloud file id>@v<version>` (`dataFile.id`, a `urn:`), never by name: names repeat across folders and projects. A
+design linked at two versions is read and tested at both and shown as two frames (they can differ); `e['fid']` is
+the file id alone (opening, file check, cache). Each gets a prefix `x<k>:` for its node ids and a group `X<k>` that
+becomes its frame on the page.
 
 **One design at a time.** `process(e)`:
 
@@ -453,8 +470,8 @@ its node ids and a group `X<k>` that becomes its frame on the page.
   User parameters of a linked design only when something uses them.
 * Each design gets a **connector** node `x<k>:@` (`type: DerivedDesign`, `port: True`): the items handed over lead
   into it, and it leads into the Derive feature or insert item(s) that use it (`derive` edges).
-* Designs with the same name in different folders get their folder in the frame name; a design linked at several
-  versions is shown once (read at the first version found), with a warning.
+* Designs with the same name in different files (folders) get their folder in the frame name; one file at two
+  versions does not (the names differ by version).
 * Groups whose test was skipped get `gskip: True`.
 
 ## 10. Result cache
@@ -469,9 +486,12 @@ copied in.
 * Kinds: `design` (one linked design: its plain data, links, picture, which tests ran) and `main_<exact><groups>
   <thumbs><derived>[s]` (the whole page data of a main design).
 * A more complete result is never replaced by a lesser one (`exact`, `groups`, `pics`).
-* `CACHE_VERSION` (now 4) invalidates everything older. Version 4 dropped results tested with Fusion's
-  transactions switched off (§19).
-* Nothing is saved for a main design that had to be recovered or whose linked designs failed, nor for a linked design whose test failed part-way or was cancelled.
+* `CACHE_VERSION` (now 5) invalidates everything older. Version 4 dropped results tested with Fusion's
+  transactions switched off (§19); version 5 results saved although a design was not put back or changed.
+* Nothing is saved for a linked design that was not put back after a test (`recovered`), whose bodies changed
+  (`bodies_changed`) or whose reopened copy computed differently (`baseline_reset`), nor for one whose test failed
+  part-way or was cancelled. Nothing is saved for the whole page when the main design has any of these, when linked
+  designs failed, or when any linked design was unclean (`linked_unclean`).
 * `reuse: false` (dialog: *Reuse earlier results* unticked) ignores the cache when loading; results are still
   saved.
 * Every decision is written to `run_log.txt` (`cache <kind> v<version> (<file id>): ...`): none saved, saved by an

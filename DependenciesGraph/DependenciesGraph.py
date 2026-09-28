@@ -1331,13 +1331,16 @@ class Collector:
             self._undo_n = 0
             return (yield from self._suppression_test(progress, cancelled))
         finally:
+            self._end_checks()
             _experiments_end(exp)
             self._show_display()
             _mem_log('item test times: total %.1f s, %d suppress/restore calls %.1f s, reading states %.1f s, '
-                     'state items %d (skipped %d), combined steps %d, undo restores %d (failed %d)' %
+                     'state items %d (skipped %d), body volume checks %.1f s, repaired with Undo %d, reopened %d, '
+                     'not put back %d' %
                      (time.perf_counter() - t0, self.n_compute, self.t_compute, self.t_state,
                       getattr(self, 'n_state_items', 0), getattr(self, 'n_state_skipped', 0),
-                      getattr(self, 'swapped', 0), getattr(self, 'n_undo', 0), getattr(self, 'n_undo_failed', 0)))
+                      getattr(self, 't_vol', 0.0), getattr(self, 'n_repair_undo', 0),
+                      getattr(self, 'n_repair_reopen', 0), getattr(self, 'recovered', 0)))
 
     def group_suppression_test(self, progress, cancelled):
         self._hide_display()
@@ -1347,6 +1350,7 @@ class Collector:
             self._undo_n = 0
             return (yield from self._group_suppression_test(progress, cancelled))
         finally:
+            self._end_checks()
             _experiments_end(exp)
             self._show_display()
 
@@ -1461,6 +1465,7 @@ class Collector:
         st0 = self._state(orig)
         err0 = set(i for i in orig if st0[i][1] == ERR)
         warn0 = set(i for i in orig if st0[i][1] == WARN)
+        self._begin_checks(warn0, vol0)
         items = [i for i in orig if not orig[i]]
         active = sorted(items)
         total = len(items)
@@ -1590,6 +1595,9 @@ class Collector:
                     self._undo_n = 0
             if not ok:
                 ok = put_back_now(S, what)
+            if not ok:
+                ok = yield from self._repair(orig, err0, what)
+                tl = self.tl                    # a reopened copy is a new document
             if ok and self._memory_refresh(orig, err0):
                 tl = self.tl
             return ok
@@ -1613,6 +1621,8 @@ class Collector:
             if self._clean(orig, err0):
                 self._undo_n = 0
                 return True
+            if self._flags_back(orig):
+                return False        # every item as it was, but something changed: switching on again cannot help
             return self._restore_checked(orig, err0, None, what)
 
         def record(i, casc, broke, warned):
@@ -1704,6 +1714,7 @@ class Collector:
         self.batched = batch_hits
         vol1 = self.body_signature()
         if vol0 != vol1:
+            self.bodies_changed = True
             self.warnings.append('Warning: after the suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
         _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
@@ -1788,8 +1799,13 @@ class Collector:
         _safe(lambda: tl.moveToEnd())
 
     def _clean(self, orig, err0):
-        """True when every item is back in its original state and nothing new fails to compute."""
+        """True when every item is back in its original state: the same suppression, nothing new fails to compute,
+        and - during a test (_warn0 / _vol0 set) - no new warning and every body with the volume it had before.
+        A feature that lost a reference after being switched back on often only warns and keeps its last good
+        geometry, or computes a slightly different body; switching items on again cannot fix that."""
         ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
+        WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
+        w0 = getattr(self, '_warn0', None)
         st = self._state(orig)
         for i in orig:
             sup, h = st[i]
@@ -1797,7 +1813,38 @@ class Collector:
                 return False
             if i not in err0 and not orig[i] and h == ERR:
                 return False
+            if w0 is not None and i not in w0 and not orig[i] and h == WARN:
+                return False
+        v0 = getattr(self, '_vol0', None)
+        if v0 is not None:
+            t0 = time.perf_counter()
+            sig = _safe(self.body_signature)
+            self.t_vol = getattr(self, 't_vol', 0.0) + time.perf_counter() - t0
+            if sig is not None and sig != v0:
+                return False
         return True
+
+    def _begin_checks(self, warn0, vol0):
+        """The warnings and body volumes every put-back is checked against (see _clean)."""
+        self._warn0, self._vol0 = warn0, vol0
+
+    def _end_checks(self):
+        self._warn0 = self._vol0 = None
+
+    def _rebaseline(self, orig, err0):
+        """After reopening, the saved version itself computes differently from how the tests started (a feature
+        that is not stable): what it shows now becomes what later tests are compared with."""
+        ERR = adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState
+        WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
+        st = self._state(orig)
+        err0.clear()
+        err0.update(i for i in orig if st[i][1] == ERR)
+        w0 = getattr(self, '_warn0', None)
+        if w0 is not None:
+            w0.clear()
+            w0.update(i for i in orig if st[i][1] == WARN)
+        if getattr(self, '_vol0', None) is not None:
+            self._vol0 = _safe(self.body_signature)
 
     UNDO_RESTORE = False      # superseded by the marker put-back (faster, no waiting for Fusion)
     UNDO_MAX_STEPS = 12
@@ -1846,6 +1893,55 @@ class Collector:
         ok = self._restore_checked(orig, err0, tested, what)
         return ok
 
+    def _reopen_hidden(self, why):
+        """Closes the hidden copy of a linked design and opens the same saved version again (and its configuration
+        row), groups expanded, display hidden, marker at the end. True when reopened; False when it could not be
+        closed (nothing changed); raises when the reopened document is not the same file and version. Never for the
+        design you have open."""
+        hd = getattr(self, 'hidden_doc', None)
+        if hd is None:
+            return False
+        app = adsk.core.Application.get()
+        name = _safe(lambda: hd.name, '?')
+        df = _safe(lambda: hd.dataFile)
+        fid, ver = _safe(lambda: df.id), _safe(lambda: df.versionNumber)
+        if df is None or not fid:
+            return False
+        try:
+            hd.close(False)
+        except Exception:
+            return False
+        self.hidden_doc = None
+        gc.collect()
+        try:
+            nd = app.documents.open(df, True)
+        except Exception as ex:
+            raise RuntimeError('could not reopen %s %s: %s' % (name, why, ex))
+        _safe(nd.activate)
+        adsk.doEvents()
+        got = _safe(lambda: nd.dataFile)
+        if _safe(lambda: got.id) != fid or (ver is not None and _safe(lambda: got.versionNumber) != ver):
+            _safe(lambda: nd.close(False))
+            raise RuntimeError('reopening %s %s opened a different file or version' % (name, why))
+        des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
+        cr = getattr(self, 'config_row', None)
+        if cr:
+            # a configuration: the configured design opens with its default row
+            table = _safe(lambda: des.configurationTopTable)
+            rows = _safe(lambda: [table.rows.item(k) for k in range(table.rows.count)]) or []
+            row = next((r for r in rows if _safe(lambda: r.name) == cr), None)
+            if row is None or not _safe(lambda: row.activate() is not False, False):
+                _safe(lambda: nd.close(False))
+                raise RuntimeError('reopening %s %s: could not activate configuration %s' % (name, why, cr))
+            adsk.doEvents()
+        self.hidden_doc = nd
+        self.des, self.root, self.tl = des, des.rootComponent, des.timeline
+        self.expand_groups()
+        self._display_saved = []
+        self._hide_display()
+        _safe(lambda: self.tl.moveToEnd())
+        return True
+
     MEM_REFRESH_GB = 4      # a hidden copy of a linked design is reopened when Fusion has grown by this much
 
     def _memory_refresh(self, orig, err0):
@@ -1871,47 +1967,15 @@ class Collector:
         self._mr_base = m if base is None else min(base, m)
         if base is None or m - self._mr_base < limit * 1024 ** 3:
             return False
-        app = adsk.core.Application.get()
         name = _safe(lambda: hd.name, '?')
-        df = _safe(lambda: hd.dataFile)
-        fid, ver = _safe(lambda: df.id), _safe(lambda: df.versionNumber)
-        if df is None or not fid:
+        if not self._reopen_hidden('to free memory'):
             return False
-        try:
-            hd.close(False)
-        except Exception:
-            return False
-        self.hidden_doc = None
-        gc.collect()
-        try:
-            nd = app.documents.open(df, True)
-        except Exception as ex:
-            raise RuntimeError('could not reopen %s to free memory: %s' % (name, ex))
-        _safe(nd.activate)
-        adsk.doEvents()
-        got = _safe(lambda: nd.dataFile)
-        if _safe(lambda: got.id) != fid or (ver is not None and _safe(lambda: got.versionNumber) != ver):
-            _safe(lambda: nd.close(False))
-            raise RuntimeError('reopening %s to free memory opened a different file or version' % name)
-        des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
-        cr = getattr(self, 'config_row', None)
-        if cr:
-            # a configuration: the configured design opens with its default row
-            table = _safe(lambda: des.configurationTopTable)
-            rows = _safe(lambda: [table.rows.item(k) for k in range(table.rows.count)]) or []
-            row = next((r for r in rows if _safe(lambda: r.name) == cr), None)
-            if row is None or not _safe(lambda: row.activate() is not False, False):
-                _safe(lambda: nd.close(False))
-                raise RuntimeError('reopening %s to free memory: could not activate configuration %s' % (name, cr))
-            adsk.doEvents()
-        self.hidden_doc = nd
-        self.des, self.root, self.tl = des, des.rootComponent, des.timeline
-        self.expand_groups()
-        self._display_saved = []
-        self._hide_display()
-        _safe(lambda: self.tl.moveToEnd())
         if not self._clean(orig, err0):
-            raise RuntimeError('%s reopened to free memory is not in the state it was tested in' % name)
+            self._rebaseline(orig, err0)
+            self.baseline_reset = getattr(self, 'baseline_reset', 0) + 1
+            self.warnings.append('%s was reopened from its saved version to free memory and computes differently from '
+                                 'when the tests started (a feature that is not stable); later tests compare with the '
+                                 'reopened design.' % name)
         self.n_refresh = getattr(self, 'n_refresh', 0) + 1
         after = _process_memory()
         _mem_log('reopened %s to free memory: %.1f GB -> %s' % (
@@ -1922,7 +1986,7 @@ class Collector:
     UNDO_PUT_BACK_MIN = 3.0     # seconds a test took before its put-back is tried with Undo
     UNDO_PUT_BACK_STEPS = 12    # Undo steps tried at most
 
-    def _undo_back(self, orig, err0):
+    def _undo_back(self, orig, err0, until_clean=False):
         """Feature experimentUndoPutBack (on by default, see _feature): put the design back with Fusion's Undo, one step at a time,
         until every item has its original suppression state, then the marker to the end. Undo brings back the
         model Fusion kept from before the change, so heavy features the test suppressed or recomputed need not be
@@ -1946,7 +2010,7 @@ class Collector:
             st = self._state(idx)
             return _safe(lambda: tl.markerPosition), tuple(st[i][0] for i in idx)
 
-        for _ in range(self.UNDO_PUT_BACK_STEPS):
+        for _ in range(self.UNDO_REPAIR_STEPS if until_clean else self.UNDO_PUT_BACK_STEPS):
             before = snap()
             if not _safe(lambda: cd.execute() or True, False):
                 return False
@@ -1957,11 +2021,49 @@ class Collector:
             else:
                 return False        # nothing changed: nothing left to undo, or Undo did not run
             if self._flags_back(orig):
-                break
+                if not until_clean:
+                    break
+                # repairing: go on undoing until the design is really the original one again (every state with
+                # the original suppression that is clean is the original design, even from before an earlier test)
+                _safe(lambda: tl.moveToEnd())
+                if self._clean(orig, err0):
+                    return True
         else:
             return False
         _safe(lambda: tl.moveToEnd())
         return self._clean(orig, err0)
+
+    UNDO_REPAIR_STEPS = 30      # Undo steps tried at most when repairing a design switching back on did not restore
+
+    def _repair(self, orig, err0, what):
+        """The design is not the original one after a test even with every item switched back as it was (a
+        feature lost a reference): Undo until it is clean (Undo brings back the model with its references), else -
+        for the hidden copy of a linked design - reopen the saved version. Generator. False only when neither works
+        (then a warning: later results may be wrong)."""
+        if (yield from self._undo_back(orig, err0, until_clean=True)):
+            self.n_repair_undo = getattr(self, 'n_repair_undo', 0) + 1
+            _mem_log('put back with Undo after testing %s' % what)
+            return True
+        if getattr(self, 'hidden_doc', None) is not None:
+            try:
+                reopened = self._reopen_hidden('after testing %s' % what)
+            except Exception as ex:
+                reopened = False
+                _mem_log('reopening failed: %s' % ex)
+            if reopened:
+                self.n_repair_reopen = getattr(self, 'n_repair_reopen', 0) + 1
+                if self._clean(orig, err0):
+                    _mem_log('reopened the saved version after testing %s' % what)
+                    return True
+                self._rebaseline(orig, err0)
+                self.baseline_reset = getattr(self, 'baseline_reset', 0) + 1
+                self.warnings.append('After testing %s the design was reopened from its saved version, which computes '
+                                     'differently from when the tests started (a feature that is not stable); later '
+                                     'tests compare with the reopened design.' % what)
+                return True
+        self.recovered = getattr(self, 'recovered', 0) + 1
+        self.warnings.append('Could not put the design back after testing %s; later results may be wrong.' % what)
+        return False
 
     def _restore_checked(self, orig, err0, tested=None, what=''):
         r = self._restore_checked_now(orig, err0, tested, what)
@@ -1982,11 +2084,7 @@ class Collector:
             if it is not None and _safe(lambda: it.isSuppressed, None) != orig[i]:
                 _safe(lambda: self._set_suppressed([it], orig[i]))
         _safe(lambda: tl.moveToEnd())
-        if self._clean(orig, err0):
-            return True
-        self.recovered = getattr(self, 'recovered', 0) + 1
-        self.warnings.append('Could not put the design back after testing %s; later results may be wrong.' % what)
-        return False
+        return self._clean(orig, err0)          # False: the caller repairs (_repair)
 
 
     def _static_reach(self, idxs):
@@ -2159,6 +2257,7 @@ class Collector:
         err0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == adsk.fusion.FeatureHealthStates.ErrorFeatureHealthState)
         WARN = adsk.fusion.FeatureHealthStates.WarningFeatureHealthState
         warn0 = set(i for i in orig if _safe(lambda: tl.item(i).healthState, 0) == WARN)
+        self._begin_checks(warn0, vol0)
         for j in range(len(tgroups)):
             g = tgroups[j]      # re-read: the list is replaced if the design had to be reopened
             gid = 'G%d' % j
@@ -2211,7 +2310,8 @@ class Collector:
                     # Fusion rolls the suppression back because a later feature fails to compute.
                     if gid in byg:
                         byg[gid]['fail'] = self._parse_fail(fail_msg)
-                    self._restore_checked(orig, err0, None, _safe(lambda: g.name, gid))
+                    if not self._restore_checked(orig, err0, None, _safe(lambda: g.name, gid)):
+                        yield from self._repair(orig, err0, _safe(lambda: g.name, gid))
                     tl = self.tl
                     tgroups = _safe(lambda: list(tl.timelineGroups)) or tgroups
                     continue
@@ -2240,7 +2340,10 @@ class Collector:
                 self._set_test_marker(first + 1)
             _safe(lambda: self._set_suppressed([g], False))
             _safe(lambda: tl.moveToEnd())
-            if self._clean(orig, err0) or self._restore_checked(orig, err0, None, gname):
+            ok = self._clean(orig, err0) or (not self._flags_back(orig) and self._restore_checked(orig, err0, None, gname))
+            if not ok:
+                ok = yield from self._repair(orig, err0, gname)
+            if ok:
                 self._memory_refresh(orig, err0)
             if self.tl is not tl:
                 tl = self.tl
@@ -2250,6 +2353,7 @@ class Collector:
             _mem_log('group test: Undo put back %d groups, %.1f s' % (self.g_undo, getattr(self, 'g_undo_secs', 0.0)))
         vol1 = self.body_signature()
         if vol0 != vol1:
+            self.bodies_changed = True
             self.warnings.append('Warning: after the group suppression test the bodies differ from before '
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
 
@@ -2492,7 +2596,7 @@ def _mem_tick(what, every=30.0):
 # ------------------------------------------------------------ result cache ---
 # A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
 # (or another assembly using the same part) takes it from here instead of opening and testing the design again.
-CACHE_VERSION = 4      # 4: drops results tested with Fusion's transactions off (they found nothing)
+CACHE_VERSION = 5      # 5: drops results saved although a design was not put back or changed (4: transactions off)
 
 
 def _cache_dir():
@@ -2732,19 +2836,10 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
     def step_labels(testing=True):
         return ['Reading'] + (['Item test'] if exact and testing else []) + (['Group test'] if groups_test and testing else [])
 
-    def entry_for(sd, depth):
-        """The queue entry for a linked design (one per file), created when first seen."""
-        ref_doc = _safe(lambda: sd.parentDocument)
-        name = _safe(lambda: ref_doc.name) or 'Linked design'
-        dfile = _safe(lambda: ref_doc.dataFile)
-        fid = _safe(lambda: dfile.id)
-        if not fid:
-            # identified only by its file id: names repeat across folders and projects
-            main.warnings.append('%s: its cloud file could not be identified, so it was left out.' % name)
-            return None
-        return add_entry(fid, name, dfile, _safe(lambda: dfile.versionNumber), depth)
-
-    def add_entry(key, name, dfile, ver, depth):
+    def add_entry(fid, name, dfile, ver, depth):
+        """One entry per file and saved version: a design linked at two versions is read and tested at both, as
+        two frames (they can differ)."""
+        key = '%s@v%s' % (fid, ver)
         e = by_key.get(key)
         if e is None:
             if len(by_key) >= max_designs:
@@ -2753,7 +2848,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                     main.warnings.append('More than %d linked designs: the rest were left out.' % max_designs)
                 return None
             k = len(by_key) + 1
-            e = {'key': key, 'name': name, 'data_file': dfile, 'read_ver': ver, 'depth': depth,
+            e = {'key': key, 'fid': fid, 'name': name, 'data_file': dfile, 'read_ver': ver, 'depth': depth,
                  'versions': {ver} if ver is not None else set(), 'prefix': 'x%d:' % k, 'gid': 'X%d' % k,
                  'col': None, 'doc': None, 'specs': [], 'into': set(), 'targets': set(), 'via': set()}
             by_key[key] = e
@@ -2860,7 +2955,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         """Opens the version the link uses in its own tab and switches to it, so you can see what is being worked
         on (the progress panel stays on top); the tab is closed when the design is done. mine=False: Fusion handed
         back a document the user has open."""
-        dfile = e['data_file'] or _safe(lambda: app.data.findFileById(e['key']))
+        dfile = e['data_file'] or _safe(lambda: app.data.findFileById(e['fid']))
         if dfile is None:
             return None, False, None
         target = dfile
@@ -2880,7 +2975,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         # make sure Fusion handed back exactly that file and version (never another file with the same name)
         got = _safe(lambda: doc.dataFile)
         got_id, got_ver = _safe(lambda: got.id), _safe(lambda: got.versionNumber)
-        if got_id != e['key'] and mine:
+        if got_id != e['fid'] and mine:
             # a configuration (a row of a configured design): its file lives in Fusion's hidden CONFIG project, and
             # Fusion opens the configured design itself - activate that row in it
             row = config_row(doc, dfile, e['name'])
@@ -2890,7 +2985,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 e['config_row'] = _safe(lambda: row.name)
                 des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
                 return doc, mine, des
-        if got_id != e['key'] or (e['read_ver'] is not None and got_ver is not None and got_ver != e['read_ver']
+        if got_id != e['fid'] or (e['read_ver'] is not None and got_ver is not None and got_ver != e['read_ver']
                                   and mine):
             if mine:
                 _safe(lambda: doc.close(False))
@@ -2948,7 +3043,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
     def process(e, n_done):
         name = e['name']
         # read and tested in an earlier run (same saved version, at least the same checks): nothing to open
-        c = _cache_load('design', e['key'], e['read_ver'])
+        c = _cache_load('design', e['fid'], e['read_ver'])
         if c and (not exact or c.get('exact')) and (not groups_test or c.get('gtest')) and (not pictures or c.get('pics')):
             e['col'] = _CachedDesign(c)
             e['pic'] = c.get('pic')
@@ -2982,7 +3077,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 if mine and not cancelled():
                     d = _design_data(sc)
                     d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'exact': True, 'gtest': True})
-                    _cache_save('design', e['key'], e['read_ver'], d)
+                    _cache_save('design', e['fid'], e['read_ver'], d)
                 return
             sc = Collector(des, None, False)
             sc.cancelled = cancelled
@@ -3056,11 +3151,17 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                             main.warnings.append('%s: the whole groups test failed: %s' % (name, ex))
                     tested = not cancelled() and not failed
             # kept for later runs: only a complete result from a hidden copy of the saved version
-            if mine and not cancelled() and not (testing and not tested):
+            unclean = [w for w, bad in (('not put back after a test', getattr(sc, 'recovered', 0)),
+                                        ('bodies changed by the tests', getattr(sc, 'bodies_changed', False)),
+                                        ('reopened design computes differently', getattr(sc, 'baseline_reset', 0))) if bad]
+            if unclean:
+                main.linked_unclean = True      # the whole page is not kept either
+                _mem_log('cache design %s: not saved (%s)' % (name, ', '.join(unclean)))
+            elif mine and not cancelled() and not (testing and not tested):
                 d = _design_data(sc)
                 d.update({'links': links, 'pic': e['pic'], 'pics': pictures,
                           'exact': bool(exact and tested), 'gtest': bool(groups_test and tested)})
-                _cache_save('design', e['key'], e['read_ver'], d)
+                _cache_save('design', e['fid'], e['read_ver'], d)
         finally:
             # closed right away: only one linked design is open at a time
             hd = getattr(e['col'], 'hidden_doc', None) or e['doc']
@@ -3106,11 +3207,11 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         # designs with the same name in different folders: their frames say where each one is
         base = lambda nm: re.sub(r'\s+v\d+$', '', nm or '')
         main_name = base(_safe(lambda: adsk.core.Application.get().activeDocument.name, ''))
-        counts = {}
+        files = {}         # base name -> the different files with that name (one file at two versions is one)
         for e in srcs:
-            counts[base(e['name'])] = counts.get(base(e['name']), 0) + 1
+            files.setdefault(base(e['name']), set()).add(e['fid'])
         for e in srcs:
-            e['show_loc'] = bool((counts[base(e['name'])] > 1 or base(e['name']) == main_name) and e.get('loc'))
+            e['show_loc'] = bool((len(files[base(e['name'])]) > 1 or base(e['name']) == main_name) and e.get('loc'))
 
         # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
         order = sorted(srcs, key=lambda s: -s['depth'])
@@ -3118,10 +3219,6 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             sc, sp, gid = src['col'], src['prefix'], src['gid']
             base = -1e6 + rank * 1e4
             nm = src['name']              # the frame's name (the entry keeps the plain name: merged more than once)
-            if len(src['versions']) > 1:
-                base_name = re.sub(r'\s+v\d+$', '', nm)
-                nm = '%s (v%s; read v%s)' % (base_name, ', v'.join(str(v) for v in sorted(src['versions'])), src['read_ver'])
-                target.warnings.append('%s is linked at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
             if src.get('show_loc'):
                 nm = '%s (%s)' % (nm, src['loc'])
             target.groups.append({'id': gid, 'name': nm, 'first': base, 'parent': None, 'design': True,
@@ -3564,11 +3661,15 @@ def generate(mode='both', thumbs=True, derived=False):
         data = col.result(doc_name, exact, time.time() - t0)
         progress_dlg.hide()
         progress_dlg = None
-        if not getattr(col, 'recovered', 0) and not getattr(col, 'derived_failed', False):
+        unclean = [w for w, bad in (('this design was not put back after a test', getattr(col, 'recovered', 0)),
+                                    ('its bodies changed during the tests', getattr(col, 'bodies_changed', False)),
+                                    ('linked designs failed', getattr(col, 'derived_failed', False)),
+                                    ('a linked design was not put back or changed', getattr(col, 'linked_unclean', False)))
+                   if bad]
+        if not unclean:
             _cache_save(kinds[0], m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
         else:
-            _mem_log('cache %s: not saved (%s)' % (kinds[0], 'the design had to be put back the slow way'
-                                                   if getattr(col, 'recovered', 0) else 'linked designs failed'))
+            _mem_log('cache %s: not saved (%s)' % (kinds[0], ', '.join(unclean)))
         return _write_page(data, path, out_dir)
     except Exception:
         if progress_dlg:
