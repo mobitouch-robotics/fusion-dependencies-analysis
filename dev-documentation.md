@@ -18,7 +18,7 @@ behind the less obvious decisions. `README.md` describes the add-in for users.
 9. [Linked designs](#9-linked-designs)
 10. [Result cache](#10-result-cache)
 11. [Memory](#11-memory)
-12. [Experiments](#12-experiments)
+12. [Test speed-ups](#12-test-speed-ups-former-experiments)
 13. [Progress panel](#13-progress-panel)
 14. [Select in Fusion (local HTTP server)](#14-select-in-fusion-local-http-server)
 15. [The generated page](#15-the-generated-page)
@@ -125,7 +125,7 @@ Some Fusion actions only take effect after the add-in returns control to Fusion,
 generators. Where they need Fusion to act they `yield`. `_Stepper._step_once()` calls `next(gen)`, then fires
 `STEP_EVENT_ID`; Fusion delivers that event after it has processed what was queued, and `_StepHandler`
 continues the generator. If firing the event fails, the stepper continues synchronously. When the generator
-ends, `done(fin.value)` → `_run_finished` runs. Only the Undo put-back experiment (§12) currently yields;
+ends, `done(fin.value)` → `_run_finished` runs. Only the Undo put-back (§12) currently yields;
 otherwise the generators run straight through.
 
 `_run_finished(doc, warnings)`: the run moves the marker and suppresses items, so the document ends up
@@ -139,9 +139,9 @@ up in that document.
 `_CreatedHandler` builds the dialog:
 
 * Information text: design name, timeline entries, groups.
-* Options: **Thumbnails**, **Reuse earlier results**, **Save to** (text + *Choose file...* / *Use temporary folder*).
-* Advanced options (folded): **Include linked designs**, **Group test for linked designs**, and the experiment
-  checkboxes (§12).
+* Options: **Thumbnails**, **Save to** (text + *Choose file...* / *Use temporary folder*).
+* Advanced options (folded): **Include linked designs**, **Group test for linked designs**, **Reuse earlier
+  results**. The test speed-ups (§12) have no toggle.
 * The OK button is **Full analysis**; **Quick estimate** is a button input. Pressing it cannot end the command
   from its own input event, so `_InputChangedHandler` fires `EVENT_ID` with `closeDialog: True`, and
   `_RunHandler` terminates the dialog first (`terminateActiveCommand`), asks for confirmation, then runs with
@@ -157,7 +157,7 @@ setting key), so they are remembered. `settings.json` sits in the add-in folder:
 | `savePath` | Page file chosen with *Choose file...* | temporary folder |
 | `linkedGroupTest` | Whole groups test on linked designs too | false |
 | `memoryRefreshGB` | Reopen a linked design's hidden copy after this growth (0 = off) | 4 |
-| `experimentNoCrashRecovery`, `experimentNoBodyCache`, `experimentDeferCompute`, `experimentUndoPutBack` | §12 | false |
+| `features` | `{"<key>": false}` switches off one of the test speed-ups (§12); the old top-level `experiment...` keys are ignored | all on |
 | `transactionsOff` | no longer read (§19) | |
 
 `mode` values: `'both'` (Full analysis: items and groups), `'off'` (Quick estimate). The code also knows
@@ -462,14 +462,13 @@ copied in.
 * A more complete result is never replaced by a lesser one (`exact`, `groups`, `pics`).
 * `CACHE_VERSION` (now 4) invalidates everything older. Version 4 dropped results tested with Fusion's
   transactions switched off (§19).
-* Nothing is saved while any experiment is on (§12), nor for a main design that had to be recovered or whose
-  linked designs failed, nor for a linked design whose test failed part-way or was cancelled.
+* Nothing is saved for a main design that had to be recovered or whose linked designs failed, nor for a linked design whose test failed part-way or was cancelled.
 * `reuse: false` (dialog: *Reuse earlier results* unticked) ignores the cache when loading; results are still
   saved.
 * Every decision is written to `run_log.txt` (`cache <kind> v<version> (<file id>): ...`): none saved, saved by an
   older add-in version, not enough for this run (which test is missing), saved, not saved and why (experiments on,
   a more complete result already saved, the design had to be put back the slow way, linked designs failed, write
-  error). With experiments on, the page also gets a warning that nothing was kept.
+  error). 
 
 ## 11. Memory
 
@@ -496,11 +495,13 @@ which is what Activity Monitor shows; the resident set leaves out compressed and
 Fusion is large) and `PagefileUsage` (private bytes) on Windows. `_mem_log(msg)` appends a line with the time and
 memory to `run_log.txt`. `_mem_tick` writes one at most every 30 s during reading and the tests.
 
-## 12. Experiments
+## 12. Test speed-ups (former experiments)
 
-Four checkboxes under Advanced options. All are off by default, remembered in `settings.json`, and while any is
-on nothing is written to the cache, because their results are not trusted until
-`tools/compare_pages.py` shows them identical to a normal run.
+Four speed-ups that started as experiment checkboxes. They are now always on, with no toggle in the dialog;
+`_feature(key)` reads `settings.json` `{"features": {"<key>": false}}` to switch one off (the old top-level keys the
+checkboxes wrote are ignored, so a stale `false` cannot switch one off unseen). Their results are cached like any
+other. They have not been validated against a run without them on a large design: if results look wrong, switch
+them off one at a time and compare with `tools/compare_pages.py`.
 
 | Setting | What it does | Where |
 |---|---|---|
@@ -640,7 +641,7 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   being worked on"). The current `_memory_refresh` only reopens hidden copies of linked designs.
 * **Undo restore with a fixed number of steps** (`_undo_restore`, `UNDO_RESTORE = False`): replaced by the marker
   put-back (no waiting for Fusion). Its step count stopped matching once the timeline walk moved the marker; the
-  Undo experiment (§12) undoes step by step instead.
+  Undo put-back (§12) undoes step by step instead.
 * **Running the work inside the command's preview**: the dialog's docstring still mentions it, but the run
   happens after the dialog closes (custom event).
 * **Tail certificates** (`_record_frontier_certificate`, `_frontier_for`, `SUPPRESSION_FRONTIER_ENABLED`):

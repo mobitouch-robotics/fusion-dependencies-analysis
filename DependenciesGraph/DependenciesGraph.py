@@ -1471,8 +1471,8 @@ class Collector:
                  'bound_mismatch': 0, 'computed': 0,
                  'secs_marker0': 0.0, 'secs_suppress': 0.0, 'secs_walk': 0.0, 'secs_back': 0.0,
                  'undo_tries': 0, 'undo_ok': 0, 'secs_back_undo': 0.0, 'refused_walked': 0}
-        self._defer_on = bool(_settings().get('experimentDeferCompute'))
-        self._undo_put_back = bool(_settings().get('experimentUndoPutBack'))
+        self._defer_on = _feature('experimentDeferCompute')
+        self._undo_put_back = _feature('experimentUndoPutBack')
         last = {'t0': time.perf_counter()}      # when the latest test started
 
         def marker_to(m):
@@ -1923,7 +1923,7 @@ class Collector:
     UNDO_PUT_BACK_STEPS = 12    # Undo steps tried at most
 
     def _undo_back(self, orig, err0):
-        """Experiment (setting experimentUndoPutBack): put the design back with Fusion's Undo, one step at a time,
+        """Feature experimentUndoPutBack (on by default, see _feature): put the design back with Fusion's Undo, one step at a time,
         until every item has its original suppression state, then the marker to the end. Undo brings back the
         model Fusion kept from before the change, so heavy features the test suppressed or recomputed need not be
         computed again. Undo runs only after the add-in hands control back to Fusion, so this is a generator.
@@ -2010,7 +2010,7 @@ class Collector:
     HEAVY_SECONDS = 2.0     # a stretch of the timeline that takes this long to compute counts as heavy
 
     def _defer_begin(self):
-        """Experiment (setting experimentDeferCompute): the steps of one test move (marker, then suppress; or marker
+        """Feature experimentDeferCompute (on by default, see _feature): the steps of one test move (marker, then suppress; or marker
         back, switch on, marker to the end) are made with Design.isComputeDeferred on, so Fusion computes once
         when it is switched off again instead of after every step. Returns True when deferred."""
         if not getattr(self, '_defer_on', False):
@@ -2222,7 +2222,7 @@ class Collector:
                 if warned:
                     byg[gid]['dwarn'] = [self.tl2node[i] for i in warned if i in self.tl2node]
             gname = _safe(lambda: g.name, gid)
-            if (_settings().get('experimentUndoPutBack') and
+            if (_feature('experimentUndoPutBack') and
                     time.perf_counter() - gt0 >= self.UNDO_PUT_BACK_MIN):
                 t0u = time.perf_counter()
                 if (yield from self._undo_back(orig, err0)):
@@ -2543,11 +2543,11 @@ def _cache_load(kind, file_id, ver, quiet=False):
     return d
 
 
-def _experiments_on():
-    """The experiment settings that are on (their results are never saved for reuse)."""
-    st = _settings()
-    keys = [k for k, *_ in EXPERIMENTS] + ['experimentDeferCompute', 'experimentUndoPutBack']
-    return [k for k in keys if st.get(k)]
+def _feature(key):
+    """The test speed-ups that started as experiments (EXPERIMENTS, experimentDeferCompute, experimentUndoPutBack) are
+    on by default, with no toggle in the dialog; settings.json {"features": {"<key>": false}} switches one off. The
+    old top-level keys written by the former checkboxes are ignored."""
+    return bool((_settings().get('features') or {}).get(key, True))
 
 
 def _breathe(seconds=0.15):
@@ -2604,9 +2604,9 @@ def _tx_on(force=False):
     _mem_log('undo recording switched back on (%s)' % ((_tx_command() or '?').strip()[:80]))
 
 
-# Experiments (settings.json, off by default): Fusion background work switched off while the suppression tests
-# run, and back on right after. Both are hidden Fusion text commands; keep one only if tools/compare_pages.py
-# shows the same results with and without it (switching Options.Transactions off made every test find nothing).
+# Fusion background work switched off while the suppression tests run, and back on right after (on by default, see
+# _feature). Both are hidden Fusion text commands (started as experiments); if results look wrong, switch one off
+# and compare with tools/compare_pages.py (switching Options.Transactions off made every test find nothing).
 EXPERIMENTS = (
     # setting key,              text command,                        off,     on
     ('experimentNoCrashRecovery', 'Options.CrashRecovery',           '/off',  '/on'),   # periodic crash-recovery autosave
@@ -2629,7 +2629,7 @@ def _experiments_begin():
     st = _settings()
     undo = []
     for key, cmd, off, on in EXPERIMENTS:
-        if not st.get(key):
+        if not _feature(key):
             continue
         before = _text_command(cmd)
         if before is None:
@@ -2669,10 +2669,6 @@ def _cache_save(kind, file_id, ver, d):
     if not file_id or ver is None:
         return
     note = lambda m: _mem_log('cache %s v%s (%s): %s' % (kind, ver, file_id, m))
-    exp = _experiments_on()
-    if exp:
-        note('not saved: experiments on (%s)' % ', '.join(exp))
-        return          # an experiment is on: its results are not trusted until compared, so never reused
     try:
         with open(_cache_path(kind, file_id, ver), 'r', encoding='utf-8') as f:
             old = json.load(f)
@@ -3517,9 +3513,6 @@ def generate(mode='both', thumbs=True, derived=False):
             _safe(lambda: progress_dlg.hide())
             progress_dlg = None
             return []
-        if _experiments_on():
-            col.warnings.append('Experiments were on (Advanced options): the results of this run were not saved for '
-                                'reuse, so the next run tests everything again. Untick them to keep results.')
         data = col.result(doc_name, exact, time.time() - t0)
         progress_dlg.hide()
         progress_dlg = None
@@ -3806,36 +3799,7 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             lg.tooltipDescription = ('Takes about as long again as their item test. Off: their items are still tested '
                                      'exactly; what suppressing one of their timeline groups does is added up from its '
                                      'items\' results (shown as estimated). This design\'s groups are always tested.')
-            # experiments: Fusion background work off during the tests (see EXPERIMENTS)
-            for key, iid, label, tip, desc in (
-                    ('experimentNoCrashRecovery', 'hgExpCrash', 'Experiment: no autosave during tests',
-                     'Switch off Fusion\'s crash-recovery autosave while the suppression tests run',
-                     'Fusion saves open designs for crash recovery every few minutes; that can take a while on a large '
-                     'assembly. Switched back on right after each test. Experimental: results of such a run are not '
-                     'reused later; compare them with a normal run (tools/compare_pages.py) before relying on it.'),
-                    ('experimentNoBodyCache', 'hgExpBody', 'Experiment: no background mass properties',
-                     'Switch off Fusion\'s background mass-property calculation while the suppression tests run',
-                     'After every recompute Fusion works out mass properties of changed bodies in the background. '
-                     'Switched back on right after each test. Experimental: results of such a run are not reused '
-                     'later; compare them with a normal run (tools/compare_pages.py) before relying on it.'),
-                    ('experimentDeferCompute', 'hgExpDefer', 'Experiment: one recompute per test step',
-                     'Item test: move the marker and suppress (or put back) with Fusion\'s compute deferred',
-                     'Each test moves the timeline marker and then suppresses the item, and puts it back in three '
-                     'steps; each step can make Fusion recompute. With compute deferred Fusion computes once per step '
-                     'group. The run log shows the time of each part either way. Experimental: results of such a run '
-                     'are not reused later; compare them with a normal run (tools/compare_pages.py).'),
-                    ('experimentUndoPutBack', 'hgExpUndo', 'Experiment: put back with Undo after slow tests',
-                     'After a test that took more than a few seconds, put the design back with Fusion\'s Undo',
-                     'Switching a feature back on makes Fusion compute again everything after it that the test '
-                     'changed, including heavy features at the end. Undo brings back the model Fusion kept from '
-                     'before the test instead. Checked item by item; when Undo does not bring back exactly the '
-                     'original state, the usual way is used. The run log shows how often it worked and how long it '
-                     'took. Experimental: results of such a run are not reused later; compare them with a normal run '
-                     '(tools/compare_pages.py).')):
-                x = ag.children.addBoolValueInput(iid, label, True, '', bool(_settings().get(key, False)))
-                x.tooltip = tip
-                x.tooltipDescription = desc
-            ru = oc.addBoolValueInput('hgReuse', 'Reuse earlier results', True, '', bool(_settings().get('reuse', True)))
+            ru = ag.children.addBoolValueInput('hgReuse', 'Reuse earlier results', True, '', bool(_settings().get('reuse', True)))
             ru.tooltip = 'Take results of saved versions analysed before instead of opening and testing them again'
             ru.tooltipDescription = ('A saved version never changes, so its results stay valid. Applies to linked designs and '
                                      'to this design when it has not changed since it was last analysed. Untick to analyse '
@@ -3976,9 +3940,7 @@ def _unsaved_reason():
 
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
-        keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest',
-                'hgExpCrash': 'experimentNoCrashRecovery', 'hgExpBody': 'experimentNoBodyCache',
-                'hgExpDefer': 'experimentDeferCompute', 'hgExpUndo': 'experimentUndoPutBack'}
+        keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest'}
         if args.input.id in keys:
             st = _settings()
             st[keys[args.input.id]] = bool(args.input.value)

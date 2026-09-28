@@ -83,25 +83,21 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
   a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.
 - Cancel stops the whole run; no page is generated.
 
-### Experiments
+### Test speed-ups
 
-Two of Fusion's hidden settings can be switched off while the suppression tests run, to see whether that saves
-time or memory. Tick them under *Advanced options* (remembered for next time); they are switched back on after
-each test:
+The suppression tests always use these (they started as experiments; there is no toggle in the dialog):
 
-- *Experiment: no autosave during tests*: Fusion's periodic crash-recovery autosave (`Options.CrashRecovery`)
-- *Experiment: no background mass properties*: background mass-property calculation
-  (`DebugCommands.BodyCacheUpdateMgr`)
-- *Experiment: one recompute per test step*: in the item test, the marker move and the suppression (and the
-  three steps of putting an item back) are made with `Design.isComputeDeferred` on, so Fusion computes once
-  instead of after each step. The run log shows how long each part of the item test took either way.
-- *Experiment: put back with Undo after slow tests*: after a test that took more than 3 s, the design is put
-  back with Fusion's Undo (one step at a time, until every item has its original state) instead of switching
-  the item back on, which makes Fusion compute the heavy features after it again. Checked; the usual way
-  when Undo does not bring back exactly the original state.
+- Fusion's periodic crash-recovery autosave (`Options.CrashRecovery`) and background mass-property calculation
+  (`DebugCommands.BodyCacheUpdateMgr`) are switched off while a test runs and back on right after.
+- In the item test, the marker move and the suppression (and the three steps of putting an item back) are made
+  with `Design.isComputeDeferred` on, so Fusion computes once instead of after each step.
+- After a test that took more than 3 s, the design is put back with Fusion's Undo (one step at a time, until
+  every item has its original state) instead of switching the item back on, which makes Fusion compute the heavy
+  features after it again. Checked; the usual way when Undo does not bring back exactly the original state.
 
-Results of a run with an experiment on are not cached. Keep an experiment only if `tools/compare_pages.py`
-shows the same results as a run without it (both with *Reuse earlier results* unticked).
+To switch one off (for example to check whether it changes results with `tools/compare_pages.py`), add to
+`DependenciesGraph/settings.json`: `"features": {"experimentUndoPutBack": false}` (keys:
+`experimentNoCrashRecovery`, `experimentNoBodyCache`, `experimentDeferCompute`, `experimentUndoPutBack`).
 
 ### Reusing results
 
