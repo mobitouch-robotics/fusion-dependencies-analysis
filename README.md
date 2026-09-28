@@ -31,14 +31,15 @@ timeline groups, components, parameters and optional suppression tests.
 - **Folding**: timeline groups, components, *Not in a group* and *User parameters* fold into one box;
   any box can fold what depends on it. *Collapse all* / *Expand all*. A line going into a folded box shows
   how many of the items folded into it the line leads to.
-- **Filter menu**: show or hide any kind of item. Hidden items are skipped, not cut out: their links are
-  joined through to the items they connect (dotted lines).
+- **Filter menu**: show or hide any kind of item, and any linked design as a whole. Hidden items are skipped,
+  not cut out: their links are joined through to the items they connect (dotted lines), so selections and routes
+  still pass through a hidden design.
 - **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
 - **Multiple selection**: Cmd+click (Mac) / Ctrl+click adds or removes items; several selected items are
   highlighted and played back together, and for two related items the side panel offers their routes.
-- **Hover** a box to highlight it in gold with its direct parents and children and the links between them
-  (can be switched off in the Display menu).
+- **Hover** a box to highlight it in gold with its direct parents and children and the links between them; the
+  rest is dimmed meanwhile, like when hovering a route button (can be switched off in the Display menu).
 - **Routes**: with an item selected, every other box of its tree gets a small route button; click it to
   highlight every route between the two (orange), with the number of routes. `Esc` hides them.
 - **Select in Fusion**: the side panel can select the item(s) in Fusion (timeline entry or browser), or the

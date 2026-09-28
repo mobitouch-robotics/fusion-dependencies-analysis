@@ -305,6 +305,15 @@ User parameters are always kept; derived ones only when linked.
 `_part_picture()` takes one isometric picture of the whole part (main design and every linked design), used on
 the page's design frames.
 
+Linked designs get a picture of every item too (with Thumbnails on), taken the same way while their read walk runs,
+but only in a copy the add-in opened (`Collector(des, None, pictures and mine)`: a design you have open is neither
+rolled nor on show). `merge` carries them into the page's `thumbs` under the prefixed ids (on a copy of the dict:
+a page written while the run goes on shares it with the main design). The design cache keeps them (`thumbs`,
+`ithumbs`). A design cached by an earlier run without them (`pics` but no `ithumbs`) is opened and read once more
+for the pictures only: its test results are taken from the cache, the pictures kept where the fresh read's item id
+has the same name, and the cache is updated. A whole-page result generated before (no `lthumbs`) is not reused
+when linked designs and thumbnails are on.
+
 ## 8. Suppression tests
 
 ### What is recorded
@@ -611,11 +620,23 @@ Main parts, in file order:
   `loose: true`), like this design's pseudo groups `_none` / `_params`: they fold into one box with the block's fold
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
+* **Hover dims the rest**: while a box is hovered (`svg.nhov`), boxes other than it and its direct parents and children (`nhc`, `nhr`) and the original links are dimmed; the highlighted links are copies drawn on top. The route preview does the same (`rpvon`).
+* **Hiding linked designs** (Filter menu, "Linked designs", when the page has any): a design switched off (`dsgOff`)
+  hides all its items and its connector through `visibleNode`, so, like any hidden item, it is skipped, not cut
+  out: `computeEff` joins links (and so selections and routes) through it, and its frame is not drawn. The Filter
+  button counts the hidden designs.
 * **Whole part behind a connector**: when the page loads, an insert's connector gets links (`derive`, `syn: 1`,
   not counted in the header) from its design's final items - those no other item of that design builds on - so
   selecting the insert (or anything using it) opens and highlights every item and link that made the part. A
   Derive keeps its handed-over items as the connector's parents; only when none could be matched (no link into the
   connector from its design) does it get the final items like an insert. User parameters are left out.
+  These links carry `part: 1` (kept in `EFF` when a chain is made only of them; the group panel does not count them).
+* **Links into a connector** (from inside its design: the part links above and what a Derive takes over, `intoPort`)
+  are followed by selections but drawn hidden (`partlk`, `display:none`): a single selection shows only the link
+  from the connector to the Derive or insert. They show when they are on the active route, in the hover highlight
+  and the route preview (both copy the drawn links), and with two or more items selected when they lie on a path
+  between two of them (`partFrom`: the selected items and what uses them; `partTo`: the selected items and what
+  they depend on).
 * **Hidden connectors**: an expanded linked design's connector box is hidden and its fold button stands in for it.
   The box gets `pt` (the button's centre, relative to the box), and `edgeSegs`/`edgeEnd` treat it as a point:
   links end on the top of the button and leave from its bottom, without spreading their ends. Its route button sits just right

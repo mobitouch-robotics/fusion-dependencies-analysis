@@ -48,7 +48,7 @@ header .hl{max-width:300px}header .hl .meta{font-size:11px;line-height:1.3}
 .popbox .ph{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:6px 0 4px}
 .popbox label.chk{display:flex;padding:3px 0;font-size:13px;color:var(--text)}
 .popbox label.chk.sub{padding-left:22px}.popbox label.chk.off{opacity:.45;pointer-events:none}
-#cats label.chk{align-items:center;gap:6px;white-space:nowrap}#cats .pill{font-size:12px}#cats .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}
+#cats label.chk,#dsgs label.chk{align-items:center;gap:6px;white-space:nowrap}#dsgs{max-height:240px;overflow:auto;padding-right:4px}#dsgs .dname{max-width:230px;overflow:hidden;text-overflow:ellipsis}#dsgs .dsw{width:9px;height:9px;border-radius:50%;flex:none}#dsgs .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}#cats .pill{font-size:12px}#cats .cn{margin-left:auto;padding-left:12px;font-size:11px;color:var(--muted)}
 .fbtns{display:flex;gap:6px;margin:8px 0 4px}.fbtns button{padding:2px 10px;font-size:12px}.fnote{font-size:11px;max-width:240px;margin-top:4px}
 svg .edge.bridge{stroke-dasharray:1.5 4}
 #kinds{display:flex;flex-direction:column}
@@ -160,12 +160,16 @@ svg .edge.up:not(.ind),svg .edge.down:not(.ind){stroke-width:2.3}
 svg .edge.insel{stroke:var(--sel);stroke-width:2.3}
 svg .edge.ind{stroke-opacity:.3}   /* further ancestors and descendants (not direct) */
 svg .ehit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
-svg .ehit.off{pointer-events:none}   /* links greyed out by the selection do not react */
+svg .ehit.off{pointer-events:none}
+svg .edge.partlk,svg .ehit.partlk,svg .ecount.partlk{display:none}   /* links greyed out by the selection do not react */
 svg .edge.hov{stroke-width:3.4!important;stroke-opacity:1!important;opacity:1!important}
 svg .edge.hov{stroke:var(--hov)!important}   /* hovered link: gold, same colour as the rings on its ends */
 svg .nd.hov{opacity:1!important}
 /* hovered box: its direct parents and children stay bright, everything else fades */
 svg.nhov .nd.nhc,svg.nhov .nd.nhr{opacity:1!important}
+/* hovering a box dims what is not its direct parents and children (like the route preview); the highlighted links
+   are copies drawn on top, so the originals dim with the rest */
+svg.nhov .nd:not(.nhc):not(.nhr):not(.dim){opacity:.35}svg.nhov .edge:not(.nhl):not(.dim),svg.nhov .ecount:not(.nhl):not(.dim){opacity:.3}
 svg .nhov-ov{pointer-events:none}
 /* while a box is hovered, the other links step back a little (their layers at 80%) */
 svg .elayer{transition:opacity .2s ease}svg.nhov .elayer{opacity:.8}
@@ -278,7 +282,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
   <div id="health" style="display:none"></div>
   <div class="tools">
     <div class="pop"><button id="filterBtn" title="Which kinds of items to show">Filter ▾</button>
-      <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
+      <div class="popbox" id="filterBox"><div class="ph">Show items</div><div id="cats"></div><div class="fbtns"><button id="catAll">All</button><button id="catNone">None</button></div><div id="dsgFilter" style="display:none"><div class="ph">Linked designs</div><div id="dsgs"></div><div class="fbtns"><button id="dsgAll">All</button><button id="dsgNone">None</button></div></div><div class="kv fnote">Hidden items are skipped, not cut out: their links are joined through to the items they connect (dotted lines).</div></div></div>
     <div class="pop"><button id="dispBtn" title="Display options">Display ▾</button>
       <div class="popbox" id="dispBox"><div class="ph">Boxes</div><label class="chk" id="thumbCtrl" style="display:none"><input type="checkbox" id="showThumbs" checked> Thumbnails</label><label class="chk"><input type="checkbox" id="focus" checked> Only the selected branch</label><label class="chk" title="When something is selected, the boxes related to it move next to it (inside their block in the Groups and Components layouts)"><input type="checkbox" id="pullTog" checked> Move related boxes closer to the selection</label><div class="chk" style="display:flex;gap:10px;align-items:center;padding:3px 0;font-size:13px" title="Where the view goes when you select something">Zoom to<label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomObj"> selected object</label><label style="display:inline-flex;gap:4px;align-items:center;cursor:pointer"><input type="radio" name="zoomTo" id="zoomTree" checked> selected tree</label></div><label class="chk" title="Hovering a box rings it in gold, with its direct parents and children and the links between them"><input type="checkbox" id="hovRel" checked> Highlight parents and children on hover</label><label class="chk" title="Timeline layout: moving the mouse close to the left or right edge of the graph scrolls the row that way (faster the closer you get)"><input type="checkbox" id="edgeScroll" checked> Scroll at the left / right edge (Timeline)</label><div class="ph">Around the selection</div><label class="chk" title="Highlight (blue) the items the selection uses directly"><input type="checkbox" id="relUp" checked> What it depends on</label><label class="chk sub" id="relUpAllL" title="Also highlight what those items depend on, all the way back"><input type="checkbox" id="relUpAll" checked> The whole chain back</label><label class="chk" title="Highlight (green) the items that use the selection directly"><input type="checkbox" id="relDn"> What uses it</label><label class="chk sub off" id="relDnAllL" title="Also highlight what uses those items, all the way forward"><input type="checkbox" id="relDnAll" checked disabled> The whole chain forward</label><div class="ph">Lines</div><label class="chk" title="Earlier features that changed the same body before this one. Timeline order, not a dependency: suppressing them does not suppress this."><input type="checkbox" id="showOrder"> “Same body, later” links (dashed)</label><label class="chk" title="Show every link all the time. When off, only the links of the selection, of the hovered box, and the lines joining a group box to its items are drawn."><input type="checkbox" id="allLinks"> All links (grey)</label></div></div>
     <button id="legendBtn" title="What the colours, outlines, markers and lines mean">Legend</button>
@@ -567,7 +571,7 @@ let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.c
     if(a.dsg&&b.dsg&&!b.port&&a.g&&b.g&&a.g[0]===b.g[0])builds[a.id]=1;});
   nodes.filter(n=>n.port&&n.g&&n.g.length).forEach(p=>{const X=p.g[0],via=(groups[X]&&groups[X].via)||[];
     if(!via.includes('insert')&&hasIn.has(p.id))return;
-    (byDsg[X]||[]).filter(n=>!builds[n.id]&&n.type!=='UserParameter').forEach(n=>D.edges.push({s:n.id,t:p.id,k:['derive'],syn:1}));});}
+    (byDsg[X]||[]).filter(n=>!builds[n.id]&&n.type!=='UserParameter').forEach(n=>D.edges.push({s:n.id,t:p.id,k:['derive'],syn:1,part:1}));});}
 const expanded=new Set(Object.keys(groups).filter(g=>!groups[g].design)); // graph starts with every group expanded, derived designs folded into one box each
 const $=id=>document.getElementById(id);
 
@@ -579,20 +583,29 @@ function renderCatFilter(){const cd=$('cats');cd.innerHTML='';const cnt={};nodes
   Object.keys(CAT).filter(c=>cnt[c]).forEach(c=>{const l=document.createElement('label');l.className='chk';
     l.innerHTML='<input type="checkbox"'+(catOn[c]?' checked':'')+'> <span class="pill" style="color:var(--c-'+c+');background:var(--c-'+c+'-bg)">'+iconHTML(ICON_BY_CAT[c]||'other',c,12)+CAT[c]+'</span><span class="cn">'+cnt[c]+'</span>';
     l.firstChild.onchange=e=>{catOn[c]=e.target.checked;filterChanged();};cd.appendChild(l);});}
+function renderDsgFilter(){const ds=Object.keys(groups).filter(g=>groups[g].design);$('dsgFilter').style.display=ds.length?'':'none';
+  const cnt={};nodes.forEach(n=>{if(n.dsg&&!n.port&&n.g&&n.g.length)cnt[n.g[0]]=(cnt[n.g[0]]||0)+1;});const cd=$('dsgs');cd.innerHTML='';
+  ds.sort((a,b)=>groups[a].name.localeCompare(groups[b].name)).forEach(g=>{const l=document.createElement('label');l.className='chk';l.title=groups[g].name;
+    l.innerHTML='<input type="checkbox"'+(dsgOff[g]?'':' checked')+'> <span class="dsw" style="background:'+(gColor[g]||'var(--muted)')+'"></span><span class="dname"></span><span class="cn">'+(cnt[g]||0)+'</span>';
+    l.querySelector('.dname').textContent=groups[g].name;l.firstChild.onchange=e=>{if(e.target.checked)delete dsgOff[g];else dsgOff[g]=1;filterChanged();};cd.appendChild(l);});}
 function filterChanged(){updateFilterBtn();if(selected&&byId[selected]&&!visibleNode(byId[selected]))selected=null;
   if(view==='graph'&&Object.keys(pos).length){if(PB)stopPlay();animatedRerender(()=>{buildAdj();renderDetails();},{dur:480});}else refresh();}
 
-function visibleNode(n){return !!n&&catOn[n.cat]!==false;}
+// a linked design switched off in the Filter menu hides all its items and its connector; like any hidden item they are
+// skipped, not cut out: links (and routes) pass through them
+const dsgOff={};
+function visibleNode(n){return !!n&&catOn[n.cat]!==false&&!(n.dsg&&n.g&&n.g.length&&dsgOff[n.g[0]]);}
 // Links between the items on show. A hidden item does not break a chain: its parents are joined straight to its
 // children (through any number of hidden items). Such joined links are marked via (drawn dotted).
 let EFF=[];
 function computeEff(){const adj={},out=new Map();
-  D.edges.forEach(e=>{if(!byId[e.s]||!byId[e.t])return;const ks=e.k.filter(k=>kindOn[k]!==false);if(!ks.length)return;(adj[e.s]=adj[e.s]||[]).push({t:e.t,k:ks});});
-  const add=(s,t,ks,via)=>{if(s===t)return;const key=s+'>'+t;let x=out.get(key);if(!x){x={s,t,k:[],via:true};out.set(key,x);}ks.forEach(k=>{if(!x.k.includes(k))x.k.push(k);});if(!via)x.via=false;};
-  nodes.forEach(n=>{if(!visibleNode(n))return;const st=(adj[n.id]||[]).map(a=>({t:a.t,k:a.k,via:false}));const seen=new Set();
-    while(st.length){const a=st.pop();if(visibleNode(byId[a.t])){add(n.id,a.t,a.k,a.via);continue;}if(seen.has(a.t))continue;seen.add(a.t);
-      (adj[a.t]||[]).forEach(b=>st.push({t:b.t,k:[...new Set([...a.k,...b.k])],via:true}));}});
-  EFF=[...out.values()];
+  D.edges.forEach(e=>{if(!byId[e.s]||!byId[e.t])return;const ks=e.k.filter(k=>kindOn[k]!==false);if(!ks.length)return;(adj[e.s]=adj[e.s]||[]).push({t:e.t,k:ks,part:!!e.part});});
+  // part: only made of links from a linked design's final items to its connector (see where they are added)
+  const add=(s,t,ks,via,part)=>{if(s===t)return;const key=s+'>'+t;let x=out.get(key);if(!x){x={s,t,k:[],via:true,part:true};out.set(key,x);}ks.forEach(k=>{if(!x.k.includes(k))x.k.push(k);});if(!via)x.via=false;if(!part)x.part=false;};
+  nodes.forEach(n=>{if(!visibleNode(n))return;const st=(adj[n.id]||[]).map(a=>({t:a.t,k:a.k,via:false,part:a.part}));const seen=new Set();
+    while(st.length){const a=st.pop();if(visibleNode(byId[a.t])){add(n.id,a.t,a.k,a.via,a.part);continue;}if(seen.has(a.t))continue;seen.add(a.t);
+      (adj[a.t]||[]).forEach(b=>st.push({t:b.t,k:[...new Set([...a.k,...b.k])],via:true,part:a.part||b.part}));}});
+  EFF=[...out.values()];EFF.forEach(e=>{if(!e.part)delete e.part;});
   // a suppression-test link that another chain of links already implies (e.g. Derive -> component -> joint) adds nothing
   const adj2={};EFF.forEach(e=>{(adj2[e.s]=adj2[e.s]||[]).push(e);});
   EFF=EFF.filter(e=>{if(!(e.k.length===1&&e.k[0]==='suppress'))return true;const seen=new Set([e.s]),st=[e.s];
@@ -789,7 +802,7 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
   }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':g.gskip?'The Whole groups test was not run on linked designs (option "Group test for linked designs"). Its items were tested one by one: suppressing it in the preview adds up their results (estimated).':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Full analysis to see what suppressing this group does.');d.appendChild(x);}
   // reference links crossing the group boundary, counted per other group
   const out={},inn={};
-  EFF.forEach(e=>{const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
+  EFF.forEach(e=>{if(e.part)return;const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
   const toList=m=>Object.entries(m).filter(([k])=>k!=='-').sort((x,y)=>y[1]-x[1]);
   const h4=document.createElement('h3');h4.textContent='References into other groups';d.append(h4,groupLinks(toList(out)));
   const h5=document.createElement('h3');h5.textContent='Referenced from other groups';d.append(h5,groupLinks(toList(inn)));
@@ -1111,7 +1124,8 @@ function setRoute(items){routePreviewClear();saveView();route=items?{sel:selecte
 let searchOpen=new Set();
 // the selection's whole tree is shown: every timeline group holding part of it is open while it is selected (selOpen),
 // except the ones folded by hand during that selection (selShut, forgotten when the selection changes)
-let selOpen=new Set(),selShut=new Set(),selKey='';
+let selOpen=new Set(),selShut=new Set(),selKey='',partFrom=null,partTo=null;
+const intoPort=x=>{const a=byId[x.s],b=byId[x.t];return !!(a&&b&&b.port&&a.g&&b.g&&a.g[0]===b.g[0]);};
 const isOpen=g=>expanded.has(g)||searchOpen.has(g)||(selOpen.has(g)&&!selShut.has(g));
 let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
@@ -1161,6 +1175,10 @@ function renderGraph(fitAfter,centerId){
     const key=ids.join(',')+'|'+(selGroup||'');if(key!==selKey){selKey=key;selShut.clear();}
     // linked designs stay folded or open as they were; only the one holding a selected item opens (to show it)
     const ownD=new Set(ids.map(i=>byId[i]&&byId[i].g&&byId[i].g[0]).filter(g=>g&&groups[g]&&groups[g].design));
+    // links into a connector from inside its design are drawn hidden: hover and routes show them, and they show when two or more items are selected and the link lies on a path between two of them (its item is
+    // one of them or uses one; the connector leads on to one of them)
+    partFrom=null;partTo=null;if(multi.length>1){partFrom=new Set();partTo=new Set();
+      multi.forEach(i=>{if(!byId[i])return;partFrom.add(i);closure(i,'down').forEach(x=>partFrom.add(x));partTo.add(i);closure(i,'up').forEach(x=>partTo.add(x));});}
     selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>{if(!groups[g]||!groups[g].design||ownD.has(g))selOpen.add(g);});const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
@@ -1463,6 +1481,9 @@ function renderGraph(fitAfter,centerId){
     if(!selSet&&hitReps&&!hitReps.has(e.s)&&!hitReps.has(e.t))cls+=' dim';
     if(routeReps){if(!e.contain&&routeReps.has(e.s)&&routeReps.has(e.t)&&e.src.some(x=>RT.items.has(x.s)&&RT.items.has(x.t)))cls=cls.replace(/ (dim|up|down|ind|insel)\b/g,'')+' route';
       else if(!/\bdim\b/.test(cls))cls+=' dim';}
+    // links from inside a linked design to its connector (what a Derive takes over, or the part's final items): hidden
+    // unless on a route or between two selected items (hover copies them in anyway)
+    if(!e.contain&&e.src.length&&e.src.every(intoPort)&&!/ route\b/.test(cls)&&!(partFrom&&e.src.some(x=>partFrom.has(x.s)&&partTo.has(x.t))))cls+=' partlk';
     p.setAttribute('class',cls);const lift=/ (up|down|insel|route)\b/.test(cls);
     const t=document.createElementNS(NS,'title');t.textContent=e.contain?'Part of timeline group '+(groups[e.s.slice(1)]?groups[e.s.slice(1)].name:''):[...new Set(e.src.flatMap(x=>x.k))].map(x=>KIND[x]||x).join(', ')+(e.n>1?' ('+e.n+' links)':'');if(!e.contain&&e.via)t.textContent+=' (through collapsed items)';else if(!e.contain&&/ bridge/.test(cls))t.textContent+=' (through hidden items)';p.appendChild(t);const layer=lift?geHi:ge;layer.appendChild(p);
     // a link joined to a collapsed box (a folded group or block, or a box that hides what depends on it), at
@@ -1472,7 +1493,7 @@ function renderGraph(fitAfter,centerId){
       const fromF=!e.contain&&folded(e.s,sIds),intoF=!e.contain&&folded(e.t,tIds);
       // not a link to the whole box but to some of the items folded into it: drawn dotted, like other indirect links
       if(fromF||intoF){if(!p.classList.contains('bridge')){p.classList.add('bridge');const pt=p.querySelector('title');if(pt&&!/\(through /.test(pt.textContent))pt.textContent+=' (to or from items inside a collapsed box)';}}
-      if(fromF||intoF){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':''));
+      if(fromF||intoF){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':'')+(/\bpartlk\b/.test(cls)?' partlk':''));
         const txt=fromF&&intoF?sIds.length+'→'+tIds.length:String(fromF?sIds.length:tIds.length),w=Math.max(18,8+txt.length*7);const rc=document.createElementNS(NS,'rect');rc.setAttribute('x',-w/2);rc.setAttribute('y',-8);rc.setAttribute('width',w);rc.setAttribute('height',16);rc.setAttribute('rx',8);
         const tx=document.createElementNS(NS,'text');tx.setAttribute('y',3.8);tx.textContent=txt;
         const lst=ids=>ids.slice(0,20).map(i=>'• '+byId[i].name).join('\n')+(ids.length>20?'\n…':'');
@@ -1480,7 +1501,7 @@ function renderGraph(fitAfter,centerId){
         bg.append(rc,tx,tt);gBadge.appendChild(bg);const x=edgeEls[edgeEls.length-1];x.badge=bg;p.badge=bg;placeBadge(x,a,b);}}
     // wide invisible twin that catches the mouse; hovering shows the link bold and rings both ends
     const plain=!e.contain&&!/ (up|down|insel|route)\b/.test(cls);if(plain)p.classList.add('plain');if(p.badge)p.badge.classList.add('plain');
-    const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':'')+(plain?' plain':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
+    const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':'')+(plain?' plain':'')+(/\bpartlk\b/.test(cls)?' partlk':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
     edgeEls[edgeEls.length-1].hit=h;const es=e.s,et=e.t;
     h.addEventListener('mouseenter',()=>{if(drag||hovPin)return;edgeHover(p,es,et,true);});
     // click: zoom to show both boxes, keep the link highlighted until the mouse moves
@@ -1994,6 +2015,9 @@ $('vGraph').onclick=()=>{setView('graph');renderGraph(true);};
 $('treeMode').onchange=renderTree;
 renderCatFilter();
 $('catAll').onclick=()=>{Object.keys(catOn).forEach(c=>catOn[c]=true);renderCatFilter();filterChanged();};
+renderDsgFilter();
+$('dsgAll').onclick=()=>{Object.keys(dsgOff).forEach(g=>delete dsgOff[g]);renderDsgFilter();filterChanged();};
+$('dsgNone').onclick=()=>{Object.keys(groups).filter(g=>groups[g].design).forEach(g=>dsgOff[g]=1);renderDsgFilter();filterChanged();};
 $('catNone').onclick=()=>{Object.keys(catOn).forEach(c=>catOn[c]=false);renderCatFilter();filterChanged();};
 $('showOrder').onchange=e=>{const v=e.target.checked;if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{kindOn.order=v;buildAdj();renderDetails();},{dur:420});else{kindOn.order=v;refresh();}};
 if(!kindsPresent.includes('order')){const l=$('showOrder').parentNode;l.style.display='none';}
@@ -2040,7 +2064,7 @@ window.addEventListener('mouseup',e=>{if(e.button===3){e.preventDefault();goHist
 document.querySelectorAll('.pop>button').forEach(b=>b.onclick=e=>{e.stopPropagation();const p=b.parentElement;const o=!p.classList.contains('open');document.querySelectorAll('.pop.open').forEach(x=>x.classList.remove('open'));if(o)p.classList.add('open');});
 document.querySelectorAll('.popbox').forEach(x=>x.addEventListener('click',e=>e.stopPropagation()));
 document.addEventListener('mousedown',e=>{if(!e.target.closest||!e.target.closest('.pop'))document.querySelectorAll('.pop.open').forEach(x=>x.classList.remove('open'));},true);
-function updateFilterBtn(){const cs=Object.keys(catOn);const off=cs.filter(c=>!catOn[c]);const def=!off.length;$('filterBtn').textContent='Filter '+(def?'':'('+(cs.length-off.length)+'/'+cs.length+') ')+'▾';}
+function updateFilterBtn(){const cs=Object.keys(catOn);const off=cs.filter(c=>!catOn[c]);const nd=Object.keys(dsgOff).length;$('filterBtn').textContent='Filter '+(off.length?'('+(cs.length-off.length)+'/'+cs.length+') ':'')+(nd?'('+nd+' design'+(nd>1?'s':'')+' hidden) ':'')+'▾';}
 function updateLinksBtn(){updateFilterBtn();}
 function setLayout(m){layoutMode=m;$('laneBtn').classList.toggle('on',m==='lanes');$('compBtn').classList.toggle('on',m==='comps');$('layDeps').classList.toggle('on',m==='deps');$('layTime').classList.toggle('on',m==='time');renderGraph(false);fitInitial();}
 $('layDeps').onclick=()=>setLayout('deps');

@@ -2780,7 +2780,7 @@ def _cache_save(kind, file_id, ver, d):
             old = None
     except Exception:
         old = None
-    if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'gtest', 'pics')):
+    if old and any(old.get(f) and not d.get(f) for f in ('exact', 'groups', 'gtest', 'pics', 'ithumbs')):
         note('not saved: a more complete result is already saved')
         return          # never replace a more complete result (e.g. a Full analysis) with a lesser one
     try:
@@ -2807,6 +2807,7 @@ class _CachedDesign:
         self.comp_owner = d.get('comp_owner') or {}
         self.tl2node = {int(k): v for k, v in (d.get('tl2node') or {}).items()}
         self.gtested = d.get('gtested', False)
+        self.thumbs = d.get('thumbs') or {}
 
     def restore_groups(self):
         pass
@@ -2818,7 +2819,7 @@ def _design_data(col):
             'warnings': list(col.warnings), 'by_tlname': getattr(col, 'by_tlname', {}) or {},
             'body_owner': getattr(col, 'body_owner', {}) or {}, 'comp_owner': getattr(col, 'comp_owner', {}) or {},
             'tl2node': {str(k): v for k, v in (getattr(col, 'tl2node', {}) or {}).items()},
-            'gtested': getattr(col, 'gtested', False)}
+            'gtested': getattr(col, 'gtested', False), 'thumbs': getattr(col, 'thumbs', {}) or {}}
 
 
 def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None,
@@ -3044,7 +3045,11 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         name = e['name']
         # read and tested in an earlier run (same saved version, at least the same checks): nothing to open
         c = _cache_load('design', e['fid'], e['read_ver'])
-        if c and (not exact or c.get('exact')) and (not groups_test or c.get('gtest')) and (not pictures or c.get('pics')):
+        # tested before but without its items' pictures (runs before they were taken): opened and read once more for
+        # them, the test results are taken from the earlier run
+        refresh = c if (c and pictures and c.get('pics') and not c.get('ithumbs') and (not exact or c.get('exact'))
+                        and (not groups_test or c.get('gtest'))) else None
+        if c and not refresh and (not exact or c.get('exact')) and (not groups_test or c.get('gtest')) and (not pictures or c.get('pics')):
             e['col'] = _CachedDesign(c)
             e['pic'] = c.get('pic')
             _prow(e['key'], name, 'Taken from an earlier run (same saved version)', 1, 'done', ['From an earlier run'])
@@ -3076,10 +3081,18 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 note_links(sc, e['prefix'], e['depth'] + 1, links)
                 if mine and not cancelled():
                     d = _design_data(sc)
-                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'exact': True, 'gtest': True})
+                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'ithumbs': pictures, 'exact': True, 'gtest': True})
                     _cache_save('design', e['fid'], e['read_ver'], d)
                 return
-            sc = Collector(des, None, False)
+            if refresh and not mine:
+                # open in Fusion: it is not rolled or shown, so no pictures can be taken - the earlier result as it is
+                e['col'] = _CachedDesign(refresh)
+                e['pic'] = refresh.get('pic')
+                for rec in refresh.get('links') or []:
+                    apply_link(rec, e['prefix'], e['depth'] + 1)
+                return
+            # a picture of every item too, like this design's (only in a copy opened here: it is the window on show)
+            sc = Collector(des, None, bool(pictures and mine))
             sc.cancelled = cancelled
             sc.doc = None                        # hidden: the main design stays the active one
             sc.no_roll = not mine                # a design the user has open is read as it is
@@ -3087,7 +3100,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             e['col'] = sc
             if progress:
                 progress('Reading ' + name, n_done, n_done + len(queue) + 1)
-            testing = bool((exact or groups_test) and mine)
+            testing = bool((exact or groups_test) and mine and not refresh)
             span = 0.25 if testing else 1.0          # share of this design's bar the reading takes
 
             def rprog(msg, i, n):
@@ -3117,6 +3130,20 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             links = []
             note_links(sc, e['prefix'], e['depth'] + 1, links)
             tested = False
+            if refresh:
+                # the earlier result, with the pictures just taken (same saved version: same item ids; checked by name)
+                cd = _CachedDesign(refresh)
+                names = {n['id']: n.get('name') for n in cd.nodes}
+                byid = {n['id']: n.get('name') for n in sc.nodes}
+                cd.thumbs = {k: v for k, v in (sc.thumbs or {}).items() if k in names and names[k] == byid.get(k)}
+                e['col'] = cd
+                if not cancelled():
+                    d = dict(refresh)
+                    d.update({'thumbs': cd.thumbs, 'ithumbs': True, 'pic': e['pic'] or refresh.get('pic')})
+                    _cache_save('design', e['fid'], e['read_ver'], d)
+                log('pictures added to the earlier result of %s (%d)' % (name, len(cd.thumbs)))
+                release(sc)
+                return
             if (exact or groups_test) and not cancelled():
                 if not mine:
                     main.warnings.append('%s is open in Fusion, so it was not suppression-tested (that would change it). '
@@ -3159,7 +3186,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 _mem_log('cache design %s: not saved (%s)' % (name, ', '.join(unclean)))
             elif mine and not cancelled() and not (testing and not tested):
                 d = _design_data(sc)
-                d.update({'links': links, 'pic': e['pic'], 'pics': pictures,
+                d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'ithumbs': pictures,
                           'exact': bool(exact and tested), 'gtest': bool(groups_test and tested)})
                 _cache_save('design', e['fid'], e['read_ver'], d)
         finally:
@@ -3215,6 +3242,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
 
         # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
         order = sorted(srcs, key=lambda s: -s['depth'])
+        thumbs = dict(getattr(target, 'thumbs', None) or {})     # a copy: target may share it with the main design
         for rank, src in enumerate(order):
             sc, sp, gid = src['col'], src['prefix'], src['gid']
             base = -1e6 + rank * 1e4
@@ -3257,6 +3285,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 m.pop('occ', None)
                 m['info'] = ((n.get('info') or '') + (' · ' if n.get('info') else '') + 'in ' + nm).strip()
                 target.nodes.append(m)
+                if (getattr(sc, 'thumbs', None) or {}).get(n['id']):
+                    thumbs[m['id']] = sc.thumbs[n['id']]
             for (a, b), k in sc.edges.items():
                 target.edges.setdefault((sp + a, sp + b), set()).update(k)
             # the design's connector: the whole design as one item, on its frame; its parents are the items the
@@ -3269,6 +3299,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             xlinks.extend((port, t) for t in src['targets'])
             for w in sc.warnings[:5]:
                 target.warnings.append('%s: %s' % (nm, w))
+        target.thumbs = thumbs
         ids = {n['id'] for n in target.nodes}
         for a, b in xlinks:
             if a in ids and b in ids:
@@ -3478,6 +3509,9 @@ def generate(mode='both', thumbs=True, derived=False):
             # a Full analysis result also answers a Quick estimate (it is exact)
             for kind in kinds:
                 cached = _cache_load(kind, m_id, m_ver)
+                # from before linked designs had pictures of their items: generated again (their tests are reused)
+                if cached and thumbs and derived and not cached.get('lthumbs'):
+                    cached = None
                 if cached:
                     break
         if cached and cached.get('data'):
@@ -3667,7 +3701,8 @@ def generate(mode='both', thumbs=True, derived=False):
                                     ('a linked design was not put back or changed', getattr(col, 'linked_unclean', False)))
                    if bad]
         if not unclean:
-            _cache_save(kinds[0], m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs)})
+            _cache_save(kinds[0], m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs),
+                                                'lthumbs': bool(thumbs and derived)})
         else:
             _mem_log('cache %s: not saved (%s)' % (kinds[0], ', '.join(unclean)))
         return _write_page(data, path, out_dir)
@@ -3949,7 +3984,8 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             th = oc.addBoolValueInput('hgThumbs', 'Thumbnails', True, '', True)
             th.tooltip = 'A picture of every timeline step'
             th.tooltipDescription = ('Each item is photographed straight on (sketches, planes) or in a three-quarter '
-                                     'view (3D features), zoomed to the item. Adds about 20 seconds on a large design.')
+                                     'view (3D features), zoomed to the item. Adds about 20 seconds on a large design, and the '
+                                     'same again for each linked design read.')
             # less common options, folded away
             # a group of its own at the top level: Fusion cannot fold a group nested inside another
             ag = inputs.addGroupCommandInput('hgAdvanced', 'Advanced options')
