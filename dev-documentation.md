@@ -303,7 +303,7 @@ User parameters are always kept; derived ones only when linked.
 * When a picture shows given bodies, `_isolate_rest` also switches off (through `_set`, restored after each picture)
   every occurrence not holding or inside the pictured bodies' occurrence (only the topmost of each such branch;
   a component used more than once: its first occurrence; bodies of the root component: all occurrences), mesh
-  bodies, and the sketch, construction, joint and joint origin folders of every component (a sketch or plane's own
+  bodies, and the sketch, construction, joint, joint origin, origin, canvas and decal folders of every component (a sketch or plane's own
   picture switches its folder on again). Occurrences are listed for each picture, as the read walk rolls the timeline.
 * `thumbs_end` restores camera, visibility, selection.
 

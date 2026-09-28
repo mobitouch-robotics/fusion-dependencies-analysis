@@ -634,18 +634,18 @@ class Collector:
             if _safe(lambda: b.entityToken) not in tokens:
                 if _safe(lambda: setattr(b, 'isLightBulbOn', False), 'fail') != 'fail':
                     self._hidden.append(b)
-        if keep:
-            self._isolate_rest(keep, tokens)
+        self._isolate_rest(keep, tokens)
 
     SCENE_FOLDERS = ('isSketchFolderLightBulbOn', 'isConstructionFolderLightBulbOn', 'isJointsFolderLightBulbOn',
-                     'isJointOriginsFolderLightBulbOn')
+                     'isJointOriginsFolderLightBulbOn', 'isOriginFolderLightBulbOn', 'isCanvasFolderLightBulbOn',
+                     'isDecalFolderLightBulbOn')     # the origin's axes show as long lines across a picture
 
     def _isolate_rest(self, keep, tokens):
         """Besides other bodies, what else would show up in a picture of `keep`: other occurrences (linked parts,
-        other instances), mesh bodies, and every sketch, construction geometry and joint. Switched off through _set,
+        other instances), mesh bodies, and every sketch, construction geometry, joint, origin, canvas and decal. Switched off through _set,
         so _restore_visible puts it back after the picture."""
         # the occurrences the kept bodies are in (a body of a component used more than once: its first occurrence)
-        paths = set()
+        paths = set()          # (a sketch's picture keeps no body: only the folders below are switched off)
         in_root = False      # a kept body of the root component: every occurrence is someone else's
         for b in keep:
             ctx = _safe(lambda: b.assemblyContext)
@@ -2640,7 +2640,7 @@ def _mem_tick(what, every=30.0):
 # A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
 # (or another assembly using the same part) takes it from here instead of opening and testing the design again.
 CACHE_VERSION = 5      # 5: drops results saved although a design was not put back or changed (4: transactions off)
-THUMB_VERSION = 2       # how pictures are taken: saved pictures of an older kind are taken again (tests are kept)
+THUMB_VERSION = 3       # how pictures are taken: saved pictures of an older kind are taken again (tests are kept)
 
 
 def _cache_dir():
