@@ -188,13 +188,13 @@ def load_points():
 FP = load_points()
 
 # ---- finding Fusion's elements on screen --------------------------------------------------------------------
-# Each element by the text it shows. case: match upper/lower case exactly (the toolbar's tab and panel names are in
-# capitals, the same words in mixed case are elsewhere). pick: which match when there are several (top / bottom /
-# right: the right-most). below: only matches under that element (the panel's menu opens under the panel name).
+# Each element by the text it shows (any upper/lower case: Fusion versions differ). pick: which match when there are
+# several (top / bottom / right: the right-most). below: only matches under that element (the panel's menu opens under
+# the panel name). Text in the macOS menu bar (the top MENU_BAR points) is never used.
 TARGETS = {
-    'manage_tab':      dict(text='MANAGE', case=True, pick='top'),
-    'graph_panel':     dict(text='DEPENDENCIES GRAPH', case=True, pick='top'),
-    'graph_btn':       dict(text='Dependencies Graph', case=True, pick='top', below='graph_panel'),
+    'manage_tab':      dict(text='Manage', pick='top'),
+    'graph_panel':     dict(text='Dependencies Graph', pick='top'),
+    'graph_btn':       dict(text='Dependencies Graph', pick='top', below='graph_panel'),
     'full_text':       dict(text='Full analysis', pick='top'),
     'quick_text':      dict(text='Quick estimate', pick='top'),
     'thumbs':          dict(text='Thumbnails', pick='top'),
@@ -216,6 +216,7 @@ function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
  h.performRequestsError($.NSArray.arrayWithObject(r),null);
  const fr=$.NSScreen.mainScreen.frame,W=fr.size.width,H=fr.size.height,res=r.results,out=[];
  for(let i=0;i<res.count;i++){const c=res.objectAtIndex(i).topCandidates(1).objectAtIndex(0);const t=c.string.js;
+  if(!want.length){const b=res.objectAtIndex(i).boundingBox;out.push({text:'',line:t,x:(b.origin.x+b.size.width/2)*W,y:(1-b.origin.y-b.size.height/2)*H});continue;}
   for(const w of want){const hay=w.case?t:t.toLowerCase(),ned=w.case?w.text:w.text.toLowerCase();let k=hay.indexOf(ned);
    while(k>=0){const o=c.boundingBoxForRangeError($.NSMakeRange(k,ned.length),null);
     if(o&&!o.isNil()){const b=o.boundingBox;out.push({text:w.text,line:t,x:(b.origin.x+b.size.width/2)*W,
@@ -228,7 +229,7 @@ function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
 AX_JXA = r"""function run(argv){const want=JSON.parse(argv[0]);const se=Application('System Events');
  const ps=se.applicationProcesses.whose({bundleIdentifier:'com.autodesk.fusion360'})();if(!ps.length)return '[]';
  const out=[],seen={};let n=0;const txt=e=>{const a=[];for(const f of ['name','description','title','value']){try{const v=e[f]();if(typeof v==='string'&&v)a.push(v);}catch(x){}}return a;};
- const walk=(e,d)=>{if(n++>8000||d>30)return;let ts=[];try{ts=txt(e);}catch(x){}
+ const walk=(e,d)=>{if(n++>3000||d>20)return;let ts=[];try{ts=txt(e);}catch(x){}
   for(const w of want){if(seen[w.text])continue;if(ts.some(t=>w.case?t.includes(w.text):t.toLowerCase().includes(w.text.toLowerCase()))){
     try{const p=e.position(),s=e.size();out.push({text:w.text,line:ts.join(' | '),role:(()=>{try{return e.role()}catch(x){return ''}})(),
       x:p[0]+s[0]/2,y:p[1]+s[1]/2,w:s[0],h:s[1]});seen[w.text]=1;}catch(x){}}}
@@ -236,27 +237,51 @@ AX_JXA = r"""function run(argv){const want=JSON.parse(argv[0]);const se=Applicat
  for(const w of ps[0].windows())walk(w,0);return JSON.stringify(out);}"""
 
 _ocr_cache = {'t': 0, 'hits': []}
+MENU_BAR = 30
 
-def ocr_scan(fresh=True):
-    """Every occurrence of every target's text on the main display now (one screenshot, a second or two)."""
-    if not fresh and time.time() - _ocr_cache['t'] < 2: return _ocr_cache['hits']
+def _run(cmd, timeout):
+    """A helper process with a time limit: (stdout, error text or '')."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip(), (r.stderr.strip() if r.returncode else '')
+    except subprocess.TimeoutExpired:
+        return '', 'no answer in %d s' % timeout
+
+def ocr_scan(fresh=True, everything=False):
+    """Every occurrence of every target's text on the main display now (one screenshot, a second or two).
+    everything: every recognised line instead (for --probe)."""
+    if not fresh and not everything and time.time() - _ocr_cache['t'] < 2: return _ocr_cache['hits']
     import tempfile
+    t0 = time.time()
     img = os.path.join(tempfile.gettempdir(), '_demo_screen.png')
-    subprocess.run(['screencapture', '-x', '-m', img], capture_output=True)
-    want = json.dumps([{'text': t['text'], 'case': t.get('case', False)} for t in
-                       {v['text'] + str(v.get('case')): v for v in TARGETS.values()}.values()])
-    r = subprocess.run(['osascript', '-l', 'JavaScript', '-e', OCR_JXA, img, want], capture_output=True, text=True)
-    try: hits = json.loads(r.stdout.strip() or '[]')
+    _, err = _run(['screencapture', '-x', '-m', img], 15)
+    if err or not os.path.exists(img):
+        print('  (screenshot failed: %s)' % (err or 'no file')); return []
+    want = [] if everything else [{'text': t, 'case': False} for t in sorted({v['text'] for v in TARGETS.values()})]
+    out, err = _run(['osascript', '-l', 'JavaScript', '-e', OCR_JXA, img, json.dumps(want)], 30)
+    try: hits = json.loads(out or '[]')
     except Exception: hits = []
-    if r.returncode: print('  (text recognition failed: %s)' % r.stderr.strip()[:200])
-    _ocr_cache.update(t=time.time(), hits=hits)
+    hits = [h for h in hits if h['y'] > MENU_BAR]
+    if err: print('  (text recognition failed: %s)' % err[:300])
+    elif not everything:
+        print('  (text recognition: %d matches in %.1f s)' % (len(hits), time.time() - t0))
+        if not hits:
+            print('  (nothing recognised: is Terminal allowed under Privacy & Security > Screen Recording?)')
+    if not everything: _ocr_cache.update(t=time.time(), hits=hits)
     return hits
 
+AX_TIMEOUT = 25          # seconds the Accessibility search may take (Fusion has thousands of controls)
+
 def ax_scan(names):
-    want = json.dumps([{'text': TARGETS[n]['text'], 'case': TARGETS[n].get('case', False)} for n in names])
-    r = subprocess.run(['osascript', '-l', 'JavaScript', '-e', AX_JXA, want], capture_output=True, text=True)
-    try: return json.loads(r.stdout.strip() or '[]')
-    except Exception: return []
+    want = json.dumps([{'text': TARGETS[n]['text'], 'case': False} for n in names])
+    t0 = time.time()
+    print('  (looking for %s through Accessibility, up to %d s...)' % (', '.join(names), AX_TIMEOUT))
+    out, err = _run(['osascript', '-l', 'JavaScript', '-e', AX_JXA, want], AX_TIMEOUT)
+    if err: print('  (Accessibility: %s)' % err[:200])
+    try: hits = json.loads(out or '[]')
+    except Exception: hits = []
+    print('  (Accessibility: %d found in %.1f s)' % (len(hits), time.time() - t0))
+    return [h for h in hits if h['y'] > MENU_BAR]
 
 def _pick(name, hits, found):
     t = TARGETS[name]
@@ -272,6 +297,7 @@ _found = {}
 def locate(name, fresh=True):
     """Where a Fusion element is now: found by its text on screen, else through Accessibility, else a calibrated or
     default position. None when nothing knows (the move is then skipped)."""
+    print('  looking for %s ("%s")...' % (name, TARGETS[name]['text']))
     p = _pick(name, ocr_scan(fresh), _found)
     how = 'on screen'
     if p is None:
@@ -301,6 +327,10 @@ def probe():
             p = _pick(n, ax, _found)
             line = next((h for h in ax if h['text'] == TARGETS[n]['text']), None)
             print('  %-16s %-32r %s%s' % (n, TARGETS[n]['text'], p or '-', ('  [%s: %s]' % (line['role'], line['line'][:60])) if line else ''))
+    lines = sorted(ocr_scan(everything=True), key=lambda h: (round(h['y'] / 12), h['x']))
+    print('Text recognised in the top 250 points of the screen (the toolbar):')
+    for h in [h for h in lines if h['y'] < 250][:60]:
+        print('  (%4d,%4d)  %s' % (h['x'], h['y'], h['line'][:90]))
     print('(Elements of the dialog or the progress panel are only found while they are open.)')
 
 def calibrate():
