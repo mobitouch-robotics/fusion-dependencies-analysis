@@ -717,8 +717,8 @@ def step_linked():
     press(unfold_btn(), 0.9, 2.0)
     view_design(k=None); hush()
     say("It opens with its timeline groups, each a block inside its frame, showing its features, each with its own "
-        "picture. The minus button on the frame folds it again.")
-    hover(fold_btn(), 1.2, 2.0); hush()
+        "picture. The minus button at the bottom of the frame folds it again.")
+    wait(1.0); hush()
     move(*graph_xy(.92, .12), 0.8)
 
 def step_layouts():
@@ -967,10 +967,10 @@ STEPS = [
     ('Layouts: Depth, Components, Timeline, Groups', 'clear', step_layouts),
     ('Hover', 'clear', step_2),
     ('Select an item, side panel, Back', 'clear', step_3),
-    ('Selecting a whole block', 'clear', step_blocks),
     ('Display tab: What uses it', 'item', step_4),
     ('Routes', 'item', step_5),
     ('Only the selected branch off + Cmd+click multi-select', 'item', step_6),
+    ('Selecting a whole block', 'clear', step_blocks),
     ('All links, then Collapse all / Expand all', 'clear', step_7),
     ('Search', 'clear', step_8),
     ('Filters', 'clear', step_9),
