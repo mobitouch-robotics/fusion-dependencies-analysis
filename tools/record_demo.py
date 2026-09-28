@@ -213,10 +213,12 @@ TARGETS = {
 
 # macOS text recognition (Vision) on a screenshot of the main display, through JavaScript for Automation: nothing
 # to install. Returns every occurrence of the wanted strings with its box in screen points (top-left origin).
+# minimumTextHeight: by default text smaller than 1/32 of the image height is ignored, which on a large display
+# drops the toolbar's small tab labels (MANAGE); 0.004 keeps text down to about 4 points on a 1000-point screen.
 OCR_JXA = r"""ObjC.import('Vision');ObjC.import('AppKit');ObjC.import('Foundation');
 function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
  const h=$.VNImageRequestHandler.alloc.initWithURLOptions($.NSURL.fileURLWithPath(path),$.NSDictionary.dictionary);
- const r=$.VNRecognizeTextRequest.alloc.init;r.recognitionLevel=0;r.usesLanguageCorrection=false;
+ const r=$.VNRecognizeTextRequest.alloc.init;r.recognitionLevel=0;r.usesLanguageCorrection=false;r.minimumTextHeight=0.004;
  h.performRequestsError($.NSArray.arrayWithObject(r),null);
  const fr=$.NSScreen.mainScreen.frame,W=fr.size.width,H=fr.size.height,res=r.results,out=[];
  for(let i=0;i<res.count;i++){const c=res.objectAtIndex(i).topCandidates(1).objectAtIndex(0);const t=c.string.js;
