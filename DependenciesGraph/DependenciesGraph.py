@@ -3704,8 +3704,19 @@ def _write_page(data, path, out_dir, open_browser=True):
         path = fallback
         write(path)
     if open_browser:
+        _note_last_page(path)
         webbrowser.open(pathlib.Path(path).as_uri())
     return data['meta']['warnings']
+
+
+def _note_last_page(path):
+    """Records where the finished page was saved (last_page.json next to the cache folder), so tools such as the
+    demo recorder find it whatever file name was chosen."""
+    try:
+        with open(os.path.join(os.path.dirname(_cache_dir()), 'last_page.json'), 'w', encoding='utf-8') as f:
+            json.dump({'path': os.path.abspath(path), 'time': time.time()}, f)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------- select in Fusion ---

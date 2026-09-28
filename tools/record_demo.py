@@ -393,20 +393,37 @@ def zoom_on(finder, width=200, dur=1.2):
     xy = el_xy(finder)                 # re-centre the cursor on it after zooming
     if xy: move(xy[0], xy[1], 0.4)
 
-def finished_page(since):
-    """The generated page, once the add-in has opened it: Safari in front, its front tab a Dependencies graph page
-    (by its title, so any file name works) whose file was written after `since`. The pages written while the run
-    goes on are not opened, so they do not count."""
-    if front_app().lower() != 'com.apple.safari': return None
-    out = osa('tell application "Safari" to return (name of current tab of front window) & linefeed & '
-              '(URL of current tab of front window)', True)
-    name, _, url = out.partition('\n')
-    if 'dependencies graph' not in name.lower() or not url.startswith('file://'): return None
-    from urllib.parse import unquote, urlparse
+# Where the add-in records the finished page (any file name chosen in its Save dialog): path and time written.
+LAST_PAGE = os.path.expanduser('~/Library/Application Support/FusionDependenciesGraph/last_page.json')
+
+def last_page(since=0):
+    """The page the add-in last finished, if it was written after `since` and still exists; else None."""
     try:
-        if os.path.getmtime(unquote(urlparse(url).path)) < since - 5: return None
-    except OSError:
+        with open(LAST_PAGE, encoding='utf-8') as f:
+            d = json.load(f)
+    except Exception:
         return None
+    p = d.get('path')
+    return p if p and d.get('time', 0) >= since - 5 and os.path.exists(p) else None
+
+def safari_url():
+    if front_app().lower() != 'com.apple.safari': return ''
+    return osa('tell application "Safari" to return URL of current tab of front window', True).strip()
+
+def finished_page(since):
+    """The generated page once the add-in has finished it: the path it recorded in last_page.json (written after
+    `since`), shown in Safari - opened there when the default browser is another one or its tab is not in front.
+    The pages written while the run goes on are not recorded, so they do not count."""
+    p = last_page(since)
+    if not p: return None
+    import pathlib
+    from urllib.parse import unquote, urlparse
+    url = pathlib.Path(p).as_uri()
+    wait(3)          # let the browser open it first
+    cur = safari_url()
+    if not (cur.startswith('file://') and os.path.realpath(unquote(urlparse(cur).path)) == os.path.realpath(p)):
+        subprocess.run(['open', '-a', 'Safari', p]); wait(3)
+    activate('Safari')
     return url
 
 def graph_tabs():
@@ -432,6 +449,8 @@ def open_newest_page():
         if sp and os.path.exists(sp): files.append(sp)
     except Exception:
         pass
+    lp = last_page()         # the page the add-in last finished, wherever it was saved
+    if lp: files.append(lp)
     if not files: raise SystemExit('No generated page found in ' + d)
     f = max(files, key=os.path.getmtime)
     print('Opening', os.path.basename(f))
@@ -506,7 +525,7 @@ def fusion_part():
         if u:
             print('Page opened:', u); break
     else:
-        raise SystemExit('The page did not open in Safari in time.')
+        raise SystemExit('The add-in did not finish a page in time (%s not updated).' % LAST_PAGE)
     wait(4)
     wait(3)
 

@@ -677,8 +677,10 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   the progress panel, at fixed screen points measured from a screenshot of the Mac mini (`FUSION_POINTS`; the
   dialog docked on the right, Advanced options open); `--calibrate` re-measures them elsewhere
   (`tools/demo_positions.json`). "Include linked designs" is ticked when the checkbox's pixels show it is not (a small
-  screenshot, read as BMP after `sips`). The finished page is recognised by Safari coming to the front with a
-  "Dependencies graph" page written after the run started, whatever its file name. Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
+  screenshot, read as BMP after `sips`). The finished page is found through `last_page.json` (next to the cache
+  folder), where the add-in records the path and time of every finished page it opens (not the pages saved while
+  the run goes on), whatever file name was chosen; the script opens it in Safari when the default browser is
+  another one or its tab is not in front. `--skip-generation` (and `--step` with no page open) also look at it. Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
   linked designs (frames, pictures, unfolding one), layouts, hover, selection and side panel, Display options,
   routes, multi-selection, all links and folding, search, filters, the suppression preview (including a feature
   whose suppression makes others fail or warn, and the broken / warnings buttons), Select in Fusion, legend,
