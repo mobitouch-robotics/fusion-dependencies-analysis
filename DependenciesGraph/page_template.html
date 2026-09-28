@@ -160,7 +160,8 @@ svg .edge.up:not(.ind),svg .edge.down:not(.ind){stroke-width:2.3}
 svg .edge.insel{stroke:var(--sel);stroke-width:2.3}
 svg .edge.ind{stroke-opacity:.3}   /* further ancestors and descendants (not direct) */
 svg .ehit{fill:none;stroke:transparent;stroke-width:12;pointer-events:stroke;cursor:pointer}
-svg .ehit.off{pointer-events:none}   /* links greyed out by the selection do not react */
+svg .ehit.off{pointer-events:none}
+svg .edge.partlk,svg .ehit.partlk,svg .ecount.partlk{display:none}   /* links greyed out by the selection do not react */
 svg .edge.hov{stroke-width:3.4!important;stroke-opacity:1!important;opacity:1!important}
 svg .edge.hov{stroke:var(--hov)!important}   /* hovered link: gold, same colour as the rings on its ends */
 svg .nd.hov{opacity:1!important}
@@ -1112,7 +1113,8 @@ function setRoute(items){routePreviewClear();saveView();route=items?{sel:selecte
 let searchOpen=new Set();
 // the selection's whole tree is shown: every timeline group holding part of it is open while it is selected (selOpen),
 // except the ones folded by hand during that selection (selShut, forgotten when the selection changes)
-let selOpen=new Set(),selShut=new Set(),selKey='',partTree=null,partPorts=new Set();
+let selOpen=new Set(),selShut=new Set(),selKey='',partFrom=null,partTo=null;
+const intoPort=x=>{const a=byId[x.s],b=byId[x.t];return !!(a&&b&&b.port&&a.g&&b.g&&a.g[0]===b.g[0]);};
 const isOpen=g=>expanded.has(g)||searchOpen.has(g)||(selOpen.has(g)&&!selShut.has(g));
 let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
@@ -1162,10 +1164,10 @@ function renderGraph(fitAfter,centerId){
     const key=ids.join(',')+'|'+(selGroup||'');if(key!==selKey){selKey=key;selShut.clear();}
     // linked designs stay folded or open as they were; only the one holding a selected item opens (to show it)
     const ownD=new Set(ids.map(i=>byId[i]&&byId[i].g&&byId[i].g[0]).filter(g=>g&&groups[g]&&groups[g].design));
-    // a connector's part links (its design's final items -> it) are drawn only while the selection's tree passes through
-    // it into another design (it then links two designs; routes lie inside that tree too), and only those in the tree
-    partTree=tree;partPorts=new Set();const dOf=n=>n.dsg&&n.g&&n.g.length?n.g[0]:'';
-    if(tree)tree.forEach(id=>{const p=byId[id];if(!p||!p.port)return;const X=dOf(p);for(const j of tree){const m=byId[j];if(m&&m!==p&&dOf(m)!==X){partPorts.add(id);break;}}});
+    // links into a connector from inside its design are drawn hidden: hover and routes show them, and they show when two or more items are selected and the link lies on a path between two of them (its item is
+    // one of them or uses one; the connector leads on to one of them)
+    partFrom=null;partTo=null;if(multi.length>1){partFrom=new Set();partTo=new Set();
+      multi.forEach(i=>{if(!byId[i])return;partFrom.add(i);closure(i,'down').forEach(x=>partFrom.add(x));partTo.add(i);closure(i,'up').forEach(x=>partTo.add(x));});}
     selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>{if(!groups[g]||!groups[g].design||ownD.has(g))selOpen.add(g);});const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
@@ -1173,7 +1175,7 @@ function renderGraph(fitAfter,centerId){
   if(search){hitReps=new Set(reps.filter(r=>r.members.some(matches)).map(r=>r.id));}
   graphHits=hitReps?reps.filter(r=>hitReps.has(r.id)).map(r=>r.id):[];
   const ek={};let redges=[];
-  EFF.forEach(e=>{if(keep&&(!keep.has(e.s)||!keep.has(e.t)))return;if(e.part&&!(partPorts.has(e.t)&&partTree&&partTree.has(e.s)))return;const a=rep(byId[e.s]),b=rep(byId[e.t]);if(a===b||!R[a]||!R[b])return;const k=a+'>'+b;if(!ek[k]){ek[k]={s:a,t:b,n:0,src:[]};redges.push(ek[k]);}ek[k].n++;ek[k].src.push(e);});
+  EFF.forEach(e=>{if(keep&&(!keep.has(e.s)||!keep.has(e.t)))return;const a=rep(byId[e.s]),b=rep(byId[e.t]);if(a===b||!R[a]||!R[b])return;const k=a+'>'+b;if(!ek[k]){ek[k]={s:a,t:b,n:0,src:[]};redges.push(ek[k]);}ek[k].n++;ek[k].src.push(e);});
   if(useTestLinks()){redges=redges.filter(e=>{const gg=R[e.s].isGroup&&R[e.t].isGroup;if(gg)delete ek[e.s+'>'+e.t];return !gg;});
     testUnitLinks().forEach((m,a)=>{if(!R[a]||!R[a].isGroup)return;m.forEach((c,b)=>{if(!R[b])return;const k=a+'>'+b;if(ek[k]){ek[k].src.push({s:a,t:b,k:['suppress']});return;}const x={s:a,t:b,n:c,src:[{s:a,t:b,k:['suppress']}]};ek[k]=x;redges.push(x);});});}
   // collapsed boxes hide everything that depends on them (their whole downstream)
@@ -1468,6 +1470,9 @@ function renderGraph(fitAfter,centerId){
     if(!selSet&&hitReps&&!hitReps.has(e.s)&&!hitReps.has(e.t))cls+=' dim';
     if(routeReps){if(!e.contain&&routeReps.has(e.s)&&routeReps.has(e.t)&&e.src.some(x=>RT.items.has(x.s)&&RT.items.has(x.t)))cls=cls.replace(/ (dim|up|down|ind|insel)\b/g,'')+' route';
       else if(!/\bdim\b/.test(cls))cls+=' dim';}
+    // links from inside a linked design to its connector (what a Derive takes over, or the part's final items): hidden
+    // unless on a route or between two selected items (hover copies them in anyway)
+    if(!e.contain&&e.src.length&&e.src.every(intoPort)&&!/ route\b/.test(cls)&&!(partFrom&&e.src.some(x=>partFrom.has(x.s)&&partTo.has(x.t))))cls+=' partlk';
     p.setAttribute('class',cls);const lift=/ (up|down|insel|route)\b/.test(cls);
     const t=document.createElementNS(NS,'title');t.textContent=e.contain?'Part of timeline group '+(groups[e.s.slice(1)]?groups[e.s.slice(1)].name:''):[...new Set(e.src.flatMap(x=>x.k))].map(x=>KIND[x]||x).join(', ')+(e.n>1?' ('+e.n+' links)':'');if(!e.contain&&e.via)t.textContent+=' (through collapsed items)';else if(!e.contain&&/ bridge/.test(cls))t.textContent+=' (through hidden items)';p.appendChild(t);const layer=lift?geHi:ge;layer.appendChild(p);
     // a link joined to a collapsed box (a folded group or block, or a box that hides what depends on it), at
@@ -1477,7 +1482,7 @@ function renderGraph(fitAfter,centerId){
       const fromF=!e.contain&&folded(e.s,sIds),intoF=!e.contain&&folded(e.t,tIds);
       // not a link to the whole box but to some of the items folded into it: drawn dotted, like other indirect links
       if(fromF||intoF){if(!p.classList.contains('bridge')){p.classList.add('bridge');const pt=p.querySelector('title');if(pt&&!/\(through /.test(pt.textContent))pt.textContent+=' (to or from items inside a collapsed box)';}}
-      if(fromF||intoF){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':''));
+      if(fromF||intoF){const bg=document.createElementNS(NS,'g');bg.setAttribute('class','ecount'+(/ up\b/.test(cls)?' up':/ down\b/.test(cls)?' down':'')+(/\bdim\b/.test(cls)?' dim':'')+(/\bpartlk\b/.test(cls)?' partlk':''));
         const txt=fromF&&intoF?sIds.length+'→'+tIds.length:String(fromF?sIds.length:tIds.length),w=Math.max(18,8+txt.length*7);const rc=document.createElementNS(NS,'rect');rc.setAttribute('x',-w/2);rc.setAttribute('y',-8);rc.setAttribute('width',w);rc.setAttribute('height',16);rc.setAttribute('rx',8);
         const tx=document.createElementNS(NS,'text');tx.setAttribute('y',3.8);tx.textContent=txt;
         const lst=ids=>ids.slice(0,20).map(i=>'• '+byId[i].name).join('\n')+(ids.length>20?'\n…':'');
@@ -1485,7 +1490,7 @@ function renderGraph(fitAfter,centerId){
         bg.append(rc,tx,tt);gBadge.appendChild(bg);const x=edgeEls[edgeEls.length-1];x.badge=bg;p.badge=bg;placeBadge(x,a,b);}}
     // wide invisible twin that catches the mouse; hovering shows the link bold and rings both ends
     const plain=!e.contain&&!/ (up|down|insel|route)\b/.test(cls);if(plain)p.classList.add('plain');if(p.badge)p.badge.classList.add('plain');
-    const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':'')+(plain?' plain':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
+    const h=document.createElementNS(NS,'path');h.setAttribute('class','ehit'+(/\bdim\b/.test(cls)?' off':'')+(plain?' plain':'')+(/\bpartlk\b/.test(cls)?' partlk':''));h.setAttribute('d',d);h.appendChild(t.cloneNode(true));layer.appendChild(h);
     edgeEls[edgeEls.length-1].hit=h;const es=e.s,et=e.t;
     h.addEventListener('mouseenter',()=>{if(drag||hovPin)return;edgeHover(p,es,et,true);});
     // click: zoom to show both boxes, keep the link highlighted until the mouse moves
