@@ -180,12 +180,21 @@ setting key), so they are remembered. `settings.json` sits in the add-in folder:
 6. `Collector(des, progress, thumbs)`, `expand_groups()`, then: `build_nodes`, `scan`, part picture, `scan_components`,
    `scan_parameters`, item test, group test, linked designs.
 7. `finally`: marker back to where it was (end, or `marker0`), groups collapsed back, thumbnail state restored.
-8. Cancelled → no page. Otherwise `col.result()` → cache (unless the design had to be recovered or linked
-   designs failed) → `_write_page`.
+8. Cancelled → no page opened (a page written during the run is updated to where it stopped, marked
+   "Cancelled"). Otherwise `col.result()` → cache (unless the design had to be recovered or linked designs failed)
+   → `_write_page`.
 
 `_write_page` adds the selection server's port and token to `meta.sel`, reads `page_template.html`, replaces
-`/*__DATA__*/null` with the JSON (with `</` escaped so it cannot close the `<script>`), writes the file (temporary
-folder as fallback) and opens it in the browser.
+`/*__DATA__*/null` with the JSON (with `</` escaped so it cannot close the `<script>`), writes the file atomically
+(`.tmp` then rename, so a page reloaded while it is overwritten is never half written; temporary folder as
+fallback) and opens it in the browser (`open_browser=False` for the pages written during the run).
+
+**The page so far (`snapshot` in `generate`).** With linked designs, the page is written over the same file once
+the main design is done and after each linked design (`_collect_derived(snapshot=...)`), at most every
+`SNAPSHOT_SECONDS` (10). It is built from a copy of the collected data (`_Snap`: the collector's lists and edges
+copied, `Collector.add_edge` / `Collector.result` used on it) plus the linked designs read so far, merged with the
+same `merge(target, srcs)` as at the end; `merge` changes neither the queue entries nor anything shared, so it can
+run again after every design. The page gets a first warning "Still being generated (N of M linked designs done)".
 
 The **order of tests** is items first, then groups: the item test's results (`item_proofs`) let the group test
 stop its walks early.

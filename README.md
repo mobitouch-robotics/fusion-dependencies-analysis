@@ -81,7 +81,11 @@ paused they move one step and stay paused), `Esc` stops; speed 0.5x / 1x / 2x / 
   (`"memoryRefreshGB"` in `DependenciesGraph/settings.json`; 0 switches it off).
 - In the Groups and Components layouts every design is a frame of its own, with its timeline groups and
   a picture of the finished part; the page opens on all of them, then zooms to the design you analysed.
-- Cancel stops the whole run; no page is generated.
+- The page is written while the run goes on: once this design is done and again after each linked design (at
+  most every 10 s), over the same file, marked "Still being generated". Open it (or reload it) at any time to see
+  what is done; it opens in the browser when the run finishes.
+- Cancel stops the whole run; no page is opened. A page already written during the run is brought up to where it
+  stopped and marked "Cancelled".
 
 ### Test speed-ups
 

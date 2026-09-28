@@ -2718,14 +2718,13 @@ def _design_data(col):
 
 
 def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, pictures=False, max_designs=80, plan=None,
-                     skipped_groups=False):
+                     skipped_groups=False, snapshot=None):
     """Linked designs, each opened once: open -> read -> test (Full analysis) -> note the designs it links -> close,
     then the next one from a queue. What a Derive hands over is noted by name while the deriving design is open
     and matched once the source design has been read (names are stable within a saved version)."""
     sources = []            # read designs, in the order they were processed
     by_key = {}             # file id -> entry (queued or read)
     queue = []
-    links = []              # (source id, target id) across designs, ids already prefixed
     app = adsk.core.Application.get()
 
     capped = [False]
@@ -3079,6 +3078,105 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             log('closed %s' % name)
             _mem_log('closed %s' % name)
 
+    def merge(target, srcs):
+        """The read designs into `target` (the main design, or a copy of it for a page written while the run goes
+        on): frames, items, links, connectors. Changes neither the entries nor anything else shared, so it can run
+        again after the next design."""
+        xlinks = []
+        # what each Derive hands over, matched by name now that the source designs have been read
+        for e in srcs:
+            sc, sp = e['col'], e['prefix']
+            src_names = [n['name'] for n in sc.nodes if n['type'] == 'UserParameter']
+            for kind, val in e['specs']:
+                if not val:
+                    continue
+                n = None
+                if kind == 'tl':
+                    n = sc.by_tlname.get(val)
+                elif kind == 'body':
+                    n = sc.body_owner.get(val)
+                elif kind == 'comp':
+                    n = sc.comp_owner.get(val)
+                elif kind == 'param':
+                    sn = _source_param(val, src_names)
+                    n = 'p:' + sn if sn else None
+                if n:
+                    e['into'].add(sp + n)
+
+        # designs with the same name in different folders: their frames say where each one is
+        base = lambda nm: re.sub(r'\s+v\d+$', '', nm or '')
+        main_name = base(_safe(lambda: adsk.core.Application.get().activeDocument.name, ''))
+        counts = {}
+        for e in srcs:
+            counts[base(e['name'])] = counts.get(base(e['name']), 0) + 1
+        for e in srcs:
+            e['show_loc'] = bool((counts[base(e['name'])] > 1 or base(e['name']) == main_name) and e.get('loc'))
+
+        # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
+        order = sorted(srcs, key=lambda s: -s['depth'])
+        for rank, src in enumerate(order):
+            sc, sp, gid = src['col'], src['prefix'], src['gid']
+            base = -1e6 + rank * 1e4
+            nm = src['name']              # the frame's name (the entry keeps the plain name: merged more than once)
+            if len(src['versions']) > 1:
+                base_name = re.sub(r'\s+v\d+$', '', nm)
+                nm = '%s (v%s; read v%s)' % (base_name, ', v'.join(str(v) for v in sorted(src['versions'])), src['read_ver'])
+                target.warnings.append('%s is linked at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
+            if src.get('show_loc'):
+                nm = '%s (%s)' % (nm, src['loc'])
+            target.groups.append({'id': gid, 'name': nm, 'first': base, 'parent': None, 'design': True,
+                                'pic': src.get('pic'), 'via': sorted(src.get('via') or [])})
+            # a source design's user parameters only when something uses them (a big design can have hundreds)
+            used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a in src['into'])
+            pre = lambda ids: [sp + x for x in ids]
+            for g in sc.groups:
+                ng = {'id': sp + g['id'], 'name': g['name'], 'first': base + 1 + (g['first'] if g['first'] < 10 ** 6 else 9000),
+                      'parent': sp + g['parent'] if g.get('parent') else gid}
+                for f in ('dsupp', 'dbreak', 'dwarn'):
+                    if g.get(f): ng[f] = pre(g[f])
+                for f in ('fail', 'empty'):
+                    if f in g: ng[f] = g[f]
+                if (g.get('fail') or {}).get('node'):
+                    ng['fail'] = dict(g['fail'], node=sp + g['fail']['node'])    # the failing feature, in this design
+                if skipped_groups and not getattr(sc, 'gtested', False):
+                    ng['gskip'] = True       # not tested on its own: the page adds up its items' results
+                target.groups.append(ng)
+            for n in sc.nodes:
+                if n['type'] == 'UserParameter' and n['id'] not in used:
+                    continue
+                m = dict(n)
+                m['id'] = sp + n['id']
+                for f in ('dsupp', 'dbreak', 'dwarn'):
+                    if n.get(f): m[f] = pre(n[f])
+                if (n.get('fail') or {}).get('node'):
+                    m['fail'] = dict(n['fail'], node=sp + n['fail']['node'])     # the failing feature, in this design
+                m['o'] = base + 5 + (n['o'] if n['o'] is not None and n['o'] >= 0 else 0) + (0 if n['o'] is None or n['o'] >= 0 else n['o'] * 0.001)
+                m['g'] = [gid] + [sp + x for x in (n.get('g') or [])]
+                m['dsg'] = nm
+                if n.get('tl') is not None:
+                    m['stl'] = n['tl']
+                m['tl'] = None                   # not in this design's timeline: no suppression preview, no Select in Fusion
+                m['tok'] = ''
+                m.pop('occ', None)
+                m['info'] = ((n.get('info') or '') + (' · ' if n.get('info') else '') + 'in ' + nm).strip()
+                target.nodes.append(m)
+            for (a, b), k in sc.edges.items():
+                target.edges.setdefault((sp + a, sp + b), set()).update(k)
+            # the design's connector: the whole design as one item, on its frame; its parents are the items the
+            # Derive features hand over, its children are those Derive features
+            port = sp + '@'
+            target.nodes.append({'id': port, 'name': nm, 'type': 'DerivedDesign', 'cat': 'insert', 'tl': None,
+                               'o': base + 9990, 'g': [gid], 'dsg': nm, 'port': True, 'tok': '', 'supp': False,
+                               'health': 0, 'msg': '', 'info': 'the whole design, as ' + ('it is inserted' if src.get('via') == {'insert'} else 'the Derive features bring it in')})
+            xlinks.extend((a, port) for a in src['into'])
+            xlinks.extend((port, t) for t in src['targets'])
+            for w in sc.warnings[:5]:
+                target.warnings.append('%s: %s' % (nm, w))
+        ids = {n['id'] for n in target.nodes}
+        for a, b in xlinks:
+            if a in ids and b in ids:
+                target.add_edge(a, b, 'derive')
+
     active = _safe(lambda: app.activeDocument)
     try:
         try:
@@ -3104,6 +3202,11 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 plan(avg_i * total, avg_g * total, total)
             if progress:
                 progress('Finished ' + e['name'], n_done, n_done + len(queue))
+            if snapshot and not cancelled():
+                # the page so far, written over the same file: what is done can be looked at during a long run
+                done = list(sources)
+                snapshot(lambda target: merge(target, done),
+                         '%d of %d linked designs done (latest: %s)' % (n_done, n_done + len(queue), e['name']))
     finally:
         for e in by_key.values():
             hd = e.get('doc') or getattr(e.get('col'), 'hidden_doc', None)
@@ -3114,98 +3217,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
     if not sources:
         return
 
-    # what each Derive hands over, matched by name now that the source designs have been read
-    for e in sources:
-        sc, sp = e['col'], e['prefix']
-        src_names = [n['name'] for n in sc.nodes if n['type'] == 'UserParameter']
-        for kind, val in e['specs']:
-            if not val:
-                continue
-            n = None
-            if kind == 'tl':
-                n = sc.by_tlname.get(val)
-            elif kind == 'body':
-                n = sc.body_owner.get(val)
-            elif kind == 'comp':
-                n = sc.comp_owner.get(val)
-            elif kind == 'param':
-                sn = _source_param(val, src_names)
-                n = 'p:' + sn if sn else None
-            if n:
-                e['into'].add(sp + n)
-
-    # designs with the same name in different folders: their frames say where each one is
-    base = lambda nm: re.sub(r'\s+v\d+$', '', nm or '')
-    main_name = base(_safe(lambda: adsk.core.Application.get().activeDocument.name, ''))
-    counts = {}
-    for e in sources:
-        counts[base(e['name'])] = counts.get(base(e['name']), 0) + 1
-    for e in sources:
-        e['show_loc'] = bool((counts[base(e['name'])] > 1 or base(e['name']) == main_name) and e.get('loc'))
-
-    # deepest sources first, then the main design (its items have o >= 0 and user parameters o = -1..)
-    order = sorted(sources, key=lambda s: -s['depth'])
-    for rank, src in enumerate(order):
-        sc, sp, gid = src['col'], src['prefix'], src['gid']
-        base = -1e6 + rank * 1e4
-        if len(src['versions']) > 1:
-            base_name = re.sub(r'\s+v\d+$', '', src['name'])
-            src['name'] = '%s (v%s; read v%s)' % (base_name, ', v'.join(str(v) for v in sorted(src['versions'])), src['read_ver'])
-            main.warnings.append('%s is linked at more than one version; it is shown once, read at v%s.' % (base_name, src['read_ver']))
-        if src.get('show_loc'):
-            src['name'] = '%s (%s)' % (src['name'], src['loc'])
-        main.groups.append({'id': gid, 'name': src['name'], 'first': base, 'parent': None, 'design': True,
-                            'pic': src.get('pic'), 'via': sorted(src.get('via') or [])})
-        # a source design's user parameters only when something uses them (a big design can have hundreds)
-        used = set(a for a, _ in sc.edges) | set(b for _, b in sc.edges) | set(a[len(sp):] for a in src['into'])
-        pre = lambda ids: [sp + x for x in ids]
-        for g in sc.groups:
-            ng = {'id': sp + g['id'], 'name': g['name'], 'first': base + 1 + (g['first'] if g['first'] < 10 ** 6 else 9000),
-                  'parent': sp + g['parent'] if g.get('parent') else gid}
-            for f in ('dsupp', 'dbreak', 'dwarn'):
-                if g.get(f): ng[f] = pre(g[f])
-            for f in ('fail', 'empty'):
-                if f in g: ng[f] = g[f]
-            if (g.get('fail') or {}).get('node'):
-                ng['fail'] = dict(g['fail'], node=sp + g['fail']['node'])    # the failing feature, in this design
-            if skipped_groups and not getattr(sc, 'gtested', False):
-                ng['gskip'] = True       # not tested on its own: the page adds up its items' results
-            main.groups.append(ng)
-        for n in sc.nodes:
-            if n['type'] == 'UserParameter' and n['id'] not in used:
-                continue
-            m = dict(n)
-            m['id'] = sp + n['id']
-            for f in ('dsupp', 'dbreak', 'dwarn'):
-                if n.get(f): m[f] = pre(n[f])
-            if (n.get('fail') or {}).get('node'):
-                m['fail'] = dict(n['fail'], node=sp + n['fail']['node'])     # the failing feature, in this design
-            m['o'] = base + 5 + (n['o'] if n['o'] is not None and n['o'] >= 0 else 0) + (0 if n['o'] is None or n['o'] >= 0 else n['o'] * 0.001)
-            m['g'] = [gid] + [sp + x for x in (n.get('g') or [])]
-            m['dsg'] = src['name']
-            if n.get('tl') is not None:
-                m['stl'] = n['tl']
-            m['tl'] = None                   # not in this design's timeline: no suppression preview, no Select in Fusion
-            m['tok'] = ''
-            m.pop('occ', None)
-            m['info'] = ((n.get('info') or '') + (' · ' if n.get('info') else '') + 'in ' + src['name']).strip()
-            main.nodes.append(m)
-        for (a, b), k in sc.edges.items():
-            main.edges.setdefault((sp + a, sp + b), set()).update(k)
-        # the design's connector: the whole design as one item, on its frame; its parents are the items the
-        # Derive features hand over, its children are those Derive features
-        port = sp + '@'
-        main.nodes.append({'id': port, 'name': src['name'], 'type': 'DerivedDesign', 'cat': 'insert', 'tl': None,
-                           'o': base + 9990, 'g': [gid], 'dsg': src['name'], 'port': True, 'tok': '', 'supp': False,
-                           'health': 0, 'msg': '', 'info': 'the whole design, as ' + ('it is inserted' if src.get('via') == {'insert'} else 'the Derive features bring it in')})
-        links.extend((a, port) for a in src['into'])
-        links.extend((port, t) for t in src['targets'])
-        for w in sc.warnings[:5]:
-            main.warnings.append('%s: %s' % (src['name'], w))
-    ids = {n['id'] for n in main.nodes}
-    for a, b in links:
-        if a in ids and b in ids:
-            main.add_edge(a, b, 'derive')
+    merge(main, sources)
 
 
 # ------------------------------------------------------------ progress panel ---
@@ -3316,6 +3328,9 @@ def _prow(key, name, status, frac=None, state='', labels=None, idx=None):
 
 
 # ------------------------------------------------------------------- run ---
+
+SNAPSHOT_SECONDS = 10     # the page so far is written at most this often during a run with linked designs
+
 
 def generate(mode='both', thumbs=True, derived=False):
     exact = mode in ('items', 'both')
@@ -3453,6 +3468,34 @@ def generate(mode='both', thumbs=True, derived=False):
             # Placeholder until the read-only derived pre-scan has found the exact number of source items/groups.
             steps.append(['Linked designs' + (' (read and tested)' if (exact or groups_test) else ''), 20])
         t0 = time.time()
+        snap_t, wrote = [0.0], [False]
+
+        class _Snap:
+            pass
+
+        def snapshot(merge_fn, note, force=False, final=False):
+            """The page as far as the run has got, written over the page file (not opened), so a long run can be
+            looked at (reload the page) and what is done is not lost. merge_fn adds the linked designs read so far
+            to a copy of the collected data. At most every SNAPSHOT_SECONDS unless forced."""
+            if not force and time.time() - snap_t[0] < SNAPSHOT_SECONDS:
+                return
+            try:
+                sn = _Snap()
+                sn.nodes, sn.groups = list(col.nodes), list(col.groups)
+                sn.edges = {k: set(v) for k, v in col.edges.items()}
+                sn.thumbs, sn.part_pic = col.thumbs, getattr(col, 'part_pic', None)
+                sn.gtested = getattr(col, 'gtested', False)
+                sn.warnings = (['Cancelled: this page shows what was done before the run was cancelled.'] if final else
+                               ['Still being generated (%s). Reload the page to see more.' % note]) + list(col.warnings)
+                sn.add_edge = lambda a, b, k: Collector.add_edge(sn, a, b, k)
+                if merge_fn is not None:
+                    merge_fn(sn)
+                _write_page(Collector.result(sn, doc_name, exact, time.time() - t0), path, out_dir, open_browser=False)
+                snap_t[0], wrote[0] = time.time(), True
+                _mem_log('page so far written (%s)' % note)
+            except Exception as ex:
+                _mem_log('page so far could not be written: %s' % ex)
+
         try:
             try:
                 open(os.path.join(tempfile.gettempdir(), 'FusionDependenciesGraph', 'run_log.txt'), 'w').close()
@@ -3480,6 +3523,8 @@ def generate(mode='both', thumbs=True, derived=False):
                 _mem_log('group test done')
             _prow('main', None, 'Cancelled' if cancelled() else 'Done', 1, 'fail' if cancelled() else 'done')
             if derived and not cancelled():
+                snapshot(None, 'this design is done, its linked designs are next', force=True)
+            if derived and not cancelled():
                 # while the groups are still expanded: the derive features' timeline indexes are read from them
                 cur['linked'] = True
                 set_step(k)
@@ -3493,7 +3538,7 @@ def generate(mode='both', thumbs=True, derived=False):
                             steps[k][1] = max(1.0, di * 0.05 + dg * 0.1 + max(1, nd) * 1.0)
                         set_step(k)
                     yield from _collect_derived(col, progress, cancelled, exact, linked_groups, thumbs,
-                                                plan=_derived_plan, skipped_groups=skip_lg)
+                                                plan=_derived_plan, skipped_groups=skip_lg, snapshot=snapshot)
                 except Exception as ex:
                     col.warnings.append('Could not read the derived designs: %s' % ex)
                     col.derived_failed = True
@@ -3509,7 +3554,10 @@ def generate(mode='both', thumbs=True, derived=False):
             col.restore_groups()
             _safe(col.thumbs_end)
         if stopped['v']:
-            # cancelled: the design is put back (above, and by reopening the saved version), no page is made
+            # cancelled: the design is put back (above, and by reopening the saved version); no page is opened, but a
+            # page written while the run went on is brought up to where it stopped
+            if wrote[0]:
+                snapshot(None, 'cancelled', force=True, final=True)
             _safe(lambda: progress_dlg.hide())
             progress_dlg = None
             return []
@@ -3530,25 +3578,32 @@ def generate(mode='both', thumbs=True, derived=False):
 
 
 
-def _write_page(data, path, out_dir):
+def _write_page(data, path, out_dir, open_browser=True):
+    """Writes the page (atomically: a page reloaded while the run overwrites it is never half written) and opens it
+    in the browser. Returns the page's warnings."""
     data = dict(data)
     data['meta'] = dict(data['meta'])
     if _sel_info.get('port'):
         data['meta']['sel'] = {'port': _sel_info['port'], 'token': _sel_info['token']}
     with open(TEMPLATE_PATH, 'r', encoding='utf-8') as f:
-        html = f.read()
-    html = html.replace('/*__DATA__*/null', json.dumps(data).replace('</', '<\\/'))
-    try:
-        with open(path, 'w', encoding='utf-8') as f:
+        template = f.read()
+
+    def write(p):
+        html = template.replace('/*__DATA__*/null', json.dumps(data).replace('</', '<\\/'))
+        tmp = p + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
             f.write(html)
+        os.replace(tmp, p)
+    try:
+        write(path)
     except Exception as ex:
         fallback = os.path.join(out_dir, os.path.basename(path))
         data['meta']['warnings'] = list(data['meta']['warnings']) + [
             'Could not save to %s (%s); saved to %s instead.' % (path, ex, fallback)]
         path = fallback
-        with open(path, 'w', encoding='utf-8') as f:
-            f.write(html)
-    webbrowser.open(pathlib.Path(path).as_uri())
+        write(path)
+    if open_browser:
+        webbrowser.open(pathlib.Path(path).as_uri())
     return data['meta']['warnings']
 
 
