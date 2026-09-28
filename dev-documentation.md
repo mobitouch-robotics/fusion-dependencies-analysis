@@ -658,14 +658,11 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
 * `tools/record_demo.py` (macOS): drives the mouse through Fusion and Safari (Apple Events) to record the demo
   video, with spoken narration. Fusion: the Manage tab button, the dialog (Full analysis / Quick estimate,
   Thumbnails, Advanced options: Include linked designs, Group test for linked designs, Reuse earlier results) and
-  the progress panel. These are found where Fusion shows them, by their text (`TARGETS`, `locate`): first in
-  Fusion's own list of controls (Accessibility, read directly with macOS's AX functions through ctypes: exact boxes
-  in mouse coordinates), else by macOS's text recognition on a screenshot (the toolbar strip also read enlarged),
-  else positions recorded with `--calibrate` (`tools/demo_positions.json`). `--elements` writes every control
-  Fusion lists to `~/Downloads/fusion_ui_elements.txt`. The Dependencies Graph
-  command is reached through its panel's menu (the panel name, then the command in it). `--probe` prints what is
-  found. The dialog's checkboxes are only pointed at, never clicked (their state cannot be seen reliably), so
-  *Include linked designs* is remembered by the add-in (`settings.json` `derived`) and ticked once beforehand. Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
+  the progress panel, at fixed screen points measured from a screenshot of the Mac mini (`FUSION_POINTS`; the
+  dialog docked on the right, Advanced options open); `--calibrate` re-measures them elsewhere
+  (`tools/demo_positions.json`). "Include linked designs" is ticked when the checkbox's pixels show it is not (a small
+  screenshot, read as BMP after `sips`). The finished page is recognised by Safari coming to the front with a
+  "Dependencies graph" page written after the run started, whatever its file name. Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
   linked designs (frames, pictures, unfolding one), layouts, hover, selection and side panel, Display options,
   routes, multi-selection, all links and folding, search, filters, the suppression preview (including a feature
   whose suppression makes others fail or warn, and the broken / warnings buttons), Select in Fusion, legend,
