@@ -123,7 +123,7 @@ in `~/Library/Application Support/FusionDependenciesGraph/cache` (macOS) or
 ## Use
 
 Open a parametric design and run **Dependencies Graph**. Choose whether to capture thumbnails, then press
-**Full analysis** (runs the suppression tests: every link is a real dependency; takes minutes) or
+**Full analysis** (runs the suppression tests: every link is a real dependency; takes minutes on a small design, much longer on a large assembly with linked designs) or
 **Quick estimate** (references only; takes seconds). The design is restored afterwards (the tests suppress and unsuppress items and
 the pictures change visibility, so save your work first). The result opens in your browser as a
 self-contained HTML file.

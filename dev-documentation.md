@@ -139,13 +139,17 @@ up in that document.
 `_CreatedHandler` builds the dialog:
 
 * Information text: design name, timeline entries, groups.
-* Options: **Thumbnails**, **Save to** (text + *Choose file...* / *Use temporary folder*).
+* Options: **Thumbnails**, **Save to** (text + *Choose file...*). The page always goes to a file: when the dialog
+  opens, `_default_save_path` proposes `<design> v<version>_dependencies_graph.html` in the folder of the last
+  saved page (Downloads the first time) and stores it as `savePath`; *Choose file...* picks another.
 * Advanced options (folded): **Include linked designs**, **Group test for linked designs**, **Reuse earlier
   results**. The test speed-ups (§12) have no toggle.
 * The OK button is **Full analysis**; **Quick estimate** is a button input. Pressing it cannot end the command
   from its own input event, so `_InputChangedHandler` fires `EVENT_ID` with `closeDialog: True`, and
   `_RunHandler` terminates the dialog first (`terminateActiveCommand`), asks for confirmation, then runs with
-  `mode='off'`.
+  `mode='off'`. Fusion has no API for a button next to OK and Cancel, so it stays in the dialog.
+* The Full analysis text gives no fixed time (a small design takes minutes, a large assembly with linked designs
+  much longer).
 * `_ValidateHandler` disables OK while the design is unsaved or modified.
 
 Checkbox changes are written to `settings.json` immediately (`_InputChangedHandler`, map from input id to
@@ -154,7 +158,7 @@ setting key), so they are remembered. `settings.json` sits in the add-in folder:
 | Key | Meaning | Default |
 |---|---|---|
 | `reuse` | Reuse earlier results (cache) | true |
-| `savePath` | Page file chosen with *Choose file...* | temporary folder |
+| `savePath` | Page file (proposed when the dialog opens, or chosen with *Choose file...*) | Downloads, named after the design |
 | `linkedGroupTest` | Whole groups test on linked designs too | false |
 | `memoryRefreshGB` | Reopen a linked design's hidden copy after this growth (0 = off) | 4 |
 | `features` | `{"<key>": false}` switches off one of the test speed-ups (§12); the old top-level `experiment...` keys are ignored | all on |
@@ -168,7 +172,7 @@ setting key), so they are remembered. `settings.json` sits in the add-in folder:
 `generate(mode, thumbs, derived)`:
 
 1. Checks there is an active parametric design.
-2. Works out the page path (temporary folder, or `savePath`).
+2. Works out the page path (`savePath`; the temporary folder only when it has none or cannot be written).
 3. **Whole-result cache**: if the document is not modified, a result generated before for the same saved
    version and options is loaded (`_cache_load('main_<flags>', file id, version)`) and written as the page right
    away. A Full analysis result also answers a Quick estimate. With linked designs and the linked group test
@@ -677,7 +681,11 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   the progress panel, at fixed screen points measured from a screenshot of the Mac mini (`FUSION_POINTS`; the
   dialog docked on the right, Advanced options open); `--calibrate` re-measures them elsewhere
   (`tools/demo_positions.json`). "Include linked designs" is ticked when the checkbox's pixels show it is not (a small
-  screenshot, read as BMP after `sips`). The finished page is recognised by the first Safari window that opens
+  screenshot, read as BMP after `sips`). The dialog step clicks *Choose file...* and saves in Downloads (Cmd+Shift+G `~/Downloads`, Return, Return;
+  a "Replace" button, found through System Events, is clicked when the file is already there). The Safari tour
+  never fits the whole assembly once a linked design is open (too heavy for the video): `view_design` uses Fit only
+  with a selection (it fits the selection), else the page's `dgZoomToDesign` hook zooms to the tour design's frame
+  (its width, from its top); `dgFocus` brings a box that is too small or off screen into view. The finished page is recognised by the first Safari window that opens
   during the run (Safari's windows must be closed before it; the script warns and waits up to 30 s for that; the
   pages saved while the run goes on are not opened). `--skip-generation` (and `--step` with no page open) open the
   newest page, including the one the add-in records in `last_page.json` (next to the cache folder). Safari (`--list` numbers the steps, `--step N` starts at one): getting around,

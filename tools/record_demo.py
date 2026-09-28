@@ -48,13 +48,16 @@ FUSION_POINTS = [
     ('manage_tab',        (283, 106),     'the MANAGE tab in the toolbar'),
     ('graph_btn',         (275, 139),     'on the Manage tab: the Dependencies Graph button (icon)'),
     ('thumbs',            (1492, 488),    'in the dialog: the "Thumbnails" label'),
-    ('advanced',          (1461, 628),    'in the dialog: the arrow left of "Advanced options"'),
-    ('linked',            (1522, 660),    'Advanced options open: the "Include linked designs" label'),
-    ('linked_box',        (1649, 660),    'Advanced options open: the "Include linked designs" checkbox'),
-    ('linked_groups',     (1540, 691),    'Advanced options open: the "Group test for linked designs" label'),
-    ('reuse',             (1517, 722),    'Advanced options open: the "Reuse earlier results" label'),
-    ('full_text',         (1503, 765),    'Advanced options open: the "Full analysis" description text'),
-    ('quick_text',        (1510, 833),    'Advanced options open: the "Quick estimate" description text'),
+    ('save_to',           (1560, 519),    'in the dialog: the "Save to" file path'),
+    ('choose_file',       (1660, 550),    'in the dialog: the "Choose file..." button'),
+    # below: one row higher since the "Use temporary folder" button was removed (estimated; --calibrate to measure)
+    ('advanced',          (1461, 597),    'in the dialog: the arrow left of "Advanced options"'),
+    ('linked',            (1522, 629),    'Advanced options open: the "Include linked designs" label'),
+    ('linked_box',        (1649, 629),    'Advanced options open: the "Include linked designs" checkbox'),
+    ('linked_groups',     (1540, 660),    'Advanced options open: the "Group test for linked designs" label'),
+    ('reuse',             (1517, 691),    'Advanced options open: the "Reuse earlier results" label'),
+    ('full_text',         (1503, 734),    'Advanced options open: the "Full analysis" description text'),
+    ('quick_text',        (1510, 810),    'Advanced options open: the "Quick estimate" description text'),
     ('full_btn',          (1769, 896),    'the "Full analysis" button (do not click it)'),
     ('progress_panel',    (1671, 502),    'during a run: the middle of the progress panel'),
 ]
@@ -115,7 +118,8 @@ cg.CGEventCreateKeyboardEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctyp
 cg.CGEventKeyboardSetUnicodeString.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_wchar_p]
 cg.CGEventSetFlags.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
 CMD = 1 << 20
-KEYS = {'esc': 53, 'space': 49, 'right': 124, 'left': 123, 'enter': 36, 'backspace': 51, 'a': 0}
+SHIFT = 1 << 17
+KEYS = {'esc': 53, 'space': 49, 'right': 124, 'left': 123, 'enter': 36, 'backspace': 51, 'a': 0, 'g': 5}
 
 def release_mods():
     """Makes sure no modifier (Command) is left held: a Command key-up and a flags-cleared event."""
@@ -378,11 +382,28 @@ def el_width(finder):
     r = js("(()=>{const e=(%s);return e?String(e.getBoundingClientRect().width):'';})()" % finder)
     return float(r) if r else None
 
+def view_design(dur=1.0):
+    """Brings the tour back into view without showing the whole assembly (far too much for the video): with a
+    selection, Fit (it fits the selection); without, a zoom to the tour's linked design frame. Pages from an add-in
+    without that hook: Fit."""
+    if has_selection():
+        press(sel('#fit'), dur, 1.5); return
+    if js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,700)?'1':'')()" % (DSG_ID % LINKED_DESIGN)) == '1':
+        wait(1.3)
+    else:
+        press(sel('#fit'), dur, 1.5)
+
+def bring_into_view(finder):
+    """Centres the page on the box an element belongs to (too small or outside the view)."""
+    r = js("(()=>{const e=(%s);const g=e&&e.closest('g.nd');return g&&window.dgFocus&&window.dgFocus(g.dataset.id,700)?'1':'';})()" % finder)
+    if r == '1': wait(1.2)
+    else: view_design()
+
 def zoom_on(finder, width=200, dur=1.2):
     """Glides to an element, then zooms around it with the wheel until it is about `width` px wide."""
     xy = el_xy(finder)
-    if xy is None:                     # outside the view: Fit first, then look again
-        press(sel('#fit'), 1.0, 1.5); xy = el_xy(finder)
+    if xy is None:                     # too small or outside the view: bring it in first, then look again
+        bring_into_view(finder); xy = el_xy(finder)
     if go(xy, dur, False) is False: return
     for _ in range(80):
         w = el_width(finder)
@@ -477,6 +498,48 @@ def intro():
         "and it can preview what suppressing a feature would do, without touching the design.", True)
     wait(1.2)
 
+# The position of a "Replace" button in the frontmost app's windows or sheets (the Save panel asks before it
+# overwrites a file), as "x,y"; "" when there is none. Needs the Accessibility permission the mouse events need too.
+REPLACE_BTN = """
+on findIn(c)
+  tell application "System Events"
+    try
+      set b to button "Replace" of c
+      set {x, y} to position of b
+      set {bw, bh} to size of b
+      return ((x + bw div 2) as text) & "," & ((y + bh div 2) as text)
+    end try
+    try
+      repeat with s in (sheets of c)
+        set r to my findIn(s)
+        if r is not "" then return r
+      end repeat
+    end try
+  end tell
+  return ""
+end findIn
+tell application "System Events"
+  repeat with w in (windows of (first process whose frontmost is true))
+    set r to my findIn(w)
+    if r is not "" then return r
+  end repeat
+end tell
+return ""
+"""
+
+def save_in_downloads():
+    """In the system Save panel (open, the file name already filled in): Go to Folder ~/Downloads, Save, and
+    Replace when a page of that name is already there."""
+    wait(1.5)
+    key('g', CMD | SHIFT, False); wait(1.2)          # Go to Folder
+    type_text('~/Downloads', 0.07); wait(0.8)
+    key('enter', 0, False); wait(1.5)
+    key('enter', 0, False); wait(1.5)                # Save
+    r = osa(REPLACE_BTN, True)
+    if r and ',' in r:
+        x, y = (int(float(v)) for v in r.split(','))
+        go((x, y), 0.8); wait(1.0)
+
 def fusion_part():
     activate('Autodesk Fusion')
     move(1300, 760, 0.8)
@@ -487,6 +550,12 @@ def fusion_part():
     go(fp('graph_btn'), 1.2); wait(2.5); hush()
     say("The dialog has a few options. Thumbnails adds a picture of every step, framed on the feature itself.")
     go(fp('thumbs'), 1.2, False); hush()
+    say("The page is saved to a file named after the design and its version, in the folder used last time. "
+        "Choose file picks another place. Let's save it in Downloads.")
+    go(fp('save_to'), 1.0, False); wait(0.6)
+    go(fp('choose_file'), 0.9)
+    if not DRY: save_in_downloads()
+    activate('Autodesk Fusion'); hush()
     say("The rest is under Advanced options.")
     go(fp('advanced'), 1.1); wait(1.2); hush()
     say("Include linked designs also reads every design this one links, through Derive features or inserted "
@@ -567,7 +636,9 @@ def prepare(state):
     designs_state(state != 'folded')
     if state == 'item':
         js("(()=>{const g=%s;if(g)g.dispatchEvent(new MouseEvent('click',{bubbles:true}));})()" % find_g(ITEM)); wait(1.2)
-    js("document.getElementById('fit').click()"); wait(1.2)
+    if state == 'folded' or not js("(()=>window.dgZoomToDesign&&window.dgZoomToDesign(%s,1)?'1':'')()" % (DSG_ID % LINKED_DESIGN)):
+        js("document.getElementById('fit').click()")
+    wait(1.2)
     move(*graph_xy(.92, .12), 0.6)
 
 def step_0():
@@ -596,11 +667,10 @@ def step_linked():
     wait(1.0); hush()
     say("Let's open the J2 arm, the design this tour looks at.")
     zoom_on(unfold_btn(), 18, 1.2); press(unfold_btn(), 0.6, 2.0)
-    press(sel('#fit'), 1.0, 1.5); hush()
-    say("Its own timeline groups are blocks inside its frame. The minus button on the frame folds it again.")
+    designs_state(True); view_design(); hush()
+    say("It opens with its timeline groups, each a block inside its frame, showing its features. "
+        "The minus button on the frame folds it again.")
     hover(fold_btn(), 1.2, 2.0); hush()
-    say("Let's open its timeline groups too, to see its features.")
-    designs_state(True); press(sel('#fit'), 1.0, 2.0); hush()
     move(*graph_xy(.92, .12), 0.8)
 
 def step_layouts():
@@ -608,13 +678,13 @@ def step_layouts():
     topic("The graph has four layouts. Groups, the default, gives every timeline group a block of its own.")
     hush()
     say("Depth arranges the boxes in rows, by how deep each one is in the dependencies.")
-    press(sel('#layDeps'), 1.2, 1.0); press(sel('#fit'), 0.9, 2.0); hush()
+    press(sel('#layDeps'), 1.2, 1.0); view_design(0.9); hush()
     say("Components gives every component a block.")
-    press(sel('#compBtn'), 1.0, 1.0); press(sel('#fit'), 0.9, 2.0); hush()
+    press(sel('#compBtn'), 1.0, 1.0); view_design(0.9); hush()
     say("And Timeline puts every item in one row, in timeline order, with the longer links arcing above it.")
-    press(sel('#layTime'), 1.0, 1.0); press(sel('#fit'), 0.9, 2.5); hush()
+    press(sel('#layTime'), 1.0, 1.0); view_design(0.9); hush()
     say("Back to Groups.")
-    press(sel('#laneBtn'), 1.0, 1.0); press(sel('#fit'), 0.9, 1.5); hush()
+    press(sel('#laneBtn'), 1.0, 1.0); view_design(0.9); hush()
 
 def step_2():
     """Hover"""
@@ -622,13 +692,16 @@ def step_2():
     zoom_on(box(HOVER_BOXES[0]), 200, 0.9); hush(); wait(0.3)
     for i, name in enumerate(HOVER_BOXES):
         xy = el_xy(box(name))
-        if xy is None: continue
+        if xy is None:
+            bring_into_view(box(name)); xy = el_xy(box(name))
+        if xy is None:
+            print('  (hover skipped: %s not found on the page)' % name); continue
         print('  hover:', name)
         move(xy[0] - 30, xy[1], 0.8); move(xy[0], xy[1], 0.2)   # a last small step, so the page sees the pointer arrive
         wait(2.4)
         if i < len(HOVER_BOXES) - 1:
             move(xy[0], xy[1] - 90, 0.4); wait(0.7)             # off the box: the highlight clears for a moment
-    press(sel('#fit'), 0.9, 1.2)
+    view_design(0.9)
 
 def step_3():
     """Select an item, side panel, Back"""
@@ -661,7 +734,7 @@ def step_5():
     rb = ANY_ROUTE_BTN % route_btn(ROUTE_TO)
     xy = el_xy(rb)
     if xy is None:
-        press(sel('#fit'), 1.0, 1.5); xy = el_xy(rb)
+        view_design(1.0); xy = el_xy(rb)
     if xy is not None:
         topic("How exactly are two items connected? Every other box of the branch has a small orange route button in its corner.")
         hush(); go(xy, 1.4, False); wait(0.4)
@@ -681,7 +754,7 @@ def step_6():
           "Turning off Only the selected branch, in the Display menu, shows it inside the whole design instead.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'Only the selected branch', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); press(sel('#fit'), 1.0, 1.5)
+    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0)
     say("The related boxes move next to the selection, and the rest of the design stays around them, dimmed.", True)
     wait(0.8)
     topic("Now items from other branches can be reached too. Holding command while clicking adds one to the selection. "
@@ -693,7 +766,7 @@ def step_6():
     say("Let's turn Only the selected branch back on. The view is cleaner with it.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'Only the selected branch', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); press(sel('#fit'), 1.0, 2.0); hush(); wait(0.6)
+    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0); hush(); wait(0.6)
     say("A click on empty space, or Escape, clears the selection.")
     xy = empty_xy()
     if xy: go(xy, 1.2)
@@ -708,13 +781,13 @@ def step_7():
           "All links, in the Display menu, shows every link at once, in grey.")
     hush(); press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
-    press(sel('#dispBtn'), 0.9, 0.5); press(sel('#fit'), 1.0, 2.5)
+    press(sel('#dispBtn'), 0.9, 0.5); view_design(1.0)
     say("That's the whole web of dependencies.", True); wait(0.8)
     topic("Collapse all folds every timeline group into one box. "
           "Now the links show how the groups depend on each other, and the number on a line says how many links it stands for.")
     press(sel('#colAll'), 1.3, 1.5); press(sel('#fit'), 1.0, 1.0); hush(); wait(2.0)
     say("Expand all opens everything again, every linked design too. Here, let's just open the J2 arm again.")
-    hush(); designs_state(True); press(sel('#fit'), 1.0, 1.5)
+    hush(); designs_state(True); view_design(1.0)
     say("Let's turn All links off again. Hover and selection usually tell more.")
     press(sel('#dispBtn'), 1.1, 0.8)
     press(by_text('#dispBox label', 'All links', False), 1.0, 1.0)
@@ -727,7 +800,7 @@ def step_8():
     say("The arrows jump from one match to the next.")
     hush(); press(sel('#sNext'), 1.0, 2.0); press(sel('#sNext'), 0.5, 2.0)
     press(sel('#search'), 1.0, 0.3); key('a', CMD, False); key('backspace', 0, False); wait(1.0)
-    press(sel('#fit'), 1.0, 1.0)
+    view_design(1.0)
 
 def step_9():
     """Filters"""
@@ -735,12 +808,12 @@ def step_9():
     hush(); press(sel('#filterBtn'), 1.2, 0.8)
     press(by_text('#cats label', 'Parameter', False), 1.0, 1.0)
     press(by_text('#cats label', 'Construction', False), 0.8, 1.0)
-    press(sel('#filterBtn'), 0.9, 0.5); press(sel('#fit'), 1.0, 1.5)
+    press(sel('#filterBtn'), 0.9, 0.5); view_design(1.0)
     say("The graph is smaller now. Hidden items are skipped, not cut out: their links are joined through them.", True)
     wait(0.8)
     say("All shows everything again.")
     press(sel('#filterBtn'), 1.0, 0.8); press(sel('#catAll'), 0.8, 1.0); press(sel('#filterBtn'), 0.8, 0.5)
-    press(sel('#fit'), 1.0, 1.0); hush()
+    view_design(1.0); hush()
 
 def step_preview():
     """Suppression preview"""
@@ -748,7 +821,7 @@ def step_preview():
           "never the design.")
     zoom_on(power_btn(SUPPRESS_ITEM), 18, 1.3); hush()
     say("Let's switch off the stepper motor screws sketch.")
-    press(power_btn(SUPPRESS_ITEM), 0.6, 1.5); press(sel('#fit'), 1.0, 2.0); hush()
+    press(power_btn(SUPPRESS_ITEM), 0.6, 1.5); view_design(1.0); hush()
     say("Everything Fusion suppressed along with it in the test is crossed out and dashed, and features that would fail "
         "to compute are marked in red. The bar at the top counts them.")
     hover(sel('#simBar'), 1.2, 2.0); hush()
@@ -758,7 +831,7 @@ def step_preview():
           "or compute with a warning, and the test records that too. Let's switch off the Derive feature that brings "
           "in the parameters.")
     zoom_on(power_btn(BREAK_ITEM), 18, 1.3); hush()
-    press(power_btn(BREAK_ITEM), 0.6, 1.5); press(sel('#fit'), 1.0, 2.0)
+    press(power_btn(BREAK_ITEM), 0.6, 1.5); view_design(1.0)
     say("Nothing is suppressed this time, but ten features would fail to compute, and six more would warn. "
         "The buttons at the top count them.")
     hover(sel('#health .hb'), 1.2, 1.5); hush()
@@ -817,7 +890,7 @@ def step_10():
 
 def step_11():
     """Closing words"""
-    clear_selection(); press(sel('#fit'), 1.1, 1.0)
+    clear_selection(); view_design(1.1)
     move(*graph_xy(.5, .9), 1.0)
     hush(); wait(1.0)
     say("That's the dependencies graph: see what every feature depends on, before you change it.", True)

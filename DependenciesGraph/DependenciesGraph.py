@@ -3903,7 +3903,7 @@ CMD_ID = 'claudeDesignGraphCmd'
 OLD_CMD_ID = 'claudeHistoryGraphCmd'
 CMD_NAME = 'Dependencies Graph'
 CMD_TIP = ('Export the timeline as an interactive dependency tree and graph (HTML). '
-           'The page is saved to a temporary folder and opened in your browser.')
+           'The page is saved to the file chosen in the dialog and opened in your browser.')
 EVENT_ID = 'claudeDesignGraphRun'
 WORKSPACE_ID = 'FusionSolidEnvironment'
 TAB_ID = 'ManageTab'
@@ -3972,17 +3972,17 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             ru.tooltipDescription = ('A saved version never changes, so its results stay valid. Applies to linked designs and '
                                      'to this design when it has not changed since it was last analysed. Untick to analyse '
                                      'everything again.')
-            # where the page is saved: the temporary folder, or a file chosen here (remembered for next time)
+            # where the page is saved: a file named after this design and version, in the folder used last time
+            # (Choose file... picks another; the folder is remembered for next time)
+            _default_save_path()
             sv = oc.addTextBoxCommandInput('hgSavePath', 'Save to', _save_label(), 1, True)
             sv.tooltip = 'Where the page is saved (a single self-contained .html file: opens in any browser)'
             bt = oc.addBoolValueInput('hgSaveChoose', 'Choose file...', False, '', False)
             bt.tooltip = 'Choose where to save the page'
-            bt2 = oc.addBoolValueInput('hgSaveTemp', 'Use temporary folder', False, '', False)
-            bt2.tooltip = 'Save to the temporary folder again (a new file every time)'
 
-            # --- two ways to generate: Full analysis (the dialog's OK button) or Quick estimate (a button here)
-            mins = max(1, int(round((n_items * 1.7 + n_groups * 2.5) / 60.0)))
-            inputs.addTextBoxCommandInput('hgModes', '', _modes_info(mins), 6, True)
+            # --- two ways to generate: Full analysis (the dialog's OK button) or Quick estimate (a button here;
+            # Fusion has no way to add a button next to OK and Cancel)
+            inputs.addTextBoxCommandInput('hgModes', '', _modes_info(), 6, True)
             qb = inputs.addBoolValueInput('hgQuick', 'Quick estimate', False, '', False)
             qb.text = 'Quick estimate'
             _safe(lambda: setattr(qb, 'isFullWidth', True))
@@ -4016,11 +4016,12 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
 _run_mode = {}     # set to {'mode': 'off'} when Quick estimate was pressed
 
 
-def _modes_info(mins):
-    return ('<b>Full analysis</b> <span style="color:#6b6a64">(recommended, about %d min): suppresses every item and every '
+def _modes_info():
+    return ('<b>Full analysis</b> <span style="color:#6b6a64">(recommended; slow: minutes on a small design, much longer '
+            'on a large assembly with linked designs): suppresses every item and every '
             'timeline group in turn, so every link is a real dependency and the page can preview suppressions.</span><br><br>'
             '<b>Quick estimate</b> <span style="color:#6b6a64">(seconds): uses only what each feature references. Some real '
-            'dependencies are missing and a few links may be wrong.</span>' % mins)
+            'dependencies are missing and a few links may be wrong.</span>')
 
 
 _SETTINGS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
@@ -4043,8 +4044,24 @@ def _save_settings(d):
 
 
 def _save_label():
-    p = _settings().get('savePath')
-    return p if p else 'Temporary folder (a new file each time)'
+    return _settings().get('savePath') or ''
+
+
+def _default_save_path():
+    """The file the dialog proposes when it opens: named after the open design and its version, in the folder of
+    the file saved last time (Downloads the first time). Stored as the save path, like a file chosen by hand."""
+    doc = _safe(lambda: _app.activeDocument)
+    name = _safe(lambda: doc.name, '') or 'design'
+    ver = _safe(lambda: doc.dataFile.versionNumber)
+    if ver and not re.search(r'\sv\d+$', name):
+        name += ' v%s' % ver
+    cur = _settings().get('savePath')
+    folder = os.path.dirname(cur) if cur and os.path.isdir(os.path.dirname(cur)) else os.path.expanduser('~/Downloads')
+    path = os.path.join(folder, re.sub(r'[^\w\- ]+', '_', name).strip() + '_dependencies_graph.html')
+    st = _settings()
+    st['savePath'] = path
+    _save_settings(st)
+    return path
 
 
 def _choose_save_path():
@@ -4114,13 +4131,8 @@ class _InputChangedHandler(adsk.core.InputChangedEventHandler):
             st[keys[args.input.id]] = bool(args.input.value)
             _save_settings(st)
             return
-        if args.input.id in ('hgSaveChoose', 'hgSaveTemp'):
-            if args.input.id == 'hgSaveChoose':
-                _choose_save_path()
-            else:
-                st = _settings()
-                st.pop('savePath', None)
-                _save_settings(st)
+        if args.input.id == 'hgSaveChoose':
+            _choose_save_path()
             cmd = _safe(lambda: args.firingEvent.sender)
             box = _safe(lambda: cmd.commandInputs.itemById('hgSavePath'))
             if box is not None:

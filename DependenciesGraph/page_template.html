@@ -1622,6 +1622,10 @@ function zoomToRect(x0,y0,x1,y1,dur){const gp=$('gpanel');const LP=(gp&&gp.style
   const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;
     T.k=s0.k+(k-s0.k)*e;T.x=s0.x+(tx-s0.x)*e;T.y=s0.y+(ty-s0.y)*e;applyT();if(a<1)anim=requestAnimationFrame(step);else anim=null;};
   anim=requestAnimationFrame(step);}
+// for scripts driving the page (the demo recorder): zoom to a design's frame (its frame id, 'X8'), or to a box (data-id)
+window.dgZoomToDesign=(d,dur)=>{const f=designFrames.find(f=>f.d===d);if(!f)return false;   // its width, from its top (a tall frame fitted whole is too small to read)
+  const r=(svg.clientHeight||600)/Math.max(1,svg.clientWidth||800);zoomToRect(f.x,f.y,f.x+f.w,f.y+Math.min(f.h,f.w*r),dur||600);return true;};
+window.dgFocus=(id,dur)=>{if(!pos[id])return false;focusOn([id],dur||600);return true;};
 // first view: like Fit, but never zoomed out further than MIN_START_ZOOM (top of the graph, centred)
 const MIN_START_ZOOM=0.55;
 function fitInitial(){const ids=Object.keys(pos);if(!ids.length)return;const gp=$('gpanel');const LP=(gp&&gp.style.display!=='none'&&!gp.classList.contains('min'))?320:0;
