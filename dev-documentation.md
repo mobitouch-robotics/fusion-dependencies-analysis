@@ -604,7 +604,8 @@ Main parts, in file order:
   `isOpen` next to `expanded` and `searchOpen`), so the tree shows as its real boxes and links instead of folded
   boxes. Linked designs keep the state they had (a folded one stays one box in the tree); only the design holding
   a selected item opens, so that item can be shown. Folding one by hand during that selection keeps it folded (`selShut`, forgotten when the
-  selection changes); deselecting folds everything back as it was.
+  selection changes); Collapse all puts every group in `selShut` (Expand all empties it); deselecting folds
+  everything back as it was.
 * **A linked design's loose items**: its items outside its timeline groups, and its user parameters, get a group
   of their own inside its frame when the page loads (`X8~none` "Not in a group", `X8~params` "User parameters",
   `loose: true`), like this design's pseudo groups `_none` / `_params`: they fold into one box with the block's fold
@@ -617,7 +618,8 @@ Main parts, in file order:
   connector from its design) does it get the final items like an insert. User parameters are left out.
 * **Hidden connectors**: an expanded linked design's connector box is hidden and its fold button stands in for it.
   The box gets `pt` (the button's centre, relative to the box), and `edgeSegs`/`edgeEnd` treat it as a point:
-  links end on the top of the button and leave from its bottom, without spreading their ends.
+  links end on the top of the button and leave from its bottom, without spreading their ends. Its route button sits just right
+  of that point (of the point at the bottom of a folded design's box too), not at the hidden box's corner.
 * **Group level**, **back/forward history** of selections and previews (restoring zoom and position).
 * **Select in Fusion** client.
 * **Graph** (`renderGraph`, the largest part): layouts *Depth* (rows by dependency depth), *Groups* (`lanes`: one

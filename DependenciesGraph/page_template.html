@@ -1568,7 +1568,9 @@ function renderGraph(fitAfter,centerId){
       else if(!selSet.has(r.id)){rect.setAttribute('stroke','var(--route)');rect.setAttribute('stroke-width','2.2');}}else g.classList.add('dim');}
     // route button: on every other box of the selected item's tree
     if(treeIds&&!laneFold&&!r.header&&!selSet.has(r.id)){const tItems=r.members.filter(m=>treeIds.has(m.id)).map(m=>m.id);
-      if(tItems.length){const on=!!(RT&&tReps.has(r.id));const bt=document.createElementNS(NS,'g');bt.setAttribute('class','rbtn'+(on?' on':''));bt.setAttribute('transform','translate('+(NW-14)+','+(NH+1)+')');
+      if(tItems.length){const on=!!(RT&&tReps.has(r.id));const bt=document.createElementNS(NS,'g');bt.setAttribute('class','rbtn'+(on?' on':''));
+        // a linked design's connector is a point (its fold button, or the bottom of its folded box): the button sits just right of it
+        {const P=pos[r.id];bt.setAttribute('transform',P&&P.pt?'translate('+(P.pt.dx+(P.pt.r||PTR)+14)+','+P.pt.dy+')':'translate('+(NW-14)+','+(NH+1)+')');}
         const c=document.createElementNS(NS,'circle');c.setAttribute('r',8);
         const pa=document.createElementNS(NS,'path');pa.setAttribute('d','M-4,3.5 C-4,-1 4,1 4,-3.5');
         const d1=document.createElementNS(NS,'circle');d1.setAttribute('class','rdot');d1.setAttribute('cx',-4);d1.setAttribute('cy',3.5);d1.setAttribute('r',1.8);
@@ -2033,7 +2035,9 @@ $('layTime').onclick=()=>setLayout('time');
 $('laneBtn').onclick=()=>{setLayout('lanes');};
 $('compBtn').onclick=()=>{if(catOn.component===false){catOn.component=true;renderCatFilter();updateFilterBtn();buildAdj();}setLayout('comps');};
 function setLevel(l){
-  const apply=()=>{collapsedNodes.clear();if(l==='groups')expanded.clear();else Object.keys(groups).forEach(g=>expanded.add(g));};
+  // Collapse all folds what the selection holds open too (as if folded by hand); Expand all lets it open again
+  const apply=()=>{collapsedNodes.clear();if(l==='groups'){expanded.clear();[...Object.keys(groups),'_none','_params'].forEach(g=>selShut.add(g));}
+    else{Object.keys(groups).forEach(g=>expanded.add(g));selShut.clear();}};
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(apply,{fit:'initial'});else{apply();if(view==='graph')renderGraph(true);else renderTree();}}
 let graphHits=[],hitIdx=0;
 function updateSearchNav(){const nav=$('sNav');const n=view==='graph'?graphHits.length:nodes.filter(x=>visibleNode(x)&&matches(x)).length;
