@@ -468,6 +468,8 @@ function simCompute(){
   simState={why,est,broken,bEst,warned,refused};
 }
 function itemTested(n){return !!n&&Array.isArray(n.dsupp);}
+// a timeline item in its own design (this design: tl; a linked design: stl): can be suppressed in the preview
+function inTl(n){return !!n&&(n.tl!=null||n.stl!=null);}
 function isSupp(n){return simState?!!simState.why[n.id]:!!n.supp;}
 // 'sim': fails in the preview (from the test) · 'est': may fail in the preview (estimated) · 'design': fails in the design
 function brokenKind(n){if(!n)return null;if(simState&&simState.broken[n.id])return simState.bEst.has(n.id)?'est':'sim';
@@ -497,7 +499,7 @@ function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';cons
   $('gpanel').style.display=gs.length?'':'none';
   gs.forEach(g=>{const mem=groupMembers(g.id);if(!mem.length&&!g.empty)return;const r=document.createElement('div');r.className='gprow'+(selGroup===g.id?' sel':'');
     const depth=groupPath(g.id).length-1;r.style.paddingLeft=(8+depth*14)+'px';
-    const extG=mem.length&&mem.every(n=>n.dsg);   // a derived design (or a group in it): not in this timeline, nothing to simulate
+    const extG=!!(groups[g.id]&&groups[g.id].design);   // a whole linked design (its frame): no test result, nothing to simulate
     if(simOn&&!extG){r.appendChild(simButton(sim.groups.has(g.id),'Switch this whole group off/on in the simulation',()=>simToggleGroup(g.id)));}
     else if(simOn){const sp=document.createElement('span');sp.style.cssText='width:30px;flex:none';r.appendChild(sp);}
     const dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:50%;flex:none;background:'+(colorOfGroup(g.id)||'transparent');r.appendChild(dot);
@@ -509,7 +511,7 @@ function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';cons
 // Clicking a chip steps through those items.
 let healthIdx={b:-1,w:-1};
 function renderHealth(){const h=$('health');if(!h)return;h.innerHTML='';
-  const its=nodes.filter(n=>n.tl!=null||n.cat==='param');const br=its.filter(n=>brokenKind(n)&&brokenKind(n)!=='est'),be=its.filter(n=>brokenKind(n)==='est'),wr=its.filter(n=>warnKind(n));
+  const its=nodes.filter(n=>inTl(n)||n.cat==='param');const br=its.filter(n=>brokenKind(n)&&brokenKind(n)!=='est'),be=its.filter(n=>brokenKind(n)==='est'),wr=its.filter(n=>warnKind(n));
   const prev=!!(simOn&&(sim.groups.size||sim.items.size||sim.un.size));
   if(!br.length&&!be.length&&!wr.length){h.style.display='none';return;}h.style.display='';
   const chip=(cls,ic,txt,list,key,tip)=>{const b=document.createElement('button');b.className=cls;b.innerHTML='<span class="ic">'+ic+'</span>'+txt;b.title=tip+' · click to go through them';
@@ -518,7 +520,7 @@ function renderHealth(){const h=$('health');if(!h)return;h.innerHTML='';
   if(wr.length)chip('hw','',wr.length+' warning'+(wr.length===1?'':'s'),wr,'w',(prev?'In this suppression preview: ':'In the design: ')+wr.length+' with warnings');}
 function renderSimBar(){renderHealth();const bar=$('simBar');bar.innerHTML='';
   const any=simOn&&(sim.groups.size||sim.items.size||sim.un.size);document.body.classList.toggle('simon',!!any);if(!any)return;
-  const nItems=nodes.filter(n=>n.tl!=null);const sup=nItems.filter(isSupp).length;const br=simState?Object.keys(simState.broken).length:0;
+  const nItems=nodes.filter(inTl);const sup=nItems.filter(isSupp).length;const br=simState?Object.keys(simState.broken).length:0;
   const offG=[...sim.groups].map(g=>groups[g]?groups[g].name:g),offI=[...sim.items].map(i=>byId[i].name),onI=[...sim.un].map(i=>byId[i].name);
   const t=document.createElement('span');t.innerHTML='<b>Suppression preview</b>';bar.appendChild(t);
   const w=document.createElement('span');w.textContent='Off: '+[...offG,...offI].join(', ')+(onI.length?' · back on: '+onI.join(', '):'');w.className='cnt';w.style.maxWidth='50vw';w.style.overflow='hidden';w.style.textOverflow='ellipsis';w.style.whiteSpace='nowrap';w.title=w.textContent;bar.appendChild(w);
@@ -609,7 +611,7 @@ function row(opts){ // {label(node|string), node, count, childrenFn, open, cls}
   t.onclick=()=>setOpen(kids.style.display==='none');
   r.appendChild(t);
   if(opts.node){const n=opts.node;r.dataset.id=n.id;if(selected===n.id)r.classList.add('sel');
-    if(n.tl!=null&&canItems){const tg=simButton(isExplicit(n),'Switch this item off/on in the simulation',()=>simToggleItem(n.id));tg.style.display=simOn?'':'none';r.appendChild(tg);}
+    if(inTl(n)&&canItems){const tg=simButton(isExplicit(n),'Switch this item off/on in the simulation',()=>simToggleItem(n.id));tg.style.display=simOn?'':'none';r.appendChild(tg);}
     const ti=thumbImg(n.id);if(ti)r.appendChild(ti);
     r.appendChild(pill(n));const nm=document.createElement('span');nm.className='name '+stateCls(n);nm.appendChild(hl(n.name));nm.onclick=()=>select(n.id);r.appendChild(nm);
     if(n.health===2||n.health===1){const w=document.createElement('span');w.className=n.health===2?'st-err':'st-warn';w.textContent=n.health===2?'● error':'● warning';w.style.fontSize='11px';r.appendChild(w);}
@@ -878,8 +880,8 @@ function renderDetails(){
     const b1=document.createElement('button');b1.textContent='Show routes in graph';b1.onclick=()=>showInGraph(()=>[...new Set([...RT.items].filter(i=>byId[i]).map(i=>rep(byId[i])))]);
     const b2=document.createElement('button');b2.textContent='Hide routes';b2.title='Hide the routes (Esc). Back returns to them.';b2.onclick=()=>setRoute(null);
     bb.append(b1,b2);sec.appendChild(bb);d.appendChild(sec);}}
-  if(simOn&&n.tl!=null&&!canItems&&isSupp(n)){const x=document.createElement('div');x.className='kv';x.style.margin='8px 0';x.textContent='Suppressed: '+whyText(n);d.appendChild(x);}
-  if(simOn&&n.tl!=null&&canItems){const box=document.createElement('div');box.style.margin='8px 0';box.style.display='flex';box.style.gap='8px';box.style.alignItems='center';box.style.flexWrap='wrap';
+  if(simOn&&inTl(n)&&!canItems&&isSupp(n)){const x=document.createElement('div');x.className='kv';x.style.margin='8px 0';x.textContent='Suppressed: '+whyText(n);d.appendChild(x);}
+  if(simOn&&inTl(n)&&canItems){const box=document.createElement('div');box.style.margin='8px 0';box.style.display='flex';box.style.gap='8px';box.style.alignItems='center';box.style.flexWrap='wrap';
     const b=document.createElement('button');const ex=isExplicit(n);b.textContent=ex?'Switch back on (simulation)':'Suppress (simulation)';b.onclick=()=>simToggleItem(n.id);box.appendChild(b);
     const st=document.createElement('span');st.className=isBroken(n)?'st-err':(warnKind(n)?'st-warn':'kv');st.textContent=isBroken(n)?brokenText(n):warnKind(n)?warnText(n):(isSupp(n)?'Suppressed: '+whyText(n)+(simState&&simState.est.has(n.id)?' (estimated)':''):'Active');box.appendChild(st);d.appendChild(box);
 }
@@ -894,7 +896,7 @@ function renderDetails(){
   const up=closure(n.id,'up'),down=closure(n.id,'down');
   const h3a=document.createElement('h3');h3a.textContent='Depends on ('+preds[n.id].length+' direct, '+up.size+' total)';d.append(h3a,linkList(preds[n.id],'up'));
   const h3b=document.createElement('h3');h3b.textContent='Used by ('+succs[n.id].length+' direct, '+down.size+' total)';d.append(h3b,linkList(succs[n.id],'down'));
-  if(canItems&&n.tl!=null&&!n.supp){
+  if(canItems&&inTl(n)&&!n.supp){
     if(n.fail){const h3=document.createElement('h3');h3.style.color='var(--err)';h3.textContent='Suppressing it breaks a later feature';d.appendChild(h3);const w=document.createElement('div');w.className='kv';w.textContent='Fusion refuses to suppress this item through the API'+(n.fail.name?' because '+n.fail.name+' then fails to compute':'')+'. The preview can still suppress it: that feature is marked broken, the rest is estimated from the links.';d.appendChild(w);if(n.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=n.fail.msg;d.appendChild(m);}}
     else if(!itemTested(n)){const w=document.createElement('div');w.className='kv';w.style.marginTop='10px';w.textContent='Not covered by the Every item test. The preview estimates its effect from the dependency links.';d.appendChild(w);}
     if(n.dbreak&&n.dbreak.length){const hb=document.createElement('h3');hb.style.color='var(--err)';hb.textContent='Suppressing it breaks ('+n.dbreak.length+')';const w=document.createElement('div');w.className='kv';w.textContent='These stay on but fail to compute when this item is suppressed.';d.append(hb,w,itemList(n.dbreak));}}
@@ -959,7 +961,22 @@ let tlArcTop=0;   // how far the Timeline arcs reach above the row (for fitting 
 function tArc(a,b){if(layoutMode!=='time'||Math.abs(a.y-b.y)>1||Math.abs(b.x-a.x)<=NW+XG+2)return null;
   const dir=b.x>a.x?1:-1,x1=a.x+NW/2+dir*NW*0.18,x2=b.x+NW/2-dir*NW*0.18,h=26+Math.sqrt(Math.abs(x2-x1))*8;
   return {x1,y1:a.y,x2,y2:b.y,h};}
-function edgeEnd(a,b,o2){{const t=tArc(a,b);if(t)return [t.x2,t.y2,0,1];}const x2=b.x+NW/2+(o2||0),y2=b.y;if(y2>a.y+NH)return [x2,y2,0,1];const by=b.y+NH/2;
+// A hidden connector (an expanded linked design: its fold button stands in for it) is a point, pt = the button's
+// centre relative to the box: links end on the top of the button and leave from its bottom, without spreading.
+const PTR=9;
+// A folded design's connector is drawn on the frame's bottom edge; its links also leave through its bottom and
+// arrive at its top (pt.r: half its height), so links between designs always go through the frame's bottom.
+function outAt(a,o1){return a.pt?[a.x+a.pt.dx,a.y+a.pt.dy+(a.pt.r||PTR)]:[a.x+NW/2+(o1||0),a.y+NH];}
+function inAt(b,o2){return b.pt?[b.x+b.pt.dx,b.y+b.pt.dy-(b.pt.r||PTR)]:[b.x+NW/2+(o2||0),b.y];}
+function ptSegs(a,b,o1,o2){const [x1,y1]=outAt(a,o1),[x2,y2]=inAt(b,o2);
+  if(y2>y1+20)return [[[x1,y1],[x1,y1+YG*0.6],[x2,y2-YG*0.6],[x2,y2]]];
+  const d=Math.max(YG,(y1-y2)*0.5+40);return [[[x1,y1],[x1,y1+d],[x2,y2-d],[x2,y2]]];}
+// Groups / Components layouts: a link between two different blocks that does not go downwards leaves its box
+// through the bottom and enters the other box from the top (never through the sides, across block edges)
+let laneMemo=new WeakMap();
+function laneAt(p){if(laneMemo.has(p))return laneMemo.get(p);const l=lanes.find(l=>p.x>=l.x&&p.x<=l.x+l.w&&p.y>=l.y0-1&&p.y<=l.y1+1);const id=l?l.id:null;laneMemo.set(p,id);return id;}
+function crossBlock(a,b){return isLanes()&&lanes.length>0&&laneAt(a)!==laneAt(b);}
+function edgeEnd(a,b,o2){if(a.pt||b.pt||(b.y<=a.y+NH&&crossBlock(a,b))){const e=inAt(b,o2);return [e[0],e[1],0,1];}{const t=tArc(a,b);if(t)return [t.x2,t.y2,0,1];}const x2=b.x+NW/2+(o2||0),y2=b.y;if(y2>a.y+NH)return [x2,y2,0,1];const by=b.y+NH/2;
   if(b.x>=a.x+NW)return [b.x,by,1,0];if(b.x+NW<=a.x)return [b.x+NW,by,-1,0];return [b.x+NW,by,-1,0];}
 function edgeD(a,b,o1,o2,bow){const e=edgeEnd(a,b,o2);return edgeCurve(a,b,o1,o2,bow)+arrowAt(e[0],e[1],e[2],e[3]);}
 // the middle of a link (where its item-count badge sits)
@@ -968,7 +985,7 @@ function edgeMid(a,b,o1,o2,bow){const sg=edgeSegs(a,b,o1,o2,bow);if(sg.length>1)
 function placeBadge(x,a,b){if(!x.badge)return;const m=edgeMid(a,b,x.o1,x.o2,x.bow);x.badge.setAttribute('transform','translate('+m[0]+','+m[1]+')');}
 // A link as a list of cubic Bezier segments [p0,c1,c2,p3]; used both to draw it and to sample it
 // for the crossing checks (sampling in plain maths is much faster than asking the browser).
-function edgeSegs(a,b,o1,o2,bow){{const t=tArc(a,b);if(t)return [[[t.x1,t.y1],[t.x1,t.y1-t.h],[t.x2,t.y2-t.h],[t.x2,t.y2]]];}
+function edgeSegs(a,b,o1,o2,bow){if(a.pt||b.pt||(b.y<=a.y+NH&&crossBlock(a,b)))return ptSegs(a,b,o1,o2);{const t=tArc(a,b);if(t)return [[[t.x1,t.y1],[t.x1,t.y1-t.h],[t.x2,t.y2-t.h],[t.x2,t.y2]]];}
   const x1=a.x+NW/2+(o1||0),y1=a.y+NH,x2=b.x+NW/2+(o2||0),y2=b.y;
   // a long link that would lie on top of another link bends sideways a little in the middle
   if(y2>y1&&bow){const xm=(x1+x2)/2+bow,ym=(y1+y2)/2,h=y2-y1;
@@ -1027,7 +1044,7 @@ function animatedRerender(change,opts){opts=opts||{};
   if(graphAnim)cancelAnimationFrame(graphAnim);const t0=performance.now(),dur=opts.dur||(opts.fit?420:320);
   const step=now=>{const a=Math.min(1,(now-t0)/dur),e=a<.5?2*a*a:1-Math.pow(-2*a+2,2)/2;const cur={};
     if(animT){T.x=TA.x+(T1.x-TA.x)*e;T.y=TA.y+(T1.y-TA.y)*e;T.k=TA.k+(T1.k-TA.k)*e;applyT();}
-    Object.keys(pos).forEach(id=>{const s0=start[id],t1=pos[id];const c={x:s0.x+(t1.x-s0.x)*e,y:s0.y+(t1.y-s0.y)*e};cur[id]=c;const el=nodeEls[id];
+    Object.keys(pos).forEach(id=>{const s0=start[id],t1=pos[id];const c={x:s0.x+(t1.x-s0.x)*e,y:s0.y+(t1.y-s0.y)*e};if(t1.pt)c.pt=t1.pt;cur[id]=c;const el=nodeEls[id];
       if(el){el.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))el.style.opacity=a<1?String(e):'';}
       const bw=nodeBtnEls[id];if(bw){bw.setAttribute('transform','translate('+c.x+','+c.y+')');if(fresh.has(id))bw.style.opacity=a<1?String(e):'';}});
     edgeEls.forEach(x=>{if(cur[x.s]&&cur[x.t]){{const dd=edgeD(cur[x.s],cur[x.t],x.o1,x.o2,x.bow);x.el.setAttribute('d',dd);if(x.hit)x.hit.setAttribute('d',dd);placeBadge(x,cur[x.s],cur[x.t]);}if(fresh.has(x.s)||fresh.has(x.t)||freshE.has(x)){x.el.style.opacity=a<1?String(e):'';if(x.badge)x.badge.style.opacity=a<1?String(e):'';}}});
@@ -1167,7 +1184,7 @@ function renderGraph(fitAfter,centerId){
       R[h.id]={id:h.id,o:Math.min(...h.mem.map(n=>n.o))-0.5,members:h.mem,isGroup:true,header:true,depth:h.depth};reps.push(R[h.id]);pr[h.id]=[];
       layer[h.id]=Math.min(...h.targets.map(t=>layer[t]!=null?layer[t]:0))-1;});}
   const cols={};reps.forEach(r=>{(cols[layer[r.id]]=cols[layer[r.id]]||[]).push(r);});
-  pos={};lanes=[];designFrames=[];const Ls=Object.keys(cols).map(Number).sort((a,b)=>a-b);
+  pos={};lanes=[];laneMemo=new WeakMap();designFrames=[];const Ls=Object.keys(cols).map(Number).sort((a,b)=>a-b);
   const laneLevels=[];
   if(layoutMode==='time'){
     // Timeline layout: one row, every box in timeline order; an open group's box is an event just before its items
@@ -1220,8 +1237,8 @@ function renderGraph(fitAfter,centerId){
       // fold button there instead: the connector box is hidden and its lines end just under the button
       hiddenPorts=new Set();
       ports.forEach(r=>{const d=laneKey(r.members[0]).split('|')[0];const f=designFrames.find(x=>x.d===d);if(!f)return;
-        if(!f.folded&&d!==MAIN_DSG&&groups[d]){pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h+14};hiddenPorts.add(r.id);}
-        else pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h-NH/2};});}
+        if(!f.folded&&d!==MAIN_DSG&&groups[d]){pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h+14,pt:{dx:NW/2,dy:-14}};hiddenPorts.add(r.id);}
+        else pos[r.id]={x:f.x+f.w/2-NW/2,y:f.y+f.h-NH/2,pt:{dx:NW/2,dy:NH/2,r:NH/2}};});}
   }else
   Ls.forEach(L=>{const c=cols[L];c.forEach(r=>{const xs=pr[r.id].map(s=>pos[s]?pos[s].x+NW/2:null).filter(v=>v!=null);r.bc=xs.length?xs.reduce((a,b)=>a+b,0)/xs.length:null;});
     const withBc=c.filter(r=>r.bc!=null);const avg=withBc.length?withBc.reduce((a,r)=>a+r.bc,0)/withBc.length:0;
@@ -1367,7 +1384,7 @@ function renderGraph(fitAfter,centerId){
   // really comes from (a bent link counts from its bend), so links meeting at a box do not cross
   const port=new Map();if(routeHit)redges.forEach(e=>{const v=routeCache.port[ek2(e)];if(v)port.set(e,{o1:v[0],o2:v[1]});});else{const outs={},ins={};
     redges.forEach(e=>{const a=pos[e.s],b=pos[e.t];if(!a||!b||b.y<=a.y)return;(outs[e.s]=outs[e.s]||[]).push(e);(ins[e.t]=ins[e.t]||[]).push(e);});
-    const spread=(list,side)=>{const n=list.length;if(n<2)return;const step=Math.min(12,NW*0.5/(n-1));
+    const spread=(list,side)=>{const n=list.length;if(n<2)return;const box=pos[side==='o1'?list[0].s:list[0].t];if(box&&box.pt)return;const step=Math.min(12,NW*0.5/(n-1));
       list.forEach((e,i)=>{const o=(i-(n-1)/2)*step;const m=port.get(e)||{};m[side]=o;port.set(e,m);});};
     // order by the direction each link leaves/arrives from: sideways distance per unit of height, measured
     // to the other end (or to the bend of a bent link). A flatter link sits further out, so none cross.
@@ -1473,8 +1490,8 @@ function renderGraph(fitAfter,centerId){
     // action buttons on the right edge of the box (for now: suppress in the preview)
     const acts=[];const gidA=r.isGroup?r.id.slice(1):null;
     if(laneFold){}
-    else if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
-    else if(simOn&&!r.isGroup&&canItems&&r.members[0].tl!=null){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · breaks '+(it.fail.name||'a later feature')+', estimated':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
+    else if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo&&!groups[gidA].design)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
+    else if(simOn&&!r.isGroup&&canItems&&inTl(r.members[0])){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · breaks '+(it.fail.name||'a later feature')+', estimated':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
     const maxc=(nth?22:(gth?32:28))-acts.length*(r.isGroup?5:3);
     const icoN=r.isGroup?'group':iconName(r.members[0]);const icoS=gth?18:15;
     const tx=document.createElementNS(NS,'text');tx.setAttribute('x',tx0+icoS+5);tx.setAttribute('y',NH/2+4);tx.setAttribute('style','fill:'+(gsupp?'var(--supp);text-decoration:line-through':'var(--c-'+cat+')')+(r.isGroup?';font-weight:600':''));

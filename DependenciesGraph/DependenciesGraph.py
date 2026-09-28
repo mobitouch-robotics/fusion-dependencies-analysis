@@ -1470,7 +1470,7 @@ class Collector:
         stats = {'tests': 0, 'stopped_early': 0, 'items_not_computed': 0, 'proof_mismatch': 0, 'blocks': 0,
                  'bound_mismatch': 0, 'computed': 0,
                  'secs_marker0': 0.0, 'secs_suppress': 0.0, 'secs_walk': 0.0, 'secs_back': 0.0,
-                 'undo_tries': 0, 'undo_ok': 0, 'secs_back_undo': 0.0}
+                 'undo_tries': 0, 'undo_ok': 0, 'secs_back_undo': 0.0, 'refused_walked': 0}
         self._defer_on = bool(_settings().get('experimentDeferCompute'))
         self._undo_put_back = bool(_settings().get('experimentUndoPutBack'))
         last = {'t0': time.perf_counter()}      # when the latest test started
@@ -1505,6 +1505,20 @@ class Collector:
             stats['secs_suppress'] += t1 - t0
             self._note_cost(S[-1] + 1, pos, t1 - (ts if deferred else t0))
             st = self._state(S)
+            if not all(st[i][0] for i in S) and pos > S[-1] + 1:
+                # Fusion refuses a suppression that makes a computed feature fail (all or none). With the marker
+                # right after the item nothing after it is computed, so the suppression goes through; the walk
+                # forward then computes the rest, and what fails is recorded as broken - the result you get when
+                # you suppress it by hand in Fusion (which does not refuse)
+                pos = S[-1] + 1
+                marker_to(pos)
+                try:
+                    self._set_suppressed([tl.item(i) for i in S], True)
+                except Exception:
+                    pass
+                st = self._state(S)
+                if all(st[i][0] for i in S):
+                    stats['refused_walked'] += 1
             if not all(st[i][0] for i in S):
                 return False, fail_msg, [], [], []
             stats['tests'] += 1
@@ -1694,9 +1708,10 @@ class Collector:
                                  '(%s vs %s). Check the design, or revert to the saved version.' % (vol0, vol1))
         _mem_log('item test: %d runs, %d stopped early (proven), %d items not computed, %d proof mismatches, '
                  '%d direct jumps past unprovable items, %d stops chosen from known tails, %d blocks tested '
-                 '(%d bound mismatches)' %
+                 '(%d bound mismatches), %d refused at a later stop and walked from right after the item' %
                  (stats['tests'], stats['stopped_early'], stats['items_not_computed'], stats['proof_mismatch'],
-                  getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0), stats['blocks'], stats['bound_mismatch']))
+                  getattr(self, 'n_jumps', 0), getattr(self, 'n_cert_jumps', 0), stats['blocks'], stats['bound_mismatch'],
+                  stats['refused_walked']))
         _mem_log('item test time: first marker move %.1f s, suppress %.1f s, walk forward %.1f s, put back %.1f s%s%s; '
                  'slowest items: %s' % (stats['secs_marker0'], stats['secs_suppress'], stats['secs_walk'],
                                         stats['secs_back'], ' (deferred compute)' if self._defer_on else '',
@@ -1879,6 +1894,16 @@ class Collector:
             _safe(lambda: nd.close(False))
             raise RuntimeError('reopening %s to free memory opened a different file or version' % name)
         des = adsk.fusion.Design.cast(nd.products.itemByProductType('DesignProductType'))
+        cr = getattr(self, 'config_row', None)
+        if cr:
+            # a configuration: the configured design opens with its default row
+            table = _safe(lambda: des.configurationTopTable)
+            rows = _safe(lambda: [table.rows.item(k) for k in range(table.rows.count)]) or []
+            row = next((r for r in rows if _safe(lambda: r.name) == cr), None)
+            if row is None or not _safe(lambda: row.activate() is not False, False):
+                _safe(lambda: nd.close(False))
+                raise RuntimeError('reopening %s to free memory: could not activate configuration %s' % (name, cr))
+            adsk.doEvents()
         self.hidden_doc = nd
         self.des, self.root, self.tl = des, des.rootComponent, des.timeline
         self.expand_groups()
@@ -2162,6 +2187,17 @@ class Collector:
             except Exception as ex:
                 # Fusion reports downstream compute failures as an error; see below.
                 fail_msg = str(ex)
+            if not _safe(lambda: g.isSuppressed) and gpos > min(inside):
+                # refused because a computed feature fails: with the marker before the group nothing after it is
+                # computed, so it goes through, and the walk records what fails (as when you suppress it by hand)
+                gpos = min(inside)
+                self._set_test_marker(gpos)
+                try:
+                    self._set_suppressed([g], True)
+                except Exception:
+                    pass
+                if _safe(lambda: g.isSuppressed):
+                    self.g_refused_walked = getattr(self, 'g_refused_walked', 0) + 1
             if not _safe(lambda: g.isSuppressed):
                 # Fusion refused the group as a whole (a later feature failed to compute).
                 # Suppress its items one by one instead, which is what happens in the UI.
@@ -2769,6 +2805,31 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             t = _safe(lambda: col.occ_node(occ)) or _safe(lambda: col.comp_ref(occ))
             link(sd, 'insert', t, [])
 
+    def config_row(doc, dfile, name):
+        """When the linked file is a configuration and Fusion opened its configured design: the row of that
+        configuration, activated (the document is closed without saving afterwards). Matched by the row id the
+        file carries when this Fusion has it, else by name. None when doc is not a configured design or no row
+        matches."""
+        des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
+        if des is None or not _safe(lambda: des.isConfiguredDesign, False):
+            return None
+        table = _safe(lambda: des.configurationTopTable)
+        rows = _safe(lambda: [table.rows.item(k) for k in range(table.rows.count)]) or []
+        rid = _safe(lambda: dfile.configurationRowId)
+        base = re.sub(r'\s+v\d+$', '', name or '').strip()
+        row = next((r for r in rows if rid and _safe(lambda: r.id) == rid), None)
+        row = row or next((r for r in rows if (_safe(lambda: r.name, '') or '').strip() == base), None)
+        if row is None:
+            log('configured design %s: no row for %s (rows: %s)' % (
+                _safe(lambda: doc.name, '?'), name, ', '.join(_safe(lambda: r.name, '?') for r in rows[:30])))
+            return None
+        if not _safe(lambda: row.activate() is not False, False):
+            log('configured design %s: could not activate row %s' % (_safe(lambda: doc.name, '?'), row.name))
+            return None
+        adsk.doEvents()
+        log('configuration %s of %s activated' % (_safe(lambda: row.name, '?'), _safe(lambda: doc.name, '?')))
+        return row
+
     def open_entry(e):
         """Opens the version the link uses in its own tab and switches to it, so you can see what is being worked
         on (the progress panel stays on top); the tab is closed when the design is done. mine=False: Fusion handed
@@ -2793,6 +2854,16 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         # make sure Fusion handed back exactly that file and version (never another file with the same name)
         got = _safe(lambda: doc.dataFile)
         got_id, got_ver = _safe(lambda: got.id), _safe(lambda: got.versionNumber)
+        if got_id != e['key'] and mine:
+            # a configuration (a row of a configured design): its file lives in Fusion's hidden CONFIG project, and
+            # Fusion opens the configured design itself - activate that row in it
+            row = config_row(doc, dfile, e['name'])
+            if row is not None:
+                e['loc'] = 'configuration %s of %s (%s)' % (_safe(lambda: row.name, '?'), _safe(lambda: got.name, '?'),
+                                                            _file_location(got) or '?')
+                e['config_row'] = _safe(lambda: row.name)
+                des = _safe(lambda: adsk.fusion.Design.cast(doc.products.itemByProductType('DesignProductType')))
+                return doc, mine, des
         if got_id != e['key'] or (e['read_ver'] is not None and got_ver is not None and got_ver != e['read_ver']
                                   and mine):
             if mine:
@@ -2886,6 +2957,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             sc.cancelled = cancelled
             sc.doc = None                        # hidden: the main design stays the active one
             sc.no_roll = not mine                # a design the user has open is read as it is
+            sc.config_row = e.get('config_row')  # a configuration: its row is activated again when reopened
             e['col'] = sc
             if progress:
                 progress('Reading ' + name, n_done, n_done + len(queue) + 1)
@@ -3062,6 +3134,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 if g.get(f): ng[f] = pre(g[f])
             for f in ('fail', 'empty'):
                 if f in g: ng[f] = g[f]
+            if (g.get('fail') or {}).get('node'):
+                ng['fail'] = dict(g['fail'], node=sp + g['fail']['node'])    # the failing feature, in this design
             if skipped_groups and not getattr(sc, 'gtested', False):
                 ng['gskip'] = True       # not tested on its own: the page adds up its items' results
             main.groups.append(ng)
@@ -3072,6 +3146,8 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
             m['id'] = sp + n['id']
             for f in ('dsupp', 'dbreak', 'dwarn'):
                 if n.get(f): m[f] = pre(n[f])
+            if (n.get('fail') or {}).get('node'):
+                m['fail'] = dict(n['fail'], node=sp + n['fail']['node'])     # the failing feature, in this design
             m['o'] = base + 5 + (n['o'] if n['o'] is not None and n['o'] >= 0 else 0) + (0 if n['o'] is None or n['o'] >= 0 else n['o'] * 0.001)
             m['g'] = [gid] + [sp + x for x in (n.get('g') or [])]
             m['dsg'] = src['name']

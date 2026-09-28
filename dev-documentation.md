@@ -300,7 +300,17 @@ For every item that is not suppressed in the design:
 * `dsupp`: items Fusion suppresses together with it,
 * `dbreak`: items that fail to compute (error) that did not before,
 * `dwarn`: items with new warnings,
-* `fail`: Fusion refused to suppress it (a later feature fails); `_parse_fail` extracts the feature name.
+* `fail`: Fusion refused to suppress it even with the marker right after it; `_parse_fail` extracts the
+  feature name.
+
+**Refused suppressions.** `Design.setSuppressed` is all or none: it refuses (and rolls back) a suppression that
+makes an already computed feature fail. The walk puts the marker at the first possible stop before suppressing,
+so features between the item and that stop are computed and can make Fusion refuse. Then the suppression is tried
+again with the marker right after the item (nothing after it computed, so nothing can fail), and the walk forward
+computes the rest: marker moves are never refused, the failing features simply show errors and are recorded in
+`dbreak`. That is exactly what suppressing the item by hand in Fusion shows (the UI does not refuse). The group
+test does the same with the marker before the group. Counted in the run log ("refused at a later stop and
+walked"). Only when even that is refused does the item or group get `fail`.
 
 Groups get the same fields from the whole groups test. After the item test, `suppress` edges are added from
 each item to the items it takes down, keeping only the direct ones (transitive reduction over `desc`).
@@ -405,6 +415,11 @@ its node ids and a group `X<k>` that becomes its frame on the page.
 2. Otherwise `open_entry`: opens exactly the version the link uses, in its own visible tab, and activates it so
    you see what is worked on. It verifies that Fusion opened that file id and version; Fusion can hand back a
    different file (e.g. a same-named design elsewhere), which is then left out with a warning.
+   **Configurations**: a row of a configured design is a file of its own in Fusion's hidden "System Project -
+   CONFIG", but opening it opens the configured design itself (a different file id). `config_row` then finds
+   the row (by the file's `configurationRowId` where this Fusion has it, else by name) and activates it; the design
+   is read and tested in that configuration and closed without saving. `_memory_refresh` activates the row again
+   after reopening (`config_row` on the collector).
 3. `mine = False` when Fusion handed back a document the user already has open: that one is read as it is (not
    rolled, groups not expanded) and never tested.
 4. A non-parametric design (no timeline, e.g. a library part) → `_PlainDesign`: only its frame, connector and
@@ -423,7 +438,9 @@ its node ids and a group `X<k>` that becomes its frame on the page.
   parameters like `Width_Ref` → `Width`).
 * Deepest designs first; each gets a group (frame) with `design: True`, its picture and `via` (derive/insert).
   Node ids and group references are prefixed; `o` is shifted (`-1e6 + rank * 1e4`) so linked designs come before
-  the main design; `tl` is set to `None` (no preview, no Select in Fusion), the original index kept as `stl`.
+  the main design; `tl` is set to `None` (no Select in Fusion: not in this design's timeline), the original
+  index kept as `stl`; the page previews suppressions of any item with `tl` or `stl` (`inTl`). A `fail.node`
+  reference gets the design's prefix too.
   User parameters of a linked design only when something uses them.
 * Each design gets a **connector** node `x<k>:@` (`type: DerivedDesign`, `port: True`): the items handed over lead
   into it, and it leads into the Derive feature or insert item(s) that use it (`derive` edges).
@@ -541,7 +558,11 @@ Main parts, in file order:
   An item uses its recorded `dsupp`/`dbreak`/`dwarn`; a group uses its own test result, or with none (not tested,
   `gskip`) adds up its items' results and marks them *estimated*; untested items follow the links downstream
   (estimated). Items/groups Fusion refused (`fail`) are forced: the named feature is shown broken, what depends on
-  it may fail (estimated).
+  it may fail (estimated). Items of linked designs can be previewed like the design's own (`inTl`: `tl` or `stl`);
+  whole linked designs (frames) cannot.
+* **Hidden connectors**: an expanded linked design's connector box is hidden and its fold button stands in for it.
+  The box gets `pt` (the button's centre, relative to the box), and `edgeSegs`/`edgeEnd` treat it as a point:
+  links end on the top of the button and leave from its bottom, without spreading their ends.
 * **Group level**, **back/forward history** of selections and previews (restoring zoom and position).
 * **Select in Fusion** client.
 * **Graph** (`renderGraph`, the largest part): layouts *Depth* (rows by dependency depth), *Groups* (`lanes`: one
@@ -639,8 +660,9 @@ Known issues:
   it works, but it is confusing.
 * Linked-design node ids (`x<k>:`) depend on the order designs are found, so pages from runs with different linked
   designs cannot be compared by id.
-* Fusion sometimes opens a different file for a link (seen with bearings from a CONFIG project); the file check
-  leaves those designs out with a warning.
+* Configurations are matched to their row by `configurationRowId` or by name; a configuration whose row name
+  differs from its file name (and no row id available) is still left out with a warning. The row list is in
+  `linked_designs_log.txt`.
 
 ## 21. Working on the code
 
