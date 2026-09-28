@@ -685,7 +685,7 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
   a "Replace" button, found through System Events, is clicked when the file is already there). The Safari tour
   never fits the whole assembly once a linked design is open (too heavy for the video): `view_design` uses Fit only
   with a selection (it fits the selection), else the page's `dgZoomToDesign` hook zooms to the tour design's frame
-  (its width, from its top); `dgFocus` brings a box that is too small or off screen into view. The finished page is recognised by the first Safari window that opens
+  (its width, from its top); `dgFocus` brings a box that is too small or off screen into view. `dgDesignsOnly(keep)` sets the folds in one render (every group open, only that linked design unfolded): doing it with Expand all and one click per design re-rendered the whole assembly each time (33 s in Chromium, and Safari stalled). The finished page is recognised by the first Safari window that opens
   during the run (Safari's windows must be closed before it; the script warns and waits up to 30 s for that; the
   pages saved while the run goes on are not opened). `--skip-generation` (and `--step` with no page open) open the
   newest page, including the one the add-in records in `last_page.json` (next to the cache folder). Safari (`--list` numbers the steps, `--step N` starts at one): getting around,

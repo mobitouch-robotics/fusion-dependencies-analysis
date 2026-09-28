@@ -1625,6 +1625,10 @@ function zoomToRect(x0,y0,x1,y1,dur){const gp=$('gpanel');const LP=(gp&&gp.style
 // for scripts driving the page (the demo recorder): zoom to a design's frame (its frame id, 'X8'), or to a box (data-id)
 window.dgZoomToDesign=(d,dur)=>{const f=designFrames.find(f=>f.d===d);if(!f)return false;   // its width, from its top (a tall frame fitted whole is too small to read)
   const r=(svg.clientHeight||600)/Math.max(1,svg.clientWidth||800);zoomToRect(f.x,f.y,f.x+f.w,f.y+Math.min(f.h,f.w*r),dur||600);return true;};
+// every timeline group open, every linked design folded except `keep` (a frame id or ''), in one render (clicking Expand
+// all and then folding each design renders the whole assembly again and again)
+window.dgDesignsOnly=keep=>{collapseEverything=false;collapsedNodes.clear();selShut.clear();expanded.clear();
+  Object.keys(groups).forEach(g=>{if(!groups[g].design||g===keep)expanded.add(g);});if(view==='graph')renderGraph(true);else renderTree();return true;};
 window.dgFocus=(id,dur)=>{if(!pos[id])return false;focusOn([id],dur||600);return true;};
 // first view: like Fit, but never zoomed out further than MIN_START_ZOOM (top of the graph, centred)
 const MIN_START_ZOOM=0.55;

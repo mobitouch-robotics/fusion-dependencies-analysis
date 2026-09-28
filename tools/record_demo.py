@@ -621,7 +621,8 @@ RESET_JS = """(()=>{
 
 # Every timeline group open, every linked design folded except `keep` (a frame id, or '' for none): the page as it
 # opens ('folded'), or with the tour's design open ('clear', 'item'). Instant, through the page's own buttons.
-DESIGNS_JS = """((keep)=>{const q=s=>document.querySelector(s);if(q('#expAll'))q('#expAll').click();
+DESIGNS_JS = """((keep)=>{if(window.dgDesignsOnly)return window.dgDesignsOnly(keep)?'1':'';
+  const q=s=>document.querySelector(s);if(q('#expAll'))q('#expAll').click();
   for(let k=0;k<80;k++){const b=[...document.querySelectorAll('#graph g.ctog[data-d]')].find(b=>b.dataset.d!==keep);
     if(!b)break;b.dispatchEvent(new MouseEvent('click',{bubbles:true}));}
   return '1';})(%s)"""
@@ -667,7 +668,7 @@ def step_linked():
     wait(1.0); hush()
     say("Let's open the J2 arm, the design this tour looks at.")
     zoom_on(unfold_btn(), 18, 1.2); press(unfold_btn(), 0.6, 2.0)
-    designs_state(True); view_design(); hush()
+    view_design(); hush()
     say("It opens with its timeline groups, each a block inside its frame, showing its features. "
         "The minus button on the frame folds it again.")
     hover(fold_btn(), 1.2, 2.0); hush()
