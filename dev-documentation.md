@@ -466,7 +466,7 @@ copied in.
 * `reuse: false` (dialog: *Reuse earlier results* unticked) ignores the cache when loading; results are still
   saved.
 * Every decision is written to `run_log.txt` (`cache <kind> v<version> (<file id>): ...`): none saved, saved by an
-  older add-in version, not enough for this run (which test is missing), saved, not saved and why (experiments on,
+  older add-in version, not enough for this run (which test is missing), saved, not saved and why (
   a more complete result already saved, the design had to be put back the slow way, linked designs failed, write
   error). 
 
