@@ -406,25 +406,24 @@ def last_page(since=0):
     p = d.get('path')
     return p if p and d.get('time', 0) >= since - 5 and os.path.exists(p) else None
 
-def safari_url():
-    if front_app().lower() != 'com.apple.safari': return ''
-    return osa('tell application "Safari" to return URL of current tab of front window', True).strip()
+def safari_windows():
+    """Number of open Safari windows; 0 when Safari is not running (never starts it)."""
+    if osa('application "Safari" is running', True) != 'true': return 0
+    try: return int(osa('tell application "Safari" to count windows', True) or 0)
+    except ValueError: return 0
 
 def finished_page(since):
-    """The generated page once the add-in has finished it: the path it recorded in last_page.json (written after
-    `since`), shown in Safari - opened there when the default browser is another one or its tab is not in front.
-    The pages written while the run goes on are not recorded, so they do not count."""
-    p = last_page(since)
-    if not p: return None
-    import pathlib
-    from urllib.parse import unquote, urlparse
-    url = pathlib.Path(p).as_uri()
-    wait(3)          # let the browser open it first
-    cur = safari_url()
-    if not (cur.startswith('file://') and os.path.realpath(unquote(urlparse(cur).path)) == os.path.realpath(p)):
-        subprocess.run(['open', '-a', 'Safari', p]); wait(3)
+    """The generated page once the add-in has finished it: the first Safari window that opens during the run
+    (close Safari's windows before the run - the pages saved while it goes on are not opened). Returns the URL of
+    that window's tab once it has loaded, with Safari brought to the front."""
+    if not safari_windows(): return None
+    url = ''
+    for _ in range(15):          # the window opens before its page has loaded
+        url = osa('tell application "Safari" to return URL of current tab of front window', True).strip()
+        if url and url != 'missing value' and page_ready(): break
+        wait(1)
     activate('Safari')
-    return url
+    return url or 'a new Safari window'
 
 def graph_tabs():
     """URLs of all open Safari tabs showing a generated page."""
@@ -507,6 +506,11 @@ def fusion_part():
     go(fp('full_text'), 1.2, False); hush()
     say("Quick estimate takes seconds, but only reads what each feature references, so it can miss some links.")
     go(fp('quick_text'), 0.8, False); hush()
+    if not DRY and safari_windows():
+        print('  (warning: Safari has %d window(s) open; the finished page is recognised by the first Safari window '
+              'that opens, so close them now)' % safari_windows())
+        t_w = time.time()
+        while safari_windows() and time.time() - t_w < 30: wait(1)
     say("Let's run the full analysis.")
     t_start = time.time()
     go(fp('full_btn'), 1.1); wait(3.0); hush()
@@ -525,7 +529,7 @@ def fusion_part():
         if u:
             print('Page opened:', u); break
     else:
-        raise SystemExit('The add-in did not finish a page in time (%s not updated).' % LAST_PAGE)
+        raise SystemExit('No Safari window opened in time.')
     wait(4)
     wait(3)
 
