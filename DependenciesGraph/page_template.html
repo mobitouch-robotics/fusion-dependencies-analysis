@@ -33,7 +33,7 @@
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
 header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;padding:10px 14px;border-bottom:1px solid var(--border);background:var(--panel)}
 header h1{font-size:16px;font-weight:600;margin:0;white-space:nowrap}
-header .hl{display:flex;flex-direction:column;min-width:0;margin-right:6px}
+header .hl{display:flex;flex-direction:column;min-width:0;margin-right:18px}
 header .hl{max-width:300px}header .hl .meta{font-size:11px;line-height:1.3}
 .seg{display:inline-flex;align-items:stretch;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--panel)}
 .seg .cap{font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 8px;display:flex;align-items:center;background:var(--panel2);border-right:1px solid var(--border)}
@@ -50,7 +50,6 @@ header .hl{max-width:300px}header .hl .meta{font-size:11px;line-height:1.3}
 .fbtns{display:flex;gap:6px;margin:8px 0 4px}.fbtns button{padding:2px 10px;font-size:12px}.fnote{font-size:11px;margin-top:10px}
 svg .edge.bridge{stroke-dasharray:1.5 4}
 #kinds{display:flex;flex-direction:column}
-.gtools .sep{width:1px;align-self:stretch;background:var(--border);margin:0 2px}
 header .meta{color:var(--muted);font-size:12px}
 .ctrl{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 button,select,input[type=search]{font:inherit;font-size:13px;color:var(--text);background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:4px 9px}
@@ -141,9 +140,6 @@ body.simon #simBar{display:flex}
 #details .msg{font-size:12px;color:var(--err);white-space:pre-wrap;margin-top:6px}
 .legend{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .hint{font-size:12px;color:var(--muted);margin-top:10px}
-.gtools{position:absolute;right:10px;top:10px;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;align-items:center;background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:4px 6px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-.gtools button{background:var(--panel)}
-.gtools button.on{background:var(--accent);color:var(--panel);border-color:var(--accent)}
 img.thumb{width:40px;height:30px;object-fit:contain;border-radius:4px;border:1px solid var(--border);background:var(--panel2);flex:none;cursor:zoom-in}
 body.nothumbs img.thumb{display:none}
 #details img.big{display:block;width:100%;max-height:420px;object-fit:contain;border-radius:6px;border:1px solid var(--border);background:var(--panel2);margin:8px auto 4px}
@@ -265,7 +261,10 @@ svg .pbpulse{fill:none;stroke:var(--up);stroke-width:4;pointer-events:none;vecto
 #pbInfo{font-size:13px;padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px;min-width:120px}
 #pbTrack{position:absolute;left:0;right:0;bottom:0;height:3px;background:var(--panel2)}#pbProg{height:100%;width:0;background:var(--up);transition:width .3s ease}
 #pbStart:disabled{opacity:.4;cursor:default}
-body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-color:var(--accent)}
+/* the graph's own buttons in the top bar, with small line icons */
+.bi{width:14px;height:14px;vertical-align:-2px;margin-right:6px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}.bi.fill{fill:currentColor;stroke:none}
+#graphSeg button{display:inline-flex;align-items:center;white-space:nowrap}
+body.pbon #pbStart{background:var(--accent);color:var(--panel);border-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -274,6 +273,7 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
   <div class="seg"><button id="hBack" title="Back (Alt+←)">‹</button><button id="hNext" title="Forward (Alt+→)">›</button></div>
   <div class="seg"><span class="cap">View</span><button id="vGraph">Graph</button><button id="vTree" class="on">Tree</button></div>
   <div class="seg" id="layoutSeg"><span class="cap">Layout</span><button id="layDeps" title="Boxes arranged by dependency depth">Depth</button><button id="laneBtn" class="on" title="Boxes arranged by timeline group: one block per group, in a grid">Groups</button><button id="compBtn" title="Boxes arranged by component: one block per component, in a grid">Components</button><button id="layTime" title="Every item in timeline order, left to right; open timeline groups appear as events just before their items">Timeline</button></div>
+  <div class="seg" id="graphSeg"><button id="expAll" title="Expand all timeline groups"><svg class="bi" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5l4-4 4 4M4 9.5l4 4 4-4"/></svg>Expand all</button><button id="colAll" title="Collapse all timeline groups"><svg class="bi" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5l4 4 4-4M4 13.5l4-4 4 4"/></svg>Collapse all</button><button id="pbStart" title="Play the whole history of the design (P)"><svg class="bi fill" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 3l8 5-8 5z"/></svg>Play</button><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it"><svg class="bi" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>Fit</button></div>
   <div class="seg" id="treeCtrl"><span class="cap">Tree</span>
     <select id="treeMode">
       <option value="timeline">By timeline group</option>
@@ -295,9 +295,6 @@ body.pbon .gtools #pbStart{background:var(--accent);color:var(--panel);border-co
     <div id="graphwrap">
       <svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs>
       </defs><g id="vp"></g></svg>
-      <div class="gtools">
-        <button id="expAll" title="Expand all timeline groups">Expand all</button><button id="colAll" title="Collapse all timeline groups">Collapse all</button><span class="sep"></span><button id="pbStart" title="Play the whole history of the design (P)">▶ Play</button><span class="sep"></span><button id="fit" title="Fit the whole graph, or the selection and everything highlighted with it">Fit</button>
-      </div>
       <div id="pbCard"><img alt=""><div class="cap"></div></div><div id="pbBar"><button id="pbPrev" title="Back one step (←)">⏮</button><button id="pbPlay" title="Pause (Space)">❚❚</button><button id="pbNext" title="Next step (→)">⏭</button><button id="pbSpeed" title="Playback speed">1×</button><span id="pbInfo"></span><button id="pbStop" title="Stop (Esc)">■ Stop</button><div id="pbTrack"><div id="pbProg"></div></div></div>
     </div>
   </div>
@@ -1898,7 +1895,13 @@ function pbDash(d,on,w){const L=d.ll;if(!d.dotted)return on+' '+(L+10);const ste
 function pbDropDots(){PB.dots.forEach(d=>{d.el.remove();const L=d.ll,w=4.5/T.k;d.lt.setAttribute('stroke-dasharray',pbDash(d,L,w));d.lg.setAttribute('stroke-dasharray',pbDash(d,L,w));PB.fading.push({el:d.lit,t0:PB.vt});});PB.dots=[];}
 function pbLanePulse(lid){const L=laneEls[lid];if(!L)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',14);
   r.style.stroke=L.col;PB.ov.appendChild(r);PB.pulses.push({el:r,lane:L.l,t0:PB.vt});}
-function pbPulse(id){const p=pos[id];if(!p)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');r.setAttribute('rx',9);PB.ov.appendChild(r);PB.pulses.push({el:r,id,t0:PB.vt});}
+// the ring around an item as it is built, in the item's own colour; a linked design's connector (the whole part:
+// a point on its frame) rings the design's whole frame instead
+function pbPulse(id){const p=pos[id];if(!p)return;const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('class','pbpulse');
+  const n=byId[id];if(p.pt&&n&&n.port){const f=designFrames.find(x=>x.d===n.g[0]);
+    if(f){r.setAttribute('rx',18);r.style.stroke=gColor[f.d]||'var(--up)';PB.ov.appendChild(r);PB.pulses.push({el:r,lane:{x:f.x,w:f.w,y0:f.y,y1:f.y+f.h},t0:PB.vt});return;}}
+  const bx=nodeEls[id]&&nodeEls[id].querySelector(':scope > rect');const col=n?'var(--c-'+n.cat+')':bx&&bx.getAttribute('stroke');if(col)r.style.stroke=col;
+  r.setAttribute('rx',9);PB.ov.appendChild(r);PB.pulses.push({el:r,id,t0:PB.vt});}
 // finish the running step at once (Next)
 // the last step whose item is built (-1: none yet)
 function pbLastShown(){if(!PB)return -1;const k=Math.min(PB.k,PB.order.length-1);if(k>=0&&PB.shown.has(PB.order[k]))return k;return k-1;}
@@ -2060,7 +2063,7 @@ function renderLegend(){const b=$('legendBody');if(!b)return;
     'Why the lower item uses the upper one. All kinds are always shown, except "Same body, later" (Display menu).');
   h+=sec('History playback',[
     row(sv('<path class="pblit base" d="M4,15 L60,15" style="stroke-width:3"/><path class="pblit trail" d="M4,15 L36,15" style="stroke-width:4.5"/><circle cx="36" cy="15" r="9" class="pbhalo"/><circle cx="36" cy="15" r="5" class="pbcore"/>'),'Blue dot and gold line','Travels from items already built to the next one; the link it follows lights up in gold.'),
-    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="0" y="1" width="70" height="28" rx="8" class="pbpulse" style="stroke-width:2.5"/>'}),'Blue ring','An item appears (fades in to full colour). An open timeline group box appears just before its first item. In the Groups and Components layouts a whole block fades in, with a ring in its colour around it, when its first item is built.'),
+    row(box('var(--c-solid-bg)','var(--c-solid)',{extra:'<rect x="0" y="1" width="70" height="28" rx="8" class="pbpulse" style="stroke-width:2.5;stroke:var(--c-solid)"/>'}),'Ring in the item\'s colour','An item appears (fades in to full colour), ringed in the colour of its kind; a linked design\'s connector (the whole part) rings the design\'s whole frame. An open timeline group box appears just before its first item. In the Groups and Components layouts a whole block fades in, with a ring in its colour around it, when its first item is built.'),
     row(sv('<rect x="10" y="2" width="50" height="26" rx="4" fill="var(--panel)" stroke="var(--border)"/><rect x="14" y="5" width="42" height="14" rx="2" fill="var(--panel2)"/><rect x="14" y="21" width="16" height="5" rx="2" fill="var(--c-solid-bg)"/>'),'Card (bottom right)','Thumbnail, type and name of the item being built.'),
   ],'▶ Play (or P) with an item selected plays how it was built; with a group selected, how the group was built; with nothing selected, the whole history. Space pauses, → / ← step forward / back, Esc stops.');
   h+=sec('Header, panels and tree',[
@@ -2084,7 +2087,7 @@ function setLegend(open){if(open)showTab('legend');else if(sideTab==='legend')sh
 document.querySelectorAll('#sideTabs .stab').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 $('sideClose').onclick=()=>sideOpen(document.body.classList.contains('sidemin'));
 {const t=sideStore('tab');if(t&&document.querySelector('#sideTabs .stab[data-tab="'+t+'"]')&&t!=='sel')showTab(t,true);if(sideStore('side')==='0')sideOpen(false);}
-function setView(v){view=v;$('vTree').classList.toggle('on',v==='tree');$('vGraph').classList.toggle('on',v==='graph');$('tree').style.display=v==='tree'?'':'none';$('graphwrap').style.display=v==='graph'?'block':'none';$('treeCtrl').style.display=v==='tree'?'':'none';$('layoutSeg').style.display=v==='graph'?'':'none';renderDetails();if(v==='tree')renderTree();setTimeout(updateSearchNav,0);}
+function setView(v){view=v;$('vTree').classList.toggle('on',v==='tree');$('vGraph').classList.toggle('on',v==='graph');$('tree').style.display=v==='tree'?'':'none';$('graphwrap').style.display=v==='graph'?'block':'none';$('treeCtrl').style.display=v==='tree'?'':'none';$('layoutSeg').style.display=v==='graph'?'':'none';$('graphSeg').style.display=v==='graph'?'':'none';renderDetails();if(v==='tree')renderTree();setTimeout(updateSearchNav,0);}
 function refresh(){buildAdj();renderDetails();if(view==='tree')renderTree();else renderGraph(false);}
 $('vTree').onclick=()=>setView('tree');
 $('vGraph').onclick=()=>{setView('graph');renderGraph(true);};

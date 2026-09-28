@@ -632,6 +632,7 @@ Main parts, in file order:
   button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
   suppressible as a group in the preview (not a timeline group).
 * **Hover dims the rest**: while a box is hovered (`svg.nhov`), boxes other than it and its direct parents and children (`nhc`, `nhr`) and the original links are dimmed; the highlighted links are copies drawn on top. The route preview does the same (`rpvon`).
+* **Top bar**: besides the view, layout and history controls, the graph's own buttons (`#graphSeg`: Expand all, Collapse all, Play, Fit, with line icons `.bi`), shown in the Graph view only.
 * **Side panel** (`#side`): tabs *Selection* (`#details`), *Groups* (`#gpList`), *Filter* (`#filterBox`),
   *Display* (`#dispBox`) and *Legend* (`#legend`) - the former floating group list, popovers and legend overlay.
   `showTab(t)`, `sideOpen(open)`; `body.sidemin` folds it to a strip of vertical tabs. The open tab and the
@@ -681,7 +682,7 @@ Main parts, in file order:
   related boxes together, hover (gold), routes between two items, link routing that bends links to avoid lying on
   top of each other and orders link ends on boxes to reduce crossings (cached while boxes stay in place), and
   animated re-rendering (`animatedRerender`).
-* **History playback**: dots travel along links to each next item in timeline order; the camera follows.
+* **History playback**: dots travel along links to each next item in timeline order; the camera follows. The ring around an item being built (`pbPulse`) has the colour of its kind; a linked design's connector rings the design's whole frame (like a block's ring, `pbLanePulse`).
 * **Legend**.
 
 ## 16. Data format
