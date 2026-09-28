@@ -1097,7 +1097,12 @@ function routePreview(items,on,tt){routePreviewClear();if(!on||PB||drag||!select
   return RT;}
 function setRoute(items){routePreviewClear();saveView();route=items?{sel:selected,items}:null;setTimeout(pushHist,0);renderDetails();
   if(view==='graph'&&Object.keys(pos).length)animatedRerender(()=>{},focus?{fit:'fit'}:{dur:450});}
-let searchOpen=new Set();let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
+let searchOpen=new Set();
+// the selection's whole tree is shown: every group or linked design holding part of it is open while it is selected
+// (selOpen), except the ones folded by hand during that selection (selShut, forgotten when the selection changes)
+let selOpen=new Set(),selShut=new Set(),selKey='';
+const isOpen=g=>expanded.has(g)||searchOpen.has(g)||(selOpen.has(g)&&!selShut.has(g));
+let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
 // block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
 const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
 const compOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component')compOf[e.t]=e.s;});
@@ -1120,8 +1125,8 @@ function laneKey(n){if(!n)return null;
   if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
 // while searching, the fold (−) buttons are switched off; unfolding (+) still works
 function offFold(bt,tt){bt.classList.add('off');tt.textContent='Clear the search to fold';bt.addEventListener('click',ev=>{ev.stopImmediatePropagation();ev.stopPropagation();});}
-function rep(n){const gp=n.g||[];for(const g of gp){if(!expanded.has(g)&&!searchOpen.has(g))return 'g'+g;}
-  const ps=pseudoOf(n);if(ps&&groups[ps]&&!expanded.has(ps)&&!searchOpen.has(ps))return 'g'+ps;return n.id;}
+function rep(n){const gp=n.g||[];for(const g of gp){if(!isOpen(g))return 'g'+g;}
+  const ps=pseudoOf(n);if(ps&&groups[ps]&&!isOpen(ps))return 'g'+ps;return n.id;}
 let NW=210,NH=26;const XG=18,YG=64;// top-down: XG = gap between boxes in a row, YG = gap between rows
 function renderGraph(fitAfter,centerId){
   if(PB)stopPlay();   // a re-render replaces the boxes the playback is animating
@@ -1137,6 +1142,13 @@ function renderGraph(fitAfter,centerId){
   else if(focus&&selected){keep=new Set([selected,...relOf(selected,'up'),...relOf(selected,'down')]);}
   else if(focus&&selGroup&&groups[selGroup]){const mem=groupMembers(selGroup).map(n=>n.id);const g=groups[selGroup];
     keep=new Set([...mem,...(relShow.dn&&relShow.dnAll&&g.dsupp?g.dsupp:mem.flatMap(i=>[...relOf(i,'down')])),...mem.flatMap(i=>[...relOf(i,'up')])]);}
+  {const ids=multi.length>1?multi.slice():selected?[selected]:[];let tree=null;
+    if(selected&&RT)tree=new Set(RT.items);
+    else if(ids.length)tree=new Set(ids.flatMap(i=>[i,...relOf(i,'up'),...relOf(i,'down')]));
+    else if(selGroup&&groups[selGroup]&&!groups[selGroup].design){const mem=groupMembers(selGroup).map(n=>n.id);
+      tree=new Set([...mem,...mem.flatMap(i=>[...relOf(i,'down'),...relOf(i,'up')])]);}
+    const key=ids.join(',')+'|'+(selGroup||'');if(key!==selKey){selKey=key;selShut.clear();}
+    selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>selOpen.add(g));const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
   let reps=Object.values(R).sort((a,b)=>a.o-b.o);
@@ -1177,7 +1189,7 @@ function renderGraph(fitAfter,centerId){
   const pr={};reps.forEach(r=>pr[r.id]=[]);redges.forEach(e=>{pr[e.t].push(e.s);});
   const layer={};reps.forEach(r=>{let l=0;pr[r.id].forEach(s=>{if(R[s].o<r.o&&layer[s]!=null)l=Math.max(l,layer[s]+1);});layer[r.id]=l;});
   // expanded timeline groups keep a header box above their items, linked to the group's first items
-  const headers=[];const openG=g=>expanded.has(g)||searchOpen.has(g);
+  const headers=[];const openG=isOpen;
   // group boxes for expanded groups only in Groups mode; Items mode is a pure item graph
   if(!isLanes()){const repSet=new Set(reps.map(r=>r.id));   // Depth layout: every open timeline group has a header box above its items
     D.groups.forEach(g=>{if(!openG(g.id))return;let p=g.parent,ok=true,guard=0;while(p&&guard++<20){if(!openG(p)){ok=false;break;}p=groups[p]?groups[p].parent:null;}if(!ok)return;
@@ -1335,7 +1347,7 @@ function renderGraph(fitAfter,centerId){
         const c=document.createElementNS(NS,'circle');c.setAttribute('r',9);c.setAttribute('class','ctogc');const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent='−';
         const tt=document.createElementNS(NS,'title');tt.textContent='Fold this design into one box';bt.append(c,t,tt);if(search)offFold(bt,tt);
         bt.addEventListener('mousedown',ev=>ev.stopPropagation());
-        bt.addEventListener('click',ev=>{ev.stopPropagation();const gk=f.d;animatedRerender(()=>{expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});},{});});
+        bt.addEventListener('click',ev=>{ev.stopPropagation();const gk=f.d;animatedRerender(()=>{selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});},{});});
         btnLayer.appendChild(bt);}});}
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
     const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_none'||id==='_root'||(id==='_params'&&!groups['_params']);};
@@ -1346,11 +1358,11 @@ function renderGraph(fitAfter,centerId){
       // fold button on the block title: a whole timeline group (Groups layout) or a whole component (Components layout)
       {const gidL=CM?null:l.id,cidL=CM&&byId[l.id]?l.id:null,psL=(l.id==='_params'||(l.id==='_none'&&!CM))?l.id:null;const gk=psL||gidL;
         const can=(gk&&groups[gk])||(cidL&&canCollapse(cidL))||(cidL&&collapsedNodes.has(cidL));
-        if(can){const open=cidL?!collapsedNodes.has(cidL):(expanded.has(gk)||searchOpen.has(gk));const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(l.x+l.w/2)+','+(l.y1+1)+')');   // bottom centre, like the boxes' buttons
+        if(can){const open=cidL?!collapsedNodes.has(cidL):isOpen(gk);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(l.x+l.w/2)+','+(l.y1+1)+')');   // bottom centre, like the boxes' buttons
           const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?8:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
           const tt=document.createElementNS(NS,'title');tt.textContent=open?(cidL?'Fold this component into its box':'Fold this whole group into one box'):(cidL?'Show what is in this component':'Show the items of this group');bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
-          bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else expanded.add(gk);},{});});
+          bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else{selShut.delete(gk);expanded.add(gk);}},{});});
           l.btn=bt;}}
       const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;if(l.id==='_params')selectGroup('_params');else if(CM&&!(groups[l.id]&&groups[l.id].design))select(l.id);else selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');ge.setAttribute('class','elayer');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');geHi.setAttribute('class','elayer');const gBadge=document.createElementNS(NS,'g');
@@ -1529,7 +1541,7 @@ function renderGraph(fitAfter,centerId){
       const tt=document.createElementNS(NS,'title');tt.textContent=open?'Collapse this timeline group into one box':'Expand this timeline group to show its items';bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
       bt.addEventListener('mousedown',ev=>ev.stopPropagation());
       bt.addEventListener('click',ev=>{ev.stopPropagation();const newId=(open?'g':'h')+gid;
-        animatedRerender(()=>{if(open){expanded.delete(gid);Object.keys(groups).forEach(x=>{if(groupPath(x).length>1&&groups[x].parent&&(function up(y){let q=groups[y].parent,gd=0;while(q&&gd++<20){if(q===gid)return true;q=groups[q]?groups[q].parent:null;}return false;})(x))expanded.delete(x);});}else expanded.add(gid);},{keepOld:r.id,keepNew:newId});});addBtn(r.id,bt);}
+        animatedRerender(()=>{if(open){selShut.add(gid);expanded.delete(gid);Object.keys(groups).forEach(x=>{if(groupPath(x).length>1&&groups[x].parent&&(function up(y){let q=groups[y].parent,gd=0;while(q&&gd++<20){if(q===gid)return true;q=groups[q]?groups[q].parent:null;}return false;})(x))expanded.delete(x);});}else{selShut.delete(gid);expanded.add(gid);}},{keepOld:r.id,keepNew:newId});});addBtn(r.id,bt);}
     else if(canCollapse(r.id)){const col=collapsedNodes.has(r.id);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(NW/2)+','+(NH+1)+')');
       const c=document.createElementNS(NS,'circle');c.setAttribute('r',col?9:7);c.setAttribute('class','ctogc'+(col?' col':''));
       const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=col?'+':'−';
