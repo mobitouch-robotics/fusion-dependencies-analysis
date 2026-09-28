@@ -48,17 +48,17 @@ FUSION_POINTS = [
     ('manage_tab',        (283, 106),     'the MANAGE tab in the toolbar'),
     ('graph_btn',         (275, 139),     'on the Manage tab: the Dependencies Graph button (icon)'),
     ('thumbs',            (1492, 488),    'in the dialog: the "Thumbnails" label'),
-    ('save_to',           (1560, 519),    'in the dialog: the "Save to" file path'),
-    ('choose_file',       (1660, 550),    'in the dialog: the "Choose file..." button'),
-    # below: one row higher since the "Use temporary folder" button was removed (estimated; --calibrate to measure)
-    ('advanced',          (1461, 597),    'in the dialog: the arrow left of "Advanced options"'),
+    ('save_to',           (1712, 523),    'in the dialog: the "Save to" file path'),
+    ('choose_file',       (1584, 556),    'in the dialog: the "Choose file..." button'),
+    ('advanced',          (1459, 597),    'in the dialog: the arrow left of "Advanced options"'),
+    # Advanced options open: its three rows push what follows down by about 94 points
     ('linked',            (1522, 629),    'Advanced options open: the "Include linked designs" label'),
     ('linked_box',        (1649, 629),    'Advanced options open: the "Include linked designs" checkbox'),
     ('linked_groups',     (1540, 660),    'Advanced options open: the "Group test for linked designs" label'),
     ('reuse',             (1517, 691),    'Advanced options open: the "Reuse earlier results" label'),
-    ('full_text',         (1503, 734),    'Advanced options open: the "Full analysis" description text'),
-    ('quick_text',        (1510, 810),    'Advanced options open: the "Quick estimate" description text'),
-    ('full_btn',          (1769, 896),    'the "Full analysis" button (do not click it)'),
+    ('full_text',         (1503, 731),    'Advanced options open: the "Full analysis" description text'),
+    ('quick_text',        (1510, 822),    'Advanced options open: the "Quick estimate" description text'),
+    ('full_btn',          (1768, 879),    'the "Full analysis" button (do not click it)'),
     ('progress_panel',    (1671, 502),    'during a run: the middle of the progress panel'),
 ]
 POSITIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo_positions.json')
