@@ -634,6 +634,49 @@ class Collector:
             if _safe(lambda: b.entityToken) not in tokens:
                 if _safe(lambda: setattr(b, 'isLightBulbOn', False), 'fail') != 'fail':
                     self._hidden.append(b)
+        self._isolate_rest(keep, tokens)
+
+    SCENE_FOLDERS = ('isSketchFolderLightBulbOn', 'isConstructionFolderLightBulbOn', 'isJointsFolderLightBulbOn',
+                     'isJointOriginsFolderLightBulbOn', 'isOriginFolderLightBulbOn', 'isCanvasFolderLightBulbOn',
+                     'isDecalFolderLightBulbOn')     # the origin's axes show as long lines across a picture
+
+    def _isolate_rest(self, keep, tokens):
+        """Besides other bodies, what else would show up in a picture of `keep`: other occurrences (linked parts,
+        other instances), mesh bodies, and every sketch, construction geometry, joint, origin, canvas and decal. Switched off through _set,
+        so _restore_visible puts it back after the picture."""
+        # the occurrences the kept bodies are in (a body of a component used more than once: its first occurrence)
+        paths = set()          # (a sketch's picture keeps no body: only the folders below are switched off)
+        in_root = False      # a kept body of the root component: every occurrence is someone else's
+        for b in keep:
+            ctx = _safe(lambda: b.assemblyContext)
+            if ctx is None:
+                pc = _safe(lambda: b.parentComponent)
+                if pc is None:
+                    continue
+                if pc == self.root:
+                    in_root = True
+                    continue
+                ctx = _safe(lambda: self.root.allOccurrencesByComponent(pc).item(0))
+            p = _safe(lambda: ctx.fullPathName) if ctx is not None else None
+            if p:
+                paths.add(p)
+        if paths or in_root:
+            # listed for each picture: while the read walk rolls the timeline, occurrences come and go
+            occs = [(o, _safe(lambda: o.fullPathName) or '') for o in (_safe(lambda: list(self.root.allOccurrences)) or [])]
+            up = lambda q: any(k == q or k.startswith(q + '+') for k in paths)         # q holds a kept body (or is it)
+            down = lambda q: any(q.startswith(k + '+') for k in paths)                 # q is inside a kept occurrence
+            for o, q in occs:
+                if not q or up(q) or down(q):
+                    continue
+                parent = q.rsplit('+', 1)[0] if '+' in q else ''
+                if parent == '' or up(parent):           # only the topmost one: its children go with it
+                    self._set(o, 'isLightBulbOn', False)
+        for c in (_safe(lambda: list(self.des.allComponents)) or []):
+            for m in (_safe(lambda: list(c.meshBodies)) or []):
+                if _safe(lambda: m.entityToken) not in tokens:
+                    self._set(m, 'isLightBulbOn', False)
+            for a in self.SCENE_FOLDERS:
+                self._set(c, a, False)
 
     def _set(self, obj, attr, value):
         old = _safe(lambda: getattr(obj, attr))
@@ -2597,6 +2640,7 @@ def _mem_tick(what, every=30.0):
 # A saved version of a design never changes, so what was read and tested in it can be kept and reused: a later run
 # (or another assembly using the same part) takes it from here instead of opening and testing the design again.
 CACHE_VERSION = 5      # 5: drops results saved although a design was not put back or changed (4: transactions off)
+THUMB_VERSION = 3       # how pictures are taken: saved pictures of an older kind are taken again (tests are kept)
 
 
 def _cache_dir():
@@ -3045,9 +3089,9 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
         name = e['name']
         # read and tested in an earlier run (same saved version, at least the same checks): nothing to open
         c = _cache_load('design', e['fid'], e['read_ver'])
-        # tested before but without its items' pictures (runs before they were taken): opened and read once more for
-        # them, the test results are taken from the earlier run
-        refresh = c if (c and pictures and c.get('pics') and not c.get('ithumbs') and (not exact or c.get('exact'))
+        # tested before but without its items' pictures, or with pictures of an older kind (THUMB_VERSION): opened and
+        # read once more for them, the test results are taken from the earlier run
+        refresh = c if (c and pictures and c.get('pics') and c.get('ithumbs') != THUMB_VERSION and (not exact or c.get('exact'))
                         and (not groups_test or c.get('gtest'))) else None
         if c and not refresh and (not exact or c.get('exact')) and (not groups_test or c.get('gtest')) and (not pictures or c.get('pics')):
             e['col'] = _CachedDesign(c)
@@ -3081,7 +3125,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 note_links(sc, e['prefix'], e['depth'] + 1, links)
                 if mine and not cancelled():
                     d = _design_data(sc)
-                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'ithumbs': pictures, 'exact': True, 'gtest': True})
+                    d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'ithumbs': THUMB_VERSION if pictures else 0, 'exact': True, 'gtest': True})
                     _cache_save('design', e['fid'], e['read_ver'], d)
                 return
             if refresh and not mine:
@@ -3139,7 +3183,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 e['col'] = cd
                 if not cancelled():
                     d = dict(refresh)
-                    d.update({'thumbs': cd.thumbs, 'ithumbs': True, 'pic': e['pic'] or refresh.get('pic')})
+                    d.update({'thumbs': cd.thumbs, 'ithumbs': THUMB_VERSION, 'pic': e['pic'] or refresh.get('pic')})
                     _cache_save('design', e['fid'], e['read_ver'], d)
                 log('pictures added to the earlier result of %s (%d)' % (name, len(cd.thumbs)))
                 release(sc)
@@ -3186,7 +3230,7 @@ def _collect_derived(main, progress, cancelled, exact=False, groups_test=False, 
                 _mem_log('cache design %s: not saved (%s)' % (name, ', '.join(unclean)))
             elif mine and not cancelled() and not (testing and not tested):
                 d = _design_data(sc)
-                d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'ithumbs': pictures,
+                d.update({'links': links, 'pic': e['pic'], 'pics': pictures, 'ithumbs': THUMB_VERSION if pictures else 0,
                           'exact': bool(exact and tested), 'gtest': bool(groups_test and tested)})
                 _cache_save('design', e['fid'], e['read_ver'], d)
         finally:
@@ -3509,8 +3553,8 @@ def generate(mode='both', thumbs=True, derived=False):
             # a Full analysis result also answers a Quick estimate (it is exact)
             for kind in kinds:
                 cached = _cache_load(kind, m_id, m_ver)
-                # from before linked designs had pictures of their items: generated again (their tests are reused)
-                if cached and thumbs and derived and not cached.get('lthumbs'):
+                # pictures of an older kind (THUMB_VERSION): generated again (linked designs' tests are reused)
+                if cached and thumbs and cached.get('tver') != THUMB_VERSION:
                     cached = None
                 if cached:
                     break
@@ -3702,7 +3746,7 @@ def generate(mode='both', thumbs=True, derived=False):
                    if bad]
         if not unclean:
             _cache_save(kinds[0], m_id, m_ver, {'data': data, 'exact': exact, 'groups': groups_test, 'pics': bool(thumbs),
-                                                'lthumbs': bool(thumbs and derived)})
+                                                'tver': THUMB_VERSION if thumbs else 0})
         else:
             _mem_log('cache %s: not saved (%s)' % (kinds[0], ', '.join(unclean)))
         return _write_page(data, path, out_dir)
