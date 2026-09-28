@@ -499,7 +499,7 @@ function renderGroupPanel(){const L=$('gpList');if(!L)return;L.innerHTML='';cons
   $('gpanel').style.display=gs.length?'':'none';
   gs.forEach(g=>{const mem=groupMembers(g.id);if(!mem.length&&!g.empty)return;const r=document.createElement('div');r.className='gprow'+(selGroup===g.id?' sel':'');
     const depth=groupPath(g.id).length-1;r.style.paddingLeft=(8+depth*14)+'px';
-    const extG=!!(groups[g.id]&&groups[g.id].design);   // a whole linked design (its frame): no test result, nothing to simulate
+    const extG=!!(groups[g.id]&&(groups[g.id].design||groups[g.id].loose));   // a whole linked design (its frame): no test result, nothing to simulate
     if(simOn&&!extG){r.appendChild(simButton(sim.groups.has(g.id),'Switch this whole group off/on in the simulation',()=>simToggleGroup(g.id)));}
     else if(simOn){const sp=document.createElement('span');sp.style.cssText='width:30px;flex:none';r.appendChild(sp);}
     const dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:50%;flex:none;background:'+(colorOfGroup(g.id)||'transparent');r.appendChild(dot);
@@ -547,6 +547,12 @@ const isUserParam=n=>n.type==='UserParameter'||n.type==='UserParameters';
 function pseudoOf(n){if(!n||(n.g&&n.g.length))return null;return isUserParam(n)?'_params':'_none';}
 [['_none','Not in a group'],['_params','User parameters']].forEach(([id,name])=>{const mem=nodes.filter(n=>pseudoOf(n)===id);
   if(mem.length)groups[id]={id,name,parent:null,pseudo:true,first:Math.min(...mem.map(n=>n.tl!=null?n.tl:1e6))};});
+// the same for each linked design: its items outside its timeline groups, and its user parameters, get a group of
+// their own inside its frame ('X8~none', 'X8~params'), so they fold and are listed like its timeline groups
+Object.values(groups).filter(G=>G.design).forEach(G=>{
+  [['~none','Not in a group',n=>n.type!=='UserParameter'],['~params','User parameters',n=>n.type==='UserParameter']].forEach(([suf,name,f])=>{
+    const mem=nodes.filter(n=>n.dsg&&!n.port&&n.g&&n.g.length===1&&n.g[0]===G.id&&f(n));if(!mem.length)return;
+    const id=G.id+suf;groups[id]={id,name,parent:G.id,loose:true,first:Math.min(...mem.map(n=>n.o))};mem.forEach(n=>{n.g=[G.id,id];});});});
 const kindsPresent=[...new Set(D.edges.flatMap(e=>e.k))].filter(k=>KIND[k]);
 const kindOn={}; kindsPresent.forEach(k=>kindOn[k]=k!=='order');  // every kind is always on; only "Same body, later" can be switched (Display menu)
 // links found by the suppression test are real dependencies: always shown, no toggle
@@ -752,7 +758,7 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
   const g=groups[selGroup];const mem=groupMembers(selGroup);const mset=new Set(mem.map(n=>n.id));
   const h=document.createElement('h2');h.textContent=g.name;h.insertAdjacentHTML('afterbegin','<span class="icw">'+iconHTML('group','group',18)+'</span>');d.appendChild(h);
   {const last=[...mem].sort((a,b)=>b.o-a.o).find(n=>TH[n.id]);if(last&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[last.id];im.alt='Model after '+last.name;im.title='Model after the last item in the group: '+last.name;d.appendChild(im);}}
-  if(simOn){const b=document.createElement('button');const on=sim.groups.has(selGroup);b.textContent=on?'Switch group back on (simulation)':'Suppress group (simulation)';b.style.margin='6px 0';b.onclick=()=>simToggleGroup(selGroup);d.appendChild(b);}
+  if(simOn&&!g.loose){const b=document.createElement('button');const on=sim.groups.has(selGroup);b.textContent=on?'Switch group back on (simulation)':'Suppress group (simulation)';b.style.margin='6px 0';b.onclick=()=>simToggleGroup(selGroup);d.appendChild(b);}
   const kv=document.createElement('div');kv.className='kv';
   ['Timeline group'+(groupPath(selGroup).length>1?' in '+groupPath(selGroup).slice(0,-1).join(' › '):''),mem.length+' items'].forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});d.appendChild(kv);
   if(g.dsupp){
@@ -768,7 +774,7 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
     const x=document.createElement('div');x.className='kv';x.append('Fusion refuses to suppress this group through the API because this feature then fails to compute. The preview can still suppress it: that feature is marked broken, the rest is estimated from the links. ');
     if(g.fail.node&&byId[g.fail.node]){const a=document.createElement('span');a.className='name st-err';a.textContent=byId[g.fail.node].name;a.onclick=()=>select(g.fail.node);x.appendChild(a);}else x.append(g.fail.name||'unknown feature');
     d.appendChild(x);if(g.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=g.fail.msg;d.appendChild(m);}
-  }else if(g.pseudo){const x=document.createElement('div');x.className='hint';x.textContent=g.id==='_params'?'All user parameters, shown as one box. Expand it (+) to see them one by one.':'Items that are not in any timeline group, shown as one box. Expand it (+) to see them one by one.';d.appendChild(x);
+  }else if(g.pseudo||g.loose){const x=document.createElement('div');x.className='hint';x.textContent=(g.id==='_params'||g.id.endsWith('~params'))?'All user parameters, shown as one box. Expand it (+) to see them one by one.':'Items that are not in any timeline group, shown as one box. Expand it (+) to see them one by one.';d.appendChild(x);
   }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':g.gskip?'The Whole groups test was not run on linked designs (option "Group test for linked designs"). Its items were tested one by one: suppressing it in the preview adds up their results (estimated).':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Full analysis to see what suppressing this group does.');d.appendChild(x);}
   // reference links crossing the group boundary, counted per other group
   const out={},inn={};
@@ -1108,7 +1114,7 @@ function laneBase(id){return id&&id.includes('|')?id.split('|')[1]:id;}
 function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
 function laneKey(n){if(!n)return null;
   if(n.dsg&&n.g&&n.g.length){const X=n.g[0];if(layoutMode==='comps')return compOf[n.id]||X+'|_root';
-    if(n.port)return X+'|_port';if(n.type==='UserParameter')return X+'|_params';return n.g.length>1?n.g[1]:X+'|_none';}
+    if(n.port)return X+'|_port';return n.g.length>1?n.g[1]:(n.type==='UserParameter'?X+'|_params':X+'|_none');}
   if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
   if(n.type==='DerivedParameter'&&dparamOf[n.id])return laneKey(byId[dparamOf[n.id]]);
   if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
@@ -1490,7 +1496,7 @@ function renderGraph(fitAfter,centerId){
     // action buttons on the right edge of the box (for now: suppress in the preview)
     const acts=[];const gidA=r.isGroup?r.id.slice(1):null;
     if(laneFold){}
-    else if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo&&!groups[gidA].design)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
+    else if(simOn&&r.isGroup&&canGroups&&groups[gidA]&&!groups[gidA].pseudo&&!groups[gidA].loose&&!groups[gidA].design)acts.push({kind:'supp',on:sim.groups.has(gidA),title:(sim.groups.has(gidA)?'Switch this timeline group back on':'Suppress this timeline group')+' (preview)',fn:()=>simToggleGroup(gidA)});
     else if(simOn&&!r.isGroup&&canItems&&inTl(r.members[0])){const it=r.members[0];acts.push({kind:'supp',on:isExplicit(it),title:(isExplicit(it)?'Switch this item back on':'Suppress this item')+' (preview'+(it.fail?' · breaks '+(it.fail.name||'a later feature')+', estimated':(!it.supp&&!itemTested(it)?' · estimated, not tested':''))+')',fn:()=>simToggleItem(it.id)});}
     const maxc=(nth?22:(gth?32:28))-acts.length*(r.isGroup?5:3);
     const icoN=r.isGroup?'group':iconName(r.members[0]);const icoS=gth?18:15;

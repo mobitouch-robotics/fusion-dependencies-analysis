@@ -595,6 +595,11 @@ Main parts, in file order:
   (estimated). Items/groups Fusion refused (`fail`) are forced: the named feature is shown broken, what depends on
   it may fail (estimated). Items of linked designs can be previewed like the design's own (`inTl`: `tl` or `stl`);
   whole linked designs (frames) cannot.
+* **A linked design's loose items**: its items outside its timeline groups, and its user parameters, get a group
+  of their own inside its frame when the page loads (`X8~none` "Not in a group", `X8~params` "User parameters",
+  `loose: true`), like this design's pseudo groups `_none` / `_params`: they fold into one box with the block's fold
+  button (a block of loose items had only the boxes' own fold buttons, which fold what depends on each box). Not
+  suppressible as a group in the preview (not a timeline group).
 * **Hidden connectors**: an expanded linked design's connector box is hidden and its fold button stands in for it.
   The box gets `pt` (the button's centre, relative to the box), and `edgeSegs`/`edgeEnd` treat it as a point:
   links end on the top of the button and leave from its bottom, without spreading their ends.
