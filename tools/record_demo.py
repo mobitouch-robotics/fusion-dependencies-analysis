@@ -10,16 +10,21 @@ Run it from Terminal:   python3 tools/record_demo.py          (full run)
                                                                      in Safari, set up as that step expects)
                         python3 tools/record_demo.py --skip-generation   (open the newest existing page in Safari
                                                                           and do only the Safari part)
-                        python3 tools/record_demo.py --calibrate    (point at each Fusion element once; the positions
-                                                                     are saved in tools/demo_positions.json)
+                        python3 tools/record_demo.py --probe        (with Fusion in front: print which Fusion elements
+                                                                     are found on screen, and where)
+                        python3 tools/record_demo.py --calibrate    (only if --probe misses some: point at them once;
+                                                                     saved in tools/demo_positions.json)
 
 Needs once:
   * System Settings > Privacy & Security > Accessibility: turn on Terminal (the app you run it from).
   * Safari > Settings > Advanced: "Show features for web developers", then
     Develop menu > "Allow JavaScript from Apple Events" (used to find buttons on the page).
   * Fusion open with the design, on the Solid tab, window maximised; nothing else on top.
-  * Once, and again when the Fusion window or dialog layout changes: --calibrate (the dialog's Advanced options,
-    its checkboxes and the progress panel have no fixed place). Elements that are not calibrated are skipped.
+  * System Settings > Privacy & Security > Screen Recording: also Terminal. The Fusion elements (the MANAGE tab,
+    the Dependencies Graph panel, the dialog's options, the progress panel) are found on screen by their text,
+    with macOS's own text recognition, wherever Fusion puts them; then through Accessibility; then at positions
+    from --calibrate. Check with --probe.
+  * In the dialog, tick "Include linked designs" once (it is remembered): the tour only points at it.
   * Run a Full analysis with linked designs once before recording: the linked designs are then taken from the
     earlier run (Reuse earlier results), so the recorded run takes minutes, not hours.
 Start the screen recording during the countdown. Press Ctrl+C in Terminal to stop at any time.
@@ -38,25 +43,25 @@ SKIP_GEN = '--skip-generation' in sys.argv or '--from' in sys.argv
 SKIP_INTRO = '--skip-intro' in sys.argv
 
 # ---- scenario: edit the texts/timings here ---------------------------------------------------
-# Fusion: screen points for a maximised Fusion window on this Mac. --calibrate records them (all of them, including
-# the ones given here) in tools/demo_positions.json, which overrides these; None = not known yet, that move is skipped.
+# Fusion: its elements are found on screen by their text (see TARGETS / locate). These screen points are only the
+# last resort: --calibrate records them in tools/demo_positions.json, which overrides the defaults here.
 FUSION_POINTS = [
     # name,               default,       what to point at when calibrating
     ('manage_tab',        (647, 104),    'the MANAGE tab in the toolbar'),
-    ('graph_btn',         (273, 137),    'the Dependencies Graph button (Manage tab)'),
+    ('graph_panel',       None,          'the DEPENDENCIES GRAPH panel name on the Manage tab (opens its menu)'),
+    ('graph_btn',         (273, 137),    'with that menu open: the Dependencies Graph command in it'),
     ('full_text',         (1640, 536),   'in the open dialog: the "Full analysis" description text'),
     ('quick_text',        (1650, 610),   'in the dialog: the "Quick estimate" description text'),
     ('thumbs',            None,          'in the dialog: the Thumbnails checkbox'),
     ('advanced',          None,          'in the dialog: the "Advanced options" group header (to open it)'),
-    ('linked',            None,          'in the dialog, Advanced options open: the "Include linked designs" checkbox'),
-    ('linked_groups',     None,          'in the dialog, Advanced options open: the "Group test for linked designs" checkbox'),
-    ('reuse',             None,          'in the dialog, Advanced options open: the "Reuse earlier results" checkbox'),
+    ('linked',            None,          'in the dialog, Advanced options open: the "Include linked designs" label'),
+    ('linked_groups',     None,          'in the dialog, Advanced options open: the "Group test for linked designs" label'),
+    ('reuse',             None,          'in the dialog, Advanced options open: the "Reuse earlier results" label'),
     ('full_btn',          (1770, 768),   'in the dialog: the "Full analysis" button (do not click it)'),
     ('progress_panel',    None,          'during a run: the progress panel (the right-hand palette), its middle'),
     ('progress_cancel',   None,          'during a run: the Cancel button of the progress panel (do not click it)'),
 ]
 POSITIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'demo_positions.json')
-INCLUDE_LINKED = True               # tick "Include linked designs" in the dialog (it always starts unticked)
 DESIGN_INTRO = ("This is the graph of the master assembly of a robot arm: the design itself, and every design it "
                 "links, each in a frame of its own. Every box is a timeline feature, a component or a parameter. To keep "
                 "a big design readable, the links between boxes appear when you hover or select something.")
@@ -182,11 +187,121 @@ def load_points():
 
 FP = load_points()
 
-def fpt(name):
-    """A Fusion screen point, or None (then the move is skipped and says so)."""
-    p = FP.get(name)
-    if p is None: print('  (skipped: %s is not calibrated; run --calibrate)' % name)
+# ---- finding Fusion's elements on screen --------------------------------------------------------------------
+# Each element by the text it shows. case: match upper/lower case exactly (the toolbar's tab and panel names are in
+# capitals, the same words in mixed case are elsewhere). pick: which match when there are several (top / bottom /
+# right: the right-most). below: only matches under that element (the panel's menu opens under the panel name).
+TARGETS = {
+    'manage_tab':      dict(text='MANAGE', case=True, pick='top'),
+    'graph_panel':     dict(text='DEPENDENCIES GRAPH', case=True, pick='top'),
+    'graph_btn':       dict(text='Dependencies Graph', case=True, pick='top', below='graph_panel'),
+    'full_text':       dict(text='Full analysis', pick='top'),
+    'quick_text':      dict(text='Quick estimate', pick='top'),
+    'thumbs':          dict(text='Thumbnails', pick='top'),
+    'advanced':        dict(text='Advanced options', pick='top'),
+    'linked':          dict(text='Include linked designs', pick='top'),
+    'linked_groups':   dict(text='Group test for linked designs', pick='top'),
+    'reuse':           dict(text='Reuse earlier results', pick='top'),
+    'full_btn':        dict(text='Full analysis', pick='bottom'),
+    'progress_panel':  dict(text='(this design)', pick='right'),
+    'progress_cancel': dict(text='Cancel', pick='right'),
+}
+
+# macOS text recognition (Vision) on a screenshot of the main display, through JavaScript for Automation: nothing
+# to install. Returns every occurrence of the wanted strings with its box in screen points (top-left origin).
+OCR_JXA = r"""ObjC.import('Vision');ObjC.import('AppKit');ObjC.import('Foundation');
+function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
+ const h=$.VNImageRequestHandler.alloc.initWithURLOptions($.NSURL.fileURLWithPath(path),$.NSDictionary.dictionary);
+ const r=$.VNRecognizeTextRequest.alloc.init;r.recognitionLevel=0;r.usesLanguageCorrection=false;
+ h.performRequestsError($.NSArray.arrayWithObject(r),null);
+ const fr=$.NSScreen.mainScreen.frame,W=fr.size.width,H=fr.size.height,res=r.results,out=[];
+ for(let i=0;i<res.count;i++){const c=res.objectAtIndex(i).topCandidates(1).objectAtIndex(0);const t=c.string.js;
+  for(const w of want){const hay=w.case?t:t.toLowerCase(),ned=w.case?w.text:w.text.toLowerCase();let k=hay.indexOf(ned);
+   while(k>=0){const o=c.boundingBoxForRangeError($.NSMakeRange(k,ned.length),null);
+    if(o&&!o.isNil()){const b=o.boundingBox;out.push({text:w.text,line:t,x:(b.origin.x+b.size.width/2)*W,
+     y:(1-b.origin.y-b.size.height/2)*H,w:b.size.width*W,h:b.size.height*H});}
+    k=hay.indexOf(ned,k+1);}}}
+ return JSON.stringify(out);}"""
+
+# Accessibility (System Events): Fusion's windows walked for elements whose name, description, title or value holds
+# a wanted string. Slower than the text recognition; used for what it did not find.
+AX_JXA = r"""function run(argv){const want=JSON.parse(argv[0]);const se=Application('System Events');
+ const ps=se.applicationProcesses.whose({bundleIdentifier:'com.autodesk.fusion360'})();if(!ps.length)return '[]';
+ const out=[],seen={};let n=0;const txt=e=>{const a=[];for(const f of ['name','description','title','value']){try{const v=e[f]();if(typeof v==='string'&&v)a.push(v);}catch(x){}}return a;};
+ const walk=(e,d)=>{if(n++>8000||d>30)return;let ts=[];try{ts=txt(e);}catch(x){}
+  for(const w of want){if(seen[w.text])continue;if(ts.some(t=>w.case?t.includes(w.text):t.toLowerCase().includes(w.text.toLowerCase()))){
+    try{const p=e.position(),s=e.size();out.push({text:w.text,line:ts.join(' | '),role:(()=>{try{return e.role()}catch(x){return ''}})(),
+      x:p[0]+s[0]/2,y:p[1]+s[1]/2,w:s[0],h:s[1]});seen[w.text]=1;}catch(x){}}}
+  if(want.every(w=>seen[w.text]))return;let ks=[];try{ks=e.uiElements();}catch(x){}for(const k of ks)walk(k,d+1);};
+ for(const w of ps[0].windows())walk(w,0);return JSON.stringify(out);}"""
+
+_ocr_cache = {'t': 0, 'hits': []}
+
+def ocr_scan(fresh=True):
+    """Every occurrence of every target's text on the main display now (one screenshot, a second or two)."""
+    if not fresh and time.time() - _ocr_cache['t'] < 2: return _ocr_cache['hits']
+    import tempfile
+    img = os.path.join(tempfile.gettempdir(), '_demo_screen.png')
+    subprocess.run(['screencapture', '-x', '-m', img], capture_output=True)
+    want = json.dumps([{'text': t['text'], 'case': t.get('case', False)} for t in
+                       {v['text'] + str(v.get('case')): v for v in TARGETS.values()}.values()])
+    r = subprocess.run(['osascript', '-l', 'JavaScript', '-e', OCR_JXA, img, want], capture_output=True, text=True)
+    try: hits = json.loads(r.stdout.strip() or '[]')
+    except Exception: hits = []
+    if r.returncode: print('  (text recognition failed: %s)' % r.stderr.strip()[:200])
+    _ocr_cache.update(t=time.time(), hits=hits)
+    return hits
+
+def ax_scan(names):
+    want = json.dumps([{'text': TARGETS[n]['text'], 'case': TARGETS[n].get('case', False)} for n in names])
+    r = subprocess.run(['osascript', '-l', 'JavaScript', '-e', AX_JXA, want], capture_output=True, text=True)
+    try: return json.loads(r.stdout.strip() or '[]')
+    except Exception: return []
+
+def _pick(name, hits, found):
+    t = TARGETS[name]
+    c = [h for h in hits if h['text'] == t['text']]
+    ref = found.get(t.get('below')) if t.get('below') else None
+    if ref: c = [h for h in c if h['y'] > ref[1] + 5]
+    if not c: return None
+    h = {'top': min, 'bottom': max}.get(t['pick'], max)(c, key=lambda h: h['x'] if t['pick'] == 'right' else h['y'])
+    return (round(h['x']), round(h['y']))
+
+_found = {}
+
+def locate(name, fresh=True):
+    """Where a Fusion element is now: found by its text on screen, else through Accessibility, else a calibrated or
+    default position. None when nothing knows (the move is then skipped)."""
+    p = _pick(name, ocr_scan(fresh), _found)
+    how = 'on screen'
+    if p is None:
+        p = _pick(name, ax_scan([name]), _found); how = 'accessibility'
+    if p is None:
+        p = FP.get(name); how = 'calibrated/default'
+    if p is None:
+        print('  (skipped: %s not found; try --probe)' % name)
+    else:
+        print('  %s: %s (%s)' % (name, p, how)); _found[name] = p
     return p
+
+def probe():
+    """What the script finds of Fusion's elements now (bring Fusion to the front, open the dialog, start a run...)."""
+    activate('Autodesk Fusion'); wait(1.0)
+    hits = ocr_scan()
+    print('Text recognition on the main display:')
+    for n in TARGETS:
+        p = _pick(n, hits, _found)
+        if p: _found[n] = p
+        print('  %-16s %-32r %s' % (n, TARGETS[n]['text'], p or '-'))
+    missing = [n for n in TARGETS if n not in _found]
+    if missing:
+        print('Accessibility, for the rest (may take a while):')
+        ax = ax_scan(missing)
+        for n in missing:
+            p = _pick(n, ax, _found)
+            line = next((h for h in ax if h['text'] == TARGETS[n]['text']), None)
+            print('  %-16s %-32r %s%s' % (n, TARGETS[n]['text'], p or '-', ('  [%s: %s]' % (line['role'], line['line'][:60])) if line else ''))
+    print('(Elements of the dialog or the progress panel are only found while they are open.)')
 
 def calibrate():
     """Point at each Fusion element in turn and press Enter in Terminal; the positions are saved. Leave the mouse
@@ -419,40 +534,52 @@ def fusion_part():
     say("Let's build the graph for this design. The add-in lives on the Manage tab.")
     activate('Autodesk Fusion')
     print('Fusion part: Manage tab, Dependencies Graph, options, Full analysis, progress panel')
-    go(fpt('manage_tab'), 1.5); wait(0.8)
-    go(fpt('graph_btn'), 1.2); wait(1.0); hush()
+    go(locate('manage_tab'), 1.5); wait(1.0)
+    # the panel's name opens its menu, with the command in it
+    go(locate('graph_panel'), 1.2); wait(1.0)
+    go(locate('graph_btn'), 0.8); wait(2.0); hush()
+    ocr_scan()                                  # the dialog is open: one look finds all its elements
     say("There are two ways to build the graph. Full analysis suppresses every item in turn, so every link is a real dependency.")
-    go(fpt('full_text'), 1.5, False); hush()
+    go(locate('full_text', False), 1.5, False); hush()
     say("Quick estimate takes seconds, but only reads what each feature references, so it can miss some links.")
-    go(fpt('quick_text'), 0.8, False); hush()
-    if fpt('thumbs'):
+    go(locate('quick_text', False), 0.8, False); hush()
+    p = locate('thumbs', False)
+    if p:
         say("Thumbnails adds a picture of every step, framed on the feature itself.")
-        go(fpt('thumbs'), 1.0, False); hush()
-    if fpt('advanced'):
+        go(p, 1.0, False); hush()
+    p = locate('advanced', False)
+    if p:
         say("Advanced options holds the rest.")
-        go(fpt('advanced'), 1.1); wait(1.0); hush()
-        if fpt('linked'):
+        go(p, 1.1); wait(1.2); hush()
+        ocr_scan()                              # the group is open now
+        p = locate('linked', False)
+        if p:
             say("Include linked designs also reads every design this one links, through Derive features or inserted "
                 "components, and the designs those link. Each is tested too, in a hidden copy that is closed without saving.")
-            go(fpt('linked'), 1.1, INCLUDE_LINKED); wait(0.6); hush()
-        if fpt('linked_groups'):
+            go(p, 1.1, False); hush()
+        p = locate('linked_groups', False)
+        if p:
             say("The group test for linked designs is optional. It takes about as long again, "
                 "and without it their groups are estimated from their items.")
-            go(fpt('linked_groups'), 0.9, False); hush()
-        if fpt('reuse'):
+            go(p, 0.9, False); hush()
+        p = locate('reuse', False)
+        if p:
             say("And Reuse earlier results: a saved version never changes, so a design tested once is taken from the "
                 "earlier run, and only what changed is tested again.")
-            go(fpt('reuse'), 0.9, False); hush()
+            go(p, 0.9, False); hush()
     say("Let's run the full analysis.")
-    go(fpt('full_btn'), 1.1); wait(2.0)
+    go(locate('full_btn'), 1.1); wait(3.0)
     hush()
-    if fpt('progress_panel'):
+    ocr_scan()                                  # the progress panel is open
+    p = locate('progress_panel', False)
+    if p:
         say("The progress panel on the right has a row for every design: what is being done, and a bar for each step, "
             "reading, the item test and the group test. The overall bar shows the time left.")
-        go(fpt('progress_panel'), 1.2, False); hush()
-        if fpt('progress_cancel'):
+        go(p, 1.2, False); hush()
+        p = locate('progress_cancel', False)
+        if p:
             say("Cancel stops the whole run. The design is put back either way.")
-            go(fpt('progress_cancel'), 0.9, False); hush()
+            go(p, 0.9, False); hush()
     else:
         move(1560, 900, 1.2)
     say("On a big assembly this can take a while. The page is saved as each design is done, so you can look at it early. "
@@ -805,6 +932,8 @@ def safari_part(start=0):
 if __name__ == '__main__':
     if '--calibrate' in sys.argv:
         calibrate(); sys.exit()
+    if '--probe' in sys.argv:
+        probe(); sys.exit()
     if '--list' in sys.argv:
         print('Steps (start from one with --step N):'); list_steps(); sys.exit()
     START = int(sys.argv[sys.argv.index('--step') + 1]) if '--step' in sys.argv else None

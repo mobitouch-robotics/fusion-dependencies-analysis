@@ -3943,7 +3943,8 @@ class _CreatedHandler(adsk.core.CommandCreatedEventHandler):
             # a group of its own at the top level: Fusion cannot fold a group nested inside another
             ag = inputs.addGroupCommandInput('hgAdvanced', 'Advanced options')
             _safe(lambda: setattr(ag, 'isExpanded', False))
-            dv = ag.children.addBoolValueInput('hgDerived', 'Include linked designs', True, '', False)
+            dv = ag.children.addBoolValueInput('hgDerived', 'Include linked designs', True, '',
+                                               bool(_settings().get('derived', False)))
             dv.tooltip = 'Also map the designs this one derives from or inserts'
             dv.tooltipDescription = ('Each design brought in with Derive or inserted as a linked component is read as well '
                                      '(and the designs those link, at any depth). Each is shown in a frame of its own, '
@@ -4096,7 +4097,7 @@ def _unsaved_reason():
 
 class _InputChangedHandler(adsk.core.InputChangedEventHandler):
     def notify(self, args):
-        keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest'}
+        keys = {'hgReuse': 'reuse', 'hgLinkedGroups': 'linkedGroupTest', 'hgDerived': 'derived'}
         if args.input.id in keys:
             st = _settings()
             st[keys[args.input.id]] = bool(args.input.value)

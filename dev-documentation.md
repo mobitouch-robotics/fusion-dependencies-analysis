@@ -658,8 +658,12 @@ macOS, `%TEMP%\FusionDependenciesGraph` on Windows):
 * `tools/record_demo.py` (macOS): drives the mouse through Fusion and Safari (Apple Events) to record the demo
   video, with spoken narration. Fusion: the Manage tab button, the dialog (Full analysis / Quick estimate,
   Thumbnails, Advanced options: Include linked designs, Group test for linked designs, Reuse earlier results) and
-  the progress panel, at screen points recorded once with `--calibrate` (saved in `tools/demo_positions.json`;
-  points not calibrated are skipped). Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
+  the progress panel. These are found where Fusion shows them, by their text (`TARGETS`, `locate`): macOS's text
+  recognition (Vision, through JavaScript for Automation) on a screenshot of the main display, else Accessibility
+  (System Events), else positions recorded with `--calibrate` (`tools/demo_positions.json`). The Dependencies Graph
+  command is reached through its panel's menu (the panel name, then the command in it). `--probe` prints what is
+  found. The dialog's checkboxes are only pointed at, never clicked (their state cannot be seen reliably), so
+  *Include linked designs* is remembered by the add-in (`settings.json` `derived`) and ticked once beforehand. Safari (`--list` numbers the steps, `--step N` starts at one): getting around,
   linked designs (frames, pictures, unfolding one), layouts, hover, selection and side panel, Display options,
   routes, multi-selection, all links and folding, search, filters, the suppression preview (including a feature
   whose suppression makes others fail or warn, and the broken / warnings buttons), Select in Fusion, legend,
