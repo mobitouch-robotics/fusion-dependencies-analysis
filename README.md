@@ -25,7 +25,9 @@ timeline groups, components, parameters and optional suppression tests.
   the Display tab.
 
 ### Layouts and navigation
-- **Depth**, **Groups** (one block per timeline group), **Components** (one block per component) and
+- **Depth**, **Groups** (one block per timeline group), **Components** (like Groups, with components in place of
+  timeline groups: a component with timeline groups is a frame holding a block per group, folded groups are
+  entries in it) and
   **Timeline** (every item in one row in timeline order, groups as events, longer links arcing above)
   layouts. User parameters have a block of their own (no extra *User Parameters* box there).
 - **Folding**: timeline groups, components, *Not in a group* and *User parameters* fold into one box;
@@ -38,7 +40,7 @@ timeline groups, components, parameters and optional suppression tests.
   not cut out: their links are joined through to the items they connect (dotted lines), so selections and routes
   still pass through a hidden design.
 - **Selecting a block**: a click on a timeline group's block (also *Not in a group* and *User parameters*) selects
-  the whole group; in the Components layout, a click on a component's block selects all its items.
+  the whole group; in the Components layout, a click on a component's title selects the whole component.
 - **Selection** highlights what an item or group depends on (blue) and what depends on it (green), and
   pulls related boxes closer together (inside their block in the Groups / Components layouts).
 - **Multiple selection**: Cmd+click (Mac) / Ctrl+click adds or removes items; several selected items are

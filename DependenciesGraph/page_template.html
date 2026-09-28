@@ -491,7 +491,8 @@ function whyText(n){if(!simState)return '';const w=simState.why[n.id];if(!w)retu
   if(w.g)return (sim.groups.has(w.g)&&groupMembers(w.g).some(m=>m.id===n.id)?'in suppressed group ':'with group ')+(groups[w.g]?groups[w.g].name:w.g);
   if(w.i===n.id)return 'suppressed by you';return 'with '+(byId[w.i]?byId[w.i].name:w.i);}
 function simToggleItem(id){if(!canItems)return;const n=byId[id];if(n.supp){sim.un.has(id)?sim.un.delete(id):sim.un.add(id);}else{sim.items.has(id)?sim.items.delete(id):sim.items.add(id);}simUpdate();}
-function simToggleGroup(g){sim.groups.has(g)?sim.groups.delete(g):sim.groups.add(g);simUpdate();}
+function simToggleGroup(g){if(groups[g]&&groups[g].comp)return;if(groups[g]&&groups[g].tcopy)g=groups[g].tcopy;   // a timeline group shown inside a component: the group itself
+  sim.groups.has(g)?sim.groups.delete(g):sim.groups.add(g);simUpdate();}
 function simReset(){sim.items.clear();sim.groups.clear();sim.un.clear();simUpdate();}
 function simButton(on,title,fn){const b=document.createElement('button');b.className='simtog'+(on?' off':'');b.textContent=on?'off':'on';b.title=title;b.onclick=e=>{e.stopPropagation();fn();};return b;}
 function simUpdate(){saveView();setTimeout(pushHist,0);simCompute();paintTree();renderDetails();if(view==='graph')renderGraph(false);renderSimBar();renderGroupPanel();}
@@ -522,7 +523,7 @@ function renderHealth(){const h=$('health');if(!h)return;h.innerHTML='';
   const prev=!!(simOn&&(sim.groups.size||sim.items.size||sim.un.size));
   if(!br.length&&!be.length&&!wr.length){h.style.display='none';return;}h.style.display='';
   const chip=(cls,ic,txt,list,key,tip)=>{const b=document.createElement('button');b.className=cls;b.innerHTML='<span class="ic">'+ic+'</span>'+txt;b.title=tip+' · click to go through them';
-    b.onclick=()=>{if(!list.length)return;healthIdx[key]=(healthIdx[key]+1)%list.length;const n=list[healthIdx[key]];(n.g||[]).forEach(g=>expanded.add(g));if(view!=='graph'){setView('graph');renderGraph(false);}select(n.id);};h.appendChild(b);};
+    b.onclick=()=>{if(!list.length)return;healthIdx[key]=(healthIdx[key]+1)%list.length;const n=list[healthIdx[key]];[...(n.g||[]),...(n.gc||[])].forEach(g=>expanded.add(g));if(view!=='graph'){setView('graph');renderGraph(false);}select(n.id);};h.appendChild(b);};
   if(br.length||be.length){const all=[...br,...be];chip('hb','!',(br.length?br.length+' broken':'')+(be.length?(br.length?' ':'')+'<small>'+(br.length?'+':'')+be.length+' may fail</small>':''),all,'b',(prev?'In this suppression preview: ':'In the design: ')+br.length+' fail to compute'+(be.length?', '+be.length+' may fail (estimated)':''));}
   if(wr.length)chip('hw','',wr.length+' warning'+(wr.length===1?'':'s'),wr,'w',(prev?'In this suppression preview: ':'In the design: ')+wr.length+' with warnings');}
 function renderSimBar(){renderHealth();const bar=$('simBar');bar.innerHTML='';
@@ -575,6 +576,24 @@ let showThumbs=true,pullTogether=true;const catOn={};nodes.forEach(n=>{catOn[n.c
   nodes.filter(n=>n.port&&n.g&&n.g.length).forEach(p=>{const X=p.g[0],via=(groups[X]&&groups[X].via)||[];
     if(!via.includes('insert')&&hasIn.has(p.id))return;
     (byDsg[X]||[]).filter(n=>!builds[n.id]&&n.type!=='UserParameter').forEach(n=>D.edges.push({s:n.id,t:p.id,k:['derive'],syn:1,part:1}));});}
+// Components layout: the Groups layout with components in place of timeline groups. Every item gets a second group
+// path (gc, used by the layout while it is on - gp): its design, its component ('K:<component>'; items of no
+// component: 'K:<design>:root', "Root component"), then its timeline groups as groups inside that component
+// ('K:<component>/<group>', tcopy: a timeline group spanning several components shows in each; opened, it gets a
+// header box with lines to its items). Connectors and user parameters keep their blocks (gc: the design only).
+{const cOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component'&&byId[e.t])cOf[e.t]=e.s;});
+  nodes.forEach(n=>{if(n.cat==='component')cOf[n.id]=n.id;});
+  nodes.forEach(n=>{const X=n.dsg&&n.g&&n.g.length?n.g[0]:null;const base=X?[X]:[];
+    if(n.port||isUserParam(n)||n.type==='UserParameters'){n.gc=base;return;}
+    const c=cOf[n.id];const K='K:'+(c||(X||'_main')+':root');
+    if(!groups[K])groups[K]={id:K,name:c?byId[c].name:'Root component',parent:X,comp:true,cnode:c||null,first:n.o};
+    else groups[K].first=Math.min(groups[K].first,n.o);
+    const path=[...base,K];let par=K;
+    (n.g||[]).forEach(g=>{const G=groups[g];if(!G||G.design||G.loose||G.pseudo)return;const cid=K+'/'+g;
+      if(!groups[cid])groups[cid]={id:cid,name:G.name,parent:par,tcopy:g,first:G.first};path.push(cid);par=cid;});
+    n.gc=path;});
+  Object.values(groups).filter(G=>G.comp).sort((a,b)=>a.first-b.first).forEach((G,i)=>{gColor[G.id]=GCOL[(i+3)%GCOL.length];});
+  Object.values(groups).filter(G=>G.tcopy).forEach(G=>{const c=gColor[G.tcopy]||colorOfGroup(G.tcopy);if(c)gColor[G.id]=c;});}
 const expanded=new Set(Object.keys(groups).filter(g=>!groups[g].design)); // graph starts with every group expanded, derived designs folded into one box each
 const $=id=>document.getElementById(id);
 
@@ -767,13 +786,14 @@ function setMulti(list){clickMod=false;list=[...new Set(list)].filter(i=>byId[i]
 function toggleMulti(ids){const cur=curSelItems();const all=ids.length&&ids.every(i=>cur.includes(i));setMulti(all?cur.filter(i=>!ids.includes(i)):[...cur,...ids]);}
 function select(id){if(clickMod&&!hMute&&byId[id]){toggleMulti([id]);return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();setTimeout(renderGroupPanel,0);selected=id;selGroup=null;if(byId[id])(byId[id].g||[]).forEach(g=>{if(groups[g]&&groups[g].design)expanded.add(g);});   // an item inside a folded linked design: open that design
   renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!id&&r.dataset.id===id));else{animatedRerender(()=>{},{});if(id&&byId[id])requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[rep(byId[id])]));}}
-function selectGroup(gid){if(clickMod&&!hMute&&gid!=='_sel'&&groups[gid]){toggleMulti(groupMembers(gid).filter(visibleNode).map(n=>n.id));return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&(r.dataset.gid===gid||(gid==='_sel'&&multi.includes(r.dataset.id)))));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
+function selectGroup(gid){if(groups[gid]&&groups[gid].tcopy)gid=groups[gid].tcopy;   // a timeline group inside a component (Components layout): the whole group
+  if(clickMod&&!hMute&&gid!=='_sel'&&groups[gid]){toggleMulti(groupMembers(gid).filter(visibleNode).map(n=>n.id));return;}if(!hMute)route=null;saveView();setTimeout(pushHist,0);peekHide();selected=null;setTimeout(renderGroupPanel,0);selGroup=gid;renderDetails();if(view==='tree')document.querySelectorAll('#tree .row').forEach(r=>r.classList.toggle('sel',!!gid&&(r.dataset.gid===gid||(gid==='_sel'&&multi.includes(r.dataset.id)))));else{animatedRerender(()=>{},{});if(gid)requestAnimationFrame(()=>focusOn(zoomTree&&selRelated.length?selRelated:[...new Set(groupMembers(gid).filter(visibleNode).map(rep))]));}}
 function clearSel(){if(!hMute)route=null;saveView();setTimeout(pushHist,0);setTimeout(renderGroupPanel,0);selected=null;selGroup=null;renderDetails();if(view==='graph'){if(Object.keys(pos).length)animatedRerender(()=>{},{});else renderGraph(false);}else document.querySelectorAll('#tree .row.sel').forEach(r=>r.classList.remove('sel'));}
 function groupUpIds(gid){const mem=groupMembers(gid);const mset=new Set(mem.map(n=>n.id));
   const links=mem.flatMap(n=>[...closure(n.id,'up')]);
   const test=D.meta.gtest?D.groups.filter(o=>o.id!==gid&&o.dsupp&&o.dsupp.some(id=>mset.has(id))).flatMap(o=>groupMembers(o.id).map(n=>n.id)):[];
   return [...new Set([...links,...test])].filter(i=>!mset.has(i)&&byId[i]&&visibleNode(byId[i]));}
-function groupMembers(gid){if(gid==='_sel')return multi.map(i=>byId[i]).filter(Boolean);if(groups[gid]&&groups[gid].pseudo)return nodes.filter(n=>pseudoOf(n)===gid);return nodes.filter(n=>(n.g||[]).includes(gid));}
+function groupMembers(gid){if(gid==='_sel')return multi.map(i=>byId[i]).filter(Boolean);if(groups[gid]&&(groups[gid].comp||groups[gid].tcopy))return nodes.filter(n=>(n.gc||[]).includes(gid));if(groups[gid]&&groups[gid].pseudo)return nodes.filter(n=>pseudoOf(n)===gid);return nodes.filter(n=>(n.g||[]).includes(gid));}
 function groupPath(gid){const out=[];let g=groups[gid];let guard=0;while(g&&guard++<20){out.unshift(g.name);g=groups[g.parent];}return out;}
 function groupsSuppressing(id){return D.groups.filter(g=>g.dsupp&&g.dsupp.includes(id));}
 function itemList(ids){const ul=document.createElement('ul');if(!ids.length){ul.innerHTML='<li class="kv">none</li>';return ul;}
@@ -785,9 +805,9 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
   const g=groups[selGroup];const mem=groupMembers(selGroup);const mset=new Set(mem.map(n=>n.id));
   const h=document.createElement('h2');h.textContent=g.name;h.insertAdjacentHTML('afterbegin','<span class="icw">'+iconHTML('group','group',18)+'</span>');d.appendChild(h);
   {const last=[...mem].sort((a,b)=>b.o-a.o).find(n=>TH[n.id]);if(last&&showThumbs){const im=document.createElement('img');im.className='big';im.src=TH[last.id];im.alt='Model after '+last.name;im.title='Model after the last item in the group: '+last.name;d.appendChild(im);}}
-  if(simOn&&!g.loose){const b=document.createElement('button');const on=sim.groups.has(selGroup);b.textContent=on?'Switch group back on (simulation)':'Suppress group (simulation)';b.style.margin='6px 0';b.onclick=()=>simToggleGroup(selGroup);d.appendChild(b);}
+  if(simOn&&!g.loose&&!g.comp){const b=document.createElement('button');const on=sim.groups.has(selGroup);b.textContent=on?'Switch group back on (simulation)':'Suppress group (simulation)';b.style.margin='6px 0';b.onclick=()=>simToggleGroup(selGroup);d.appendChild(b);}
   const kv=document.createElement('div');kv.className='kv';
-  ['Timeline group'+(groupPath(selGroup).length>1?' in '+groupPath(selGroup).slice(0,-1).join(' › '):''),mem.length+' items'].forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});d.appendChild(kv);
+  [(g.comp?(g.cnode?'Component':'The root component: items in no other component'):'Timeline group')+(groupPath(selGroup).length>1?' in '+groupPath(selGroup).slice(0,-1).join(' › '):''),mem.length+' items'].forEach(t=>{const x=document.createElement('div');x.textContent=t;kv.appendChild(x);});d.appendChild(kv);
   if(g.dsupp){
     const h3=document.createElement('h3');h3.textContent='Suppressing this group also suppresses ('+g.dsupp.length+')';d.appendChild(h3);
     if(g.dbreak&&g.dbreak.length){const hb=document.createElement('h3');hb.style.color='var(--err)';hb.textContent='Suppressing it breaks ('+g.dbreak.length+')';const w=document.createElement('div');w.className='kv';w.textContent='These stay on but fail to compute (lost references or failed geometry) when this group is suppressed.';d.append(hb,w,itemList(g.dbreak));}
@@ -801,15 +821,16 @@ function renderGroupDetails(d){if(selGroup==='_sel'){renderMultiDetails(d);retur
     const x=document.createElement('div');x.className='kv';x.append('Fusion refuses to suppress this group through the API because this feature then fails to compute. The preview can still suppress it: that feature is marked broken, the rest is estimated from the links. ');
     if(g.fail.node&&byId[g.fail.node]){const a=document.createElement('span');a.className='name st-err';a.textContent=byId[g.fail.node].name;a.onclick=()=>select(g.fail.node);x.appendChild(a);}else x.append(g.fail.name||'unknown feature');
     d.appendChild(x);if(g.fail.msg){const m=document.createElement('div');m.className='msg';m.textContent=g.fail.msg;d.appendChild(m);}
+  }else if(g.comp){const x=document.createElement('div');x.className='hint';x.textContent='A component, with everything built in it (Components layout). Suppression is tested per timeline group and per item, not per component.';d.appendChild(x);
   }else if(g.pseudo||g.loose){const x=document.createElement('div');x.className='hint';x.textContent=(g.id==='_params'||g.id.endsWith('~params'))?'All user parameters, shown as one box. Expand it (+) to see them one by one.':'Items that are not in any timeline group, shown as one box. Expand it (+) to see them one by one.';d.appendChild(x);
   }else{const x=document.createElement('div');x.className='hint';x.textContent=g.empty?'This group is empty.':g.gskip?'The Whole groups test was not run on linked designs (option "Group test for linked designs"). Its items were tested one by one: suppressing it in the preview adds up their results (estimated).':(D.meta.gtest?'This group was not tested (it could not be suppressed, or everything in it was already suppressed).':'Run Dependencies Graph with Full analysis to see what suppressing this group does.');d.appendChild(x);}
   // reference links crossing the group boundary, counted per other group
   const out={},inn={};
-  EFF.forEach(e=>{if(e.part)return;const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
+  EFF.forEach(e=>{if(e.part)return;const a=mset.has(e.s),b=mset.has(e.t);if(a===b)return;const other=byId[a?e.t:e.s];if(!other||!visibleNode(other))return;const og=g.comp?((other.gc||[]).find(x=>groups[x]&&groups[x].comp)||'-'):(other.g||[]).length?other.g[0]:'-';const m=a?inn:out;m[og]=(m[og]||0)+1;});
   const toList=m=>Object.entries(m).filter(([k])=>k!=='-').sort((x,y)=>y[1]-x[1]);
-  const h4=document.createElement('h3');h4.textContent='References into other groups';d.append(h4,groupLinks(toList(out)));
-  const h5=document.createElement('h3');h5.textContent='Referenced from other groups';d.append(h5,groupLinks(toList(inn)));
-  const det=document.createElement('details');det.style.marginTop='10px';const sm=document.createElement('summary');sm.textContent='Items in the group ('+mem.length+')';det.appendChild(sm);det.appendChild(itemList(mem.map(n=>n.id)));d.appendChild(det);
+  const h4=document.createElement('h3');h4.textContent='References into other '+(g.comp?'components':'groups');d.append(h4,groupLinks(toList(out)));
+  const h5=document.createElement('h3');h5.textContent='Referenced from other '+(g.comp?'components':'groups');d.append(h5,groupLinks(toList(inn)));
+  const det=document.createElement('details');det.style.marginTop='10px';const sm=document.createElement('summary');sm.textContent='Items in the '+(g.comp?'component':'group')+' ('+mem.length+')';det.appendChild(sm);det.appendChild(itemList(mem.map(n=>n.id)));d.appendChild(det);
   const b=document.createElement('div');b.style.marginTop='12px';b.style.display='flex';b.style.gap='6px';b.style.flexWrap='wrap';
   const bg=document.createElement('button');bg.textContent='Show in graph';bg.onclick=()=>showInGraph(()=>groupMembers(selGroup).filter(visibleNode).map(rep));b.appendChild(bg);
   if(view==='graph'){const be=document.createElement('button');be.textContent=expanded.has(selGroup)?'Collapse group':'Expand group';be.onclick=()=>{if(expanded.has(selGroup))expanded.delete(selGroup);else expanded.add(selGroup);renderGraph(false);renderDetails();};b.appendChild(be);}
@@ -949,7 +970,7 @@ function renderDetails(){
     if(n.dbreak&&n.dbreak.length){const hb=document.createElement('h3');hb.style.color='var(--err)';hb.textContent='Suppressing it breaks ('+n.dbreak.length+')';const w=document.createElement('div');w.className='kv';w.textContent='These stay on but fail to compute when this item is suppressed.';d.append(hb,w,itemList(n.dbreak));}}
   if(n.dsupp){const h3=document.createElement('h3');h3.textContent='Suppressing it also suppresses ('+n.dsupp.length+')';d.appendChild(h3);const ul=document.createElement('ul');n.dsupp.forEach(id=>{const x=byId[id];if(!x)return;const li=document.createElement('li');li.appendChild(pill(x));const a=document.createElement('span');a.className='name '+stateCls(x);a.textContent=x.name;a.onclick=()=>select(id);li.appendChild(a);ul.appendChild(li);});d.appendChild(ul);}
   const b=document.createElement('div');b.style.marginTop='12px';b.style.display='flex';b.style.gap='6px';b.style.flexWrap='wrap';
-  const bg=document.createElement('button');bg.textContent='Show in graph';bg.onclick=()=>{(n.g||[]).forEach(g=>expanded.add(g));showInGraph(()=>[rep(n)]);};b.appendChild(bg);
+  const bg=document.createElement('button');bg.textContent='Show in graph';bg.onclick=()=>{[...(n.g||[]),...(n.gc||[])].forEach(g=>expanded.add(g));showInGraph(()=>[rep(n)]);};b.appendChild(bg);
   if(n.g&&n.g.length&&view==='graph'){const bc=document.createElement('button');bc.textContent='Collapse group';bc.onclick=()=>{expanded.delete(n.g[n.g.length-1]);renderGraph(false);};b.appendChild(bc);}
   const bp=document.createElement('button');bp.textContent='▶ Play history';bp.title='Animate how this item was built from its dependencies (P)';bp.onclick=()=>playHistory();b.appendChild(bp);
   const bx=document.createElement('button');bx.textContent='Clear selection';bx.onclick=clearSel;b.appendChild(bx);
@@ -1144,12 +1165,9 @@ let searchOpen=new Set();
 let selOpen=new Set(),selShut=new Set(),selKey='',partFrom=null,partTo=null;
 const intoPort=x=>{const a=byId[x.s],b=byId[x.t];return !!(a&&b&&b.port&&a.g&&b.g&&a.g[0]===b.g[0]);};
 const isOpen=g=>expanded.has(g)||searchOpen.has(g)||(selOpen.has(g)&&!selShut.has(g));
-let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
-// block layouts: 'lanes' = one block per top-level timeline group, 'comps' = one block per component
+let layoutMode='lanes',lanes=[],laneEls={},designFrames=[],compFrames=[],hiddenPorts=new Set();const collapsedNodes=new Set();let collapseEverything=false;
+// block layouts: 'lanes' = one block per top-level timeline group, 'comps' = the same with components (see gc)
 const isLanes=()=>layoutMode==='lanes'||layoutMode==='comps';
-const compOf={};D.edges.forEach(e=>{if(e.k.includes('incomp')&&byId[e.s]&&byId[e.s].cat==='component')compOf[e.t]=e.s;});
-nodes.forEach(n=>{if(n.cat==='component')compOf[n.id]=n.id;});
-const cColor={};nodes.filter(n=>n.cat==='component').sort((a,b)=>a.o-b.o).forEach((n,i)=>cColor[n.id]=GCOL[(i+3)%GCOL.length]);
 // user parameters get a block of their own; a derived parameter stays with its Derive feature
 const dparamOf={};D.edges.forEach(e=>{if(byId[e.t]&&byId[e.t].type==='DerivedParameter'&&byId[e.s]&&byId[e.s].tl!=null)dparamOf[e.t]=e.s;});
 // With derived designs in the graph, each design is a frame of its own, laid out inside like the main design:
@@ -1158,18 +1176,21 @@ const hasDesigns=nodes.some(n=>n.dsg);
 const MAIN_DSG='_main';
 function dsgOfNode(n){return n&&n.dsg&&n.g&&n.g.length?n.g[0]:MAIN_DSG;}
 function laneBase(id){return id&&id.includes('|')?id.split('|')[1]:id;}
-function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];if(byId[id]&&!groups[id])return dsgOfNode(byId[id]);   // a component's block (Components layout): its design
-  let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
-function laneKey(n){if(!n)return null;
-  if(n.dsg&&n.g&&n.g.length){const X=n.g[0];if(layoutMode==='comps')return compOf[n.id]||X+'|_root';
-    if(n.port)return X+'|_port';return n.g.length>1?n.g[1]:(n.type==='UserParameter'?X+'|_params':X+'|_none');}
+function laneDesign(id){if(!id)return MAIN_DSG;if(id.includes('|'))return id.split('|')[0];let g=groups[id],guard=0;while(g&&guard++<30){if(g.design)return g.id;g=g.parent?groups[g.parent]:null;}return MAIN_DSG;}
+function laneKey(n){if(!n)return null;const p=gp(n);
+  if(layoutMode==='comps'&&!n.port){const c=compLane(p);if(c)return c;}
+  if(n.dsg&&n.g&&n.g.length){const X=n.g[0];if(n.port)return X+'|_port';return p.length>1?p[1]:(n.type==='UserParameter'?X+'|_params':X+'|_none');}
   if(n.type==='UserParameter'||n.type==='UserParameters')return '_params';
   if(n.type==='DerivedParameter'&&dparamOf[n.id])return laneKey(byId[dparamOf[n.id]]);
-  if(layoutMode==='comps')return compOf[n.id]||'_root';return topGroup(n)||'_none';}
+  return p.length?p[0]:'_none';}
+// Components layout: the block of an item is its component's top-level timeline group (a block inside the
+// component's frame) or, outside groups, the component itself (a component without groups is one plain block)
+function compLane(p){const j=p.findIndex(x=>groups[x]&&groups[x].comp);return j<0?null:(p[j+1]||p[j]);}
 // while searching, the fold (−) buttons are switched off; unfolding (+) still works
 function offFold(bt,tt){bt.classList.add('off');tt.textContent='Clear the search to fold';bt.addEventListener('click',ev=>{ev.stopImmediatePropagation();ev.stopPropagation();});}
-function rep(n){const gp=n.g||[];for(const g of gp){if(!isOpen(g))return 'g'+g;}
-  const ps=pseudoOf(n);if(ps&&groups[ps]&&!isOpen(ps))return 'g'+ps;return n.id;}
+function gp(n){return layoutMode==='comps'&&n.gc?n.gc:(n.g||[]);}   // the group path the layout uses (see gc)
+function rep(n){const path=gp(n);for(const g of path){if(!isOpen(g))return 'g'+g;}
+  const ps=path.length?null:pseudoOf(n);if(ps&&groups[ps]&&!isOpen(ps))return 'g'+ps;return n.id;}
 let NW=210,NH=26;const XG=18,YG=64;// top-down: XG = gap between boxes in a row, YG = gap between rows
 function renderGraph(fitAfter,centerId){
   if(PB)stopPlay();   // a re-render replaces the boxes the playback is animating
@@ -1197,7 +1218,7 @@ function renderGraph(fitAfter,centerId){
     // one of them or uses one; the connector leads on to one of them)
     partFrom=null;partTo=null;if(multi.length>1){partFrom=new Set();partTo=new Set();
       multi.forEach(i=>{if(!byId[i])return;partFrom.add(i);closure(i,'down').forEach(x=>partFrom.add(x));partTo.add(i);closure(i,'up').forEach(x=>partTo.add(x));});}
-    selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;(n.g||[]).forEach(g=>{if(!groups[g]||!groups[g].design||ownD.has(g))selOpen.add(g);});const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
+    selOpen=new Set();if(tree)tree.forEach(id=>{const n=byId[id];if(!n)return;gp(n).forEach(g=>{if(!groups[g]||!groups[g].design||ownD.has(g))selOpen.add(g);});const ps=pseudoOf(n);if(ps)selOpen.add(ps);});}
   const R={};// rep -> {id,label,o,members,isGroup}
   vis.forEach(n=>{if(keep&&!keep.has(n.id))return;const r=rep(n);if(!R[r]){R[r]={id:r,o:n.o,members:[],isGroup:r!==n.id};}R[r].members.push(n);R[r].o=Math.min(R[r].o,n.o);});
   let reps=Object.values(R).sort((a,b)=>a.o-b.o);
@@ -1261,7 +1282,10 @@ function renderGraph(fitAfter,centerId){
   }else if(isLanes()){
     // one column per top-level timeline group, in timeline order; rows inside a lane follow the
     // dependencies between that lane's own boxes, so each lane starts at the top
-    const laneOf=r=>{if(r.isGroup){const gid=r.id.slice(1);if(groups[gid]&&groups[gid].design)return gid+'|_folded';}return laneKey(r.members[0]);};const LN={};   // a folded derived design keeps its frame
+    const laneOf=r=>{if(r.isGroup){const gid=r.id.slice(1);if(groups[gid]&&groups[gid].design)return gid+'|_folded';
+        // Components layout: a folded timeline group is an entry in the block of the group (or component) holding it
+        if(groups[gid]&&groups[gid].tcopy){const P=groups[gid].parent;const pp=[];let q=P,gd=0;while(q&&gd++<30){pp.unshift(q);q=groups[q]?groups[q].parent:null;}return compLane(pp)||P;}}
+      return laneKey(r.members[0]);};const LN={};   // a folded derived design keeps its frame
     const ports=[];reps.forEach(r=>{const k=laneOf(r);if(k&&k.endsWith('|_port')){ports.push(r);return;}(LN[k]=LN[k]||{id:k,o:1e9,items:[]});LN[k].o=Math.min(LN[k].o,r.o);LN[k].items.push(r);});
     // a connector sits on its design's frame; when nothing else of that design is on show (e.g. only the selected
     // branch), it becomes a block of its own so that design still gets a frame
@@ -1284,11 +1308,22 @@ function renderGraph(fitAfter,centerId){
       let lx=0,ly=0,rowH=0,W=0;const placed=[];
       list.forEach(b=>{if(lx>0&&lx+b.w>target){lx=0;ly+=rowH+LG;rowH=0;}placed.push({b,x:lx,y:ly});W=Math.max(W,lx+b.w);lx+=b.w+LG;rowH=Math.max(rowH,b.h);});
       return {placed,w:W,h:ly+rowH};};
-    const putLane=(b,lx,ly)=>{Object.keys(b.loc).forEach(id=>{pos[id]={x:lx+b.loc[id].x,y:ly+b.loc[id].y};});
+    const CPADX=18,CTOP=40,CPADB=18;
+    const putLane=(b,lx,ly)=>{if(b.comp){compFrames.push({id:b.comp,x:lx-14,y:ly,w:b.w+28,h:b.h});b.pk.placed.forEach(q=>putLane(q.b,lx+CPADX+q.x,ly+CTOP+q.y));return;}
+      Object.keys(b.loc).forEach(id=>{pos[id]={x:lx+b.loc[id].x,y:ly+b.loc[id].y};});
       b.levels.forEach(lv=>laneLevels.push({ids:lv.ids,home:lv.home,slots:lv.slots.map(q=>({x:lx+q.x,y:ly+q.y,key:q.key}))}));
       lanes.push({id:b.l.id,x:lx-14,w:b.w+28,y0:ly,y1:ly+b.h});};
     designFrames=[];
+    compFrames=[];
     {const byD={};built.forEach(b=>{const d=laneDesign(b.l.id);(byD[d]=byD[d]||[]).push(b);});
+      // Components layout: a component with timeline groups is a frame holding a block per group (and one for its
+      // items outside groups), packed like a design's blocks
+      if(layoutMode==='comps')Object.keys(byD).forEach(d=>{const byK={},rest=[];
+        byD[d].forEach(b=>{const id=b.l.id;const K=groups[id]&&(groups[id].comp?id:groups[id].tcopy?id.split('/')[0]:null);if(K)(byK[K]=byK[K]||[]).push(b);else rest.push(b);});
+        Object.keys(byK).forEach(K=>{const list=byK[K];if(list.length===1&&list[0].l.id===K){rest.push(list[0]);return;}
+          list.sort((a,b)=>a.l.id===K?-1:b.l.id===K?1:a.l.o-b.l.o);const pk=pack(list);
+          rest.push({comp:K,pk,l:{id:K,o:Math.min(...list.map(b=>b.l.o))},w:Math.max(pk.w+2*CPADX,(groups[K].name||'').length*9+70),h:pk.h+CTOP+CPADB});});
+        byD[d]=rest;});
       const PADX=40,PADB=40,PIC_W=150,PIC_H=100;const picOf=d=>d===MAIN_DSG?D.meta.pic:(groups[d]&&groups[d].pic);const padT=d=>74;
       const frameTitle=d=>{if(d===MAIN_DSG)return 'This design · '+(D.meta.doc||'');const g=groups[d]||{};const v=g.via||[];return (v.includes('derive')&&!v.includes('insert')?'Derived design · ':v.includes('insert')&&!v.includes('derive')?'Inserted design · ':'Linked design · ')+(g.name||d);};
       // the part's picture is a tile of its own, packed with the blocks (it fills space beside them instead of
@@ -1314,7 +1349,7 @@ function renderGraph(fitAfter,centerId){
     c.forEach(r=>{x=Math.max(x,r.bc-NW/2);pos[r.id]={x:x,y:y};x+=NW+XG;});
     // shift the row so on average boxes sit under their parents
     const sh=c.reduce((a,r)=>a+(r.bc-(pos[r.id].x+NW/2)),0)/c.length;c.forEach(r=>{pos[r.id].x+=sh;});});
-  if(headers.length){if(layoutMode!=='time'){headers.forEach(h=>{const xs=h.targets.map(t=>pos[t]?pos[t].x:null).filter(v=>v!=null);if(xs.length&&pos[h.id])pos[h.id].x=xs.reduce((a,b)=>a+b,0)/xs.length;});
+  if(headers.length){if(!isLanes()&&layoutMode!=='time'){headers.forEach(h=>{const xs=h.targets.map(t=>pos[t]?pos[t].x:null).filter(v=>v!=null);if(xs.length&&pos[h.id])pos[h.id].x=xs.reduce((a,b)=>a+b,0)/xs.length;});
     const rows={};Object.keys(pos).forEach(id=>{(rows[pos[id].y]=rows[pos[id].y]||[]).push(id);});
     Object.values(rows).forEach(ids=>{ids.sort((a,b)=>pos[a].x-pos[b].x);for(let i=1;i<ids.length;i++){const m=pos[ids[i-1]].x+NW+XG;if(pos[ids[i]].x<m)pos[ids[i]].x=m;}});}
     // Timeline layout: the group bar under the row shows what belongs to the group, so only the line to the item right after the event is kept
@@ -1399,27 +1434,37 @@ function renderGraph(fitAfter,centerId){
         bt.addEventListener('click',ev=>{ev.stopPropagation();const gk=f.d;animatedRerender(()=>{selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});},{});});
         btnLayer.appendChild(bt);}});}
   if(lanes.length){const gl=document.createElementNS(NS,'g');vp.appendChild(gl);
-    const CM=layoutMode==='comps';const noLane=id=>{if(id.includes('|'))return true;return id==='_root'||((id==='_none'||id==='_params')&&!groups[id]);};   // this design's Not in a group / User parameters: selectable like a group
-    lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':((CM?cColor[l.id]:gColor[l.id])||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
+    const noLane=id=>{if(id.includes('|'))return true;return (id==='_none'||id==='_params')&&!groups[id];};
+    // Components layout: a component holding timeline groups is a frame around their blocks; clicking its title
+    // selects the whole component, its button folds it
+    const inCF=new Set(compFrames.map(f=>f.id));
+    compFrames.forEach(f=>{const col=gColor[f.id]||'var(--muted)';const g0=document.createElementNS(NS,'g');g0.style.cursor='pointer';
+      const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',f.x);bg.setAttribute('y',f.y);bg.setAttribute('width',f.w);bg.setAttribute('height',f.h);bg.setAttribute('rx',14);
+      bg.setAttribute('style','fill:'+col+';fill-opacity:.05;stroke:'+col+';stroke-opacity:.7;stroke-width:2');
+      const tx=document.createElementNS(NS,'text');tx.setAttribute('x',f.x+14);tx.setAttribute('y',f.y+26);tx.setAttribute('style','font-size:16px;font-weight:800;fill:'+col);
+      const nm=groups[f.id]?groups[f.id].name:f.id;tx.textContent=nm;const tt=document.createElementNS(NS,'title');tt.textContent='Component: '+nm+' (click to select all of it)';tx.appendChild(tt);
+      g0.append(bg,tx);g0.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;selectGroup(f.id);});gl.appendChild(g0);
+      const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(f.x+f.w/2)+','+(f.y+f.h+1)+')');
+      const c=document.createElementNS(NS,'circle');c.setAttribute('r',8);c.setAttribute('class','ctogc');const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent='−';
+      const t2=document.createElementNS(NS,'title');t2.textContent='Fold this component into one box';bt.append(c,t,t2);if(search)offFold(bt,t2);
+      bt.addEventListener('mousedown',ev=>ev.stopPropagation());
+      bt.addEventListener('click',ev=>{ev.stopPropagation();const gk=f.id;animatedRerender(()=>{selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});},{});});
+      btnLayer.appendChild(bt);});   // this design's Not in a group / User parameters: selectable like a group
+    lanes.forEach(l=>{const col=laneBase(l.id)==='_params'?'var(--c-param)':noLane(l.id)?'var(--muted)':(gColor[l.id]||'var(--muted)');const bg=document.createElementNS(NS,'rect');bg.setAttribute('x',l.x);bg.setAttribute('y',l.y0);bg.setAttribute('width',l.w);bg.setAttribute('height',l.y1-l.y0);bg.setAttribute('rx',10);
       bg.setAttribute('style','fill:'+col+';fill-opacity:.07;stroke:'+col+';stroke-opacity:.45;stroke-width:1.5');
       const tx=document.createElementNS(NS,'text');tx.setAttribute('x',l.x+12);tx.setAttribute('y',l.y0+24);tx.setAttribute('style','font-size:15px;font-weight:700;fill:'+col);{const DSG=groups[l.id]&&groups[l.id].design;if(DSG){bg.setAttribute('style','fill:'+col+';fill-opacity:.05;stroke:'+col+';stroke-opacity:.8;stroke-width:3;stroke-dasharray:10 5');tx.setAttribute('style','font-size:17px;font-weight:800;fill:'+col);}
-      const LB=laneBase(l.id);const full=DSG?'Design · '+groups[l.id].name:LB==='_folded'?'Whole design (folded)':LB==='_params'?'User parameters':LB==='_none'?'Not in a group':LB==='_root'?'Root component':CM?(byId[l.id]?byId[l.id].name:l.id):(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
+      const LB=laneBase(l.id);const full=DSG?'Design · '+groups[l.id].name:LB==='_folded'?'Whole design (folded)':LB==='_params'?'User parameters':LB==='_none'||inCF.has(l.id)?'Not in a group':(groups[l.id]?groups[l.id].name:l.id);const mc=Math.max(4,Math.floor((l.w-24)/9));tx.textContent=full.length>mc?full.slice(0,mc-1)+'…':full;const tt=document.createElementNS(NS,'title');tt.textContent=full;tx.appendChild(tt);}
       // fold button on the block title: a whole timeline group (Groups layout) or a whole component (Components layout)
-      {const gidL=CM?null:l.id,cidL=CM&&byId[l.id]?l.id:null,psL=(l.id==='_params'||(l.id==='_none'&&!CM))?l.id:null;const gk=psL||gidL;
-        const can=(gk&&groups[gk])||(cidL&&canCollapse(cidL))||(cidL&&collapsedNodes.has(cidL));
-        if(can){const open=cidL?!collapsedNodes.has(cidL):isOpen(gk);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(l.x+l.w/2)+','+(l.y1+1)+')');   // bottom centre, like the boxes' buttons
+      {const gk=l.id;const comp=!!(groups[gk]&&groups[gk].comp);
+        if(groups[gk]&&!inCF.has(gk)){const open=isOpen(gk);const bt=document.createElementNS(NS,'g');bt.setAttribute('class','ctog');bt.setAttribute('transform','translate('+(l.x+l.w/2)+','+(l.y1+1)+')');   // bottom centre, like the boxes' buttons
           const c=document.createElementNS(NS,'circle');c.setAttribute('r',open?8:9);c.setAttribute('class','ctogc'+(open?'':' col'));const t=document.createElementNS(NS,'text');t.setAttribute('text-anchor','middle');t.setAttribute('y',4);t.setAttribute('class','ctogt');t.textContent=open?'−':'+';
-          const tt=document.createElementNS(NS,'title');tt.textContent=open?(cidL?'Fold this component into its box':'Fold this whole group into one box'):(cidL?'Show what is in this component':'Show the items of this group');bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
+          const tt=document.createElementNS(NS,'title');tt.textContent=open?(comp?'Fold this component into one box':'Fold this whole group into one box'):(comp?'Show what is in this component':'Show the items of this group');bt.append(c,t,tt);if(search&&open)offFold(bt,tt);
           bt.addEventListener('mousedown',ev=>ev.stopPropagation());
-          bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(cidL){if(open)collapsedNodes.add(cidL);else collapsedNodes.delete(cidL);}else if(open){selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else{selShut.delete(gk);expanded.add(gk);}},{});});
+          bt.addEventListener('click',ev=>{ev.stopPropagation();animatedRerender(()=>{if(open){selShut.add(gk);expanded.delete(gk);Object.keys(groups).forEach(x=>{let q=groups[x].parent,gd=0;while(q&&gd++<20){if(q===gk){expanded.delete(x);break;}q=groups[q]?groups[q].parent:null;}});}else{selShut.delete(gk);expanded.add(gk);}},{});});
           l.btn=bt;}}
-      // a component's block (Components layout, the root component's too) selects the whole component: all its items
-      const compBlock=CM&&!(groups[l.id]&&groups[l.id].design)&&(byId[l.id]||laneBase(l.id)==='_root');const clickable=compBlock||!noLane(l.id);
-      const lg=document.createElementNS(NS,'g');lg.style.cursor=clickable?'pointer':'default';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);
-      if(clickable)lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;
-        if(compBlock){const ids=nodes.filter(n=>visibleNode(n)&&laneKey(n)===l.id).map(n=>n.id);if(!ids.length)return;
-          if(ev.metaKey||ev.ctrlKey)toggleMulti(ids);else if(ids.length===1)select(ids[0]);else setMulti(ids);return;}
-        selectGroup(l.id);});gl.appendChild(lg);});}
+      // clicking a block selects its timeline group, or (Components layout) its whole component
+      const lg=document.createElementNS(NS,'g');lg.style.cursor=noLane(l.id)?'default':'pointer';lg.append(bg,tx);laneEls[l.id]={g:lg,l,col};if(l.btn)btnLayer.appendChild(l.btn);
+      if(!noLane(l.id))lg.addEventListener('click',ev=>{ev.stopPropagation();if(moved)return;selectGroup(l.id);});gl.appendChild(lg);});}
   const ge=document.createElementNS(NS,'g');ge.setAttribute('class','elayer');vp.appendChild(ge);const geHi=document.createElementNS(NS,'g');geHi.setAttribute('class','elayer');const gBadge=document.createElementNS(NS,'g');
   nodeEls={};edgeEls=[];const brkBadges=[];
   // Link routing (bends and the order of link ends on boxes) depends only on where the boxes are, so it is
@@ -1774,7 +1819,7 @@ function pbBegin(){let order;const grp=!selected&&selGroup&&groups[selGroup]?sel
   // open timeline groups (their header boxes in the Depth layout) are the parents of their items: each header
   // appears right before the first of its items, outer groups before inner ones
   {const anc=r=>{if(r[0]==='g'||r[0]==='h'){const out=[];let q=groups[r.slice(1)]?groups[r.slice(1)].parent:null,gd=0;while(q&&gd++<20){out.unshift(q);q=groups[q]?groups[q].parent:null;}return out;}
-      const n=byId[r];if(!n)return [];if(n.g&&n.g.length)return n.g;const ps=pseudoOf(n);return ps?[ps]:[];};
+      const n=byId[r];if(!n)return [];const p=gp(n);if(p.length)return p;const ps=pseudoOf(n);return ps?[ps]:[];};
     const seen=new Set(order),out=[];order.forEach(r=>{anc(r).forEach(gid=>{const h='h'+gid;if(pos[h]&&!seen.has(h)){seen.add(h);out.push(h);}});out.push(r);});order=out;}
   // Timeline layout: play exactly in the order of the row, left to right (boxes with the same timeline place, like
   // user parameters, keep the order they have on screen); a selected item still comes last

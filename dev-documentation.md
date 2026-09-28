@@ -639,8 +639,18 @@ Main parts, in file order:
   (not while the Groups tab is open: selecting there is part of using it; a closed panel stays closed).
   The graph no longer has anything over its left side, so the fitting functions use no left offset.
 * **Selecting blocks**: a block's title area selects its timeline group (this design's *Not in a group* and
-  *User parameters* too); in the Components layout a component's block (the root component's too) selects all
-  its items (`setMulti`; one item: `select`).
+  *User parameters* too); in the Components layout a component's title selects the whole component (its group).
+* **Components layout** (`comps`): the Groups layout with components in place of timeline groups, through a second
+  group path per item built at load (`gc`): its design, its component group (`K:<component item>`, `comp: true`;
+  items of no component `K:<design>:root`, "Root component"), then its timeline groups as copies inside that
+  component (`K:<component>/<group>`, `tcopy`: the real group). `gp(n)` gives the path the layout uses (`gc` while
+  the Components layout is on, else `g`); `rep`, `laneKey`, `selOpen` and the playback order use it, so folding,
+  blocks, frames and selection work as in the Groups layout. `laneKey` (via `compLane`) puts an item in its
+  component's top-level timeline group's block, or in the component's own block outside groups; a folded group
+  copy is an entry in its parent's block. A component with group blocks is packed into a frame of its own inside
+  its design (`compFrames`: title selects the component, button folds it; its own block is titled *Not in a
+  group*); a component without groups stays one plain block. Selecting or switching off (preview) a copy acts
+  on the real timeline group; a component group has no preview. Connectors and user parameters keep their blocks.
 * **Hiding linked designs** (Filter tab, "Linked designs", when the page has any): a design switched off (`dsgOff`)
   hides all its items and its connector through `visibleNode`, so, like any hidden item, it is skipped, not cut
   out: `computeEff` joins links (and so selections and routes) through it, and its frame is not drawn. The Filter
