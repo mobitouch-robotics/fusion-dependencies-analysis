@@ -220,16 +220,20 @@ function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
  const h=$.VNImageRequestHandler.alloc.initWithURLOptions($.NSURL.fileURLWithPath(path),$.NSDictionary.dictionary);
  const r=$.VNRecognizeTextRequest.alloc.init;r.recognitionLevel=0;r.usesLanguageCorrection=false;r.minimumTextHeight=0.004;
  h.performRequestsError($.NSArray.arrayWithObject(r),null);
- const fr=$.NSScreen.mainScreen.frame,W=fr.size.width,H=fr.size.height,res=r.results,out=[];
- for(let i=0;i<res.count;i++){const c=res.objectAtIndex(i).topCandidates(1).objectAtIndex(0);const t=c.string.js;
-  if(!want.length){const b=res.objectAtIndex(i).boundingBox;out.push({text:'',line:t,x:(b.origin.x+b.size.width/2)*W,y:(1-b.origin.y-b.size.height/2)*H});continue;}
+ const fr=$.NSScreen.mainScreen.frame,W=fr.size.width,H=fr.size.height,res=r.results,out=[];let sub=0,est=0;
+ const box=b=>({x:(b.origin.x+b.size.width/2)*W,y:(1-b.origin.y-b.size.height/2)*H,w:b.size.width*W,h:b.size.height*H});
+ for(let i=0;i<res.count;i++){const ob=res.objectAtIndex(i),c=ob.topCandidates(1).objectAtIndex(0),t=c.string.js,lb=box(ob.boundingBox);
+  if(!want.length){out.push(Object.assign({text:'',line:t},lb));continue;}
   for(const w of want){const hay=w.case?t:t.toLowerCase(),ned=w.case?w.text:w.text.toLowerCase();let k=hay.indexOf(ned);
    while(k>=0){const L=/[A-Za-z0-9]/,whole=(k===0||!L.test(t[k-1]))&&(k+ned.length>=t.length||!L.test(t[k+ned.length]));
-    const o=whole?c.boundingBoxForRangeError($.NSMakeRange(k,ned.length),null):null;
-    if(o&&!o.isNil()){const b=o.boundingBox;out.push({text:w.text,m:t.substr(k,ned.length),line:t,x:(b.origin.x+b.size.width/2)*W,
-     y:(1-b.origin.y-b.size.height/2)*H,w:b.size.width*W,h:b.size.height*H});}
+    if(whole){let b=null;
+     // the word's own box; when this Fusion/macOS does not give it, estimated from its place in the line
+     try{const o=c.boundingBoxForRangeError({location:k,length:ned.length},null);if(o&&!o.isNil()){b=box(o.boundingBox);sub++;}}catch(e){}
+     if(!b||!isFinite(b.x)||!isFinite(b.y)){const f0=k/t.length,f1=(k+ned.length)/t.length,L0=lb.x-lb.w/2;
+      b={x:L0+lb.w*(f0+f1)/2,y:lb.y,w:lb.w*(f1-f0),h:lb.h};est++;}
+     out.push(Object.assign({text:w.text,m:t.substr(k,ned.length),line:t},b));}
     k=hay.indexOf(ned,k+1);}}}
- return JSON.stringify(out);}"""
+ return JSON.stringify(want.length?out:out);}"""
 
 # Accessibility (System Events): Fusion's windows walked for elements whose name, description, title or value holds
 # a wanted string. Slower than the text recognition; used for what it did not find.
