@@ -216,24 +216,14 @@ TARGETS = {
 # minimumTextHeight: by default text smaller than 1/32 of the image height is ignored, which on a large display
 # drops the toolbar's small tab labels (MANAGE); 0.004 keeps text down to about 4 points on a 1000-point screen.
 OCR_JXA = r"""ObjC.import('Vision');ObjC.import('AppKit');ObjC.import('Foundation');
-function run(argv){const path=argv[0],want=JSON.parse(argv[1]);
- const h=$.VNImageRequestHandler.alloc.initWithURLOptions($.NSURL.fileURLWithPath(path),$.NSDictionary.dictionary);
+function run(argv){
+ const h=$.VNImageRequestHandler.alloc.initWithURLOptions($.NSURL.fileURLWithPath(argv[0]),$.NSDictionary.dictionary);
  const r=$.VNRecognizeTextRequest.alloc.init;r.recognitionLevel=0;r.usesLanguageCorrection=false;r.minimumTextHeight=0.004;
  h.performRequestsError($.NSArray.arrayWithObject(r),null);
- const fr=$.NSScreen.mainScreen.frame,W=fr.size.width,H=fr.size.height,res=r.results,out=[];let sub=0,est=0;
- const box=b=>({x:(b.origin.x+b.size.width/2)*W,y:(1-b.origin.y-b.size.height/2)*H,w:b.size.width*W,h:b.size.height*H});
- for(let i=0;i<res.count;i++){const ob=res.objectAtIndex(i),c=ob.topCandidates(1).objectAtIndex(0),t=c.string.js,lb=box(ob.boundingBox);
-  if(!want.length){out.push(Object.assign({text:'',line:t},lb));continue;}
-  for(const w of want){const hay=w.case?t:t.toLowerCase(),ned=w.case?w.text:w.text.toLowerCase();let k=hay.indexOf(ned);
-   while(k>=0){const L=/[A-Za-z0-9]/,whole=(k===0||!L.test(t[k-1]))&&(k+ned.length>=t.length||!L.test(t[k+ned.length]));
-    if(whole){let b=null;
-     // the word's own box; when this Fusion/macOS does not give it, estimated from its place in the line
-     try{const o=c.boundingBoxForRangeError({location:k,length:ned.length},null);if(o&&!o.isNil()){b=box(o.boundingBox);sub++;}}catch(e){}
-     if(!b||!isFinite(b.x)||!isFinite(b.y)){const f0=k/t.length,f1=(k+ned.length)/t.length,L0=lb.x-lb.w/2;
-      b={x:L0+lb.w*(f0+f1)/2,y:lb.y,w:lb.w*(f1-f0),h:lb.h};est++;}
-     out.push(Object.assign({text:w.text,m:t.substr(k,ned.length),line:t},b));}
-    k=hay.indexOf(ned,k+1);}}}
- return JSON.stringify(want.length?out:out);}"""
+ const fr=$.NSScreen.mainScreen.frame,res=r.results,lines=[];
+ for(let i=0;i<res.count;i++){const ob=res.objectAtIndex(i),b=ob.boundingBox;
+  lines.push({t:ob.topCandidates(1).objectAtIndex(0).string.js,x:b.origin.x,y:b.origin.y,w:b.size.width,h:b.size.height});}
+ return JSON.stringify({W:fr.size.width,H:fr.size.height,lines:lines});}"""
 
 # Accessibility (System Events): Fusion's windows walked for elements whose name, description, title or value holds
 # a wanted string. Slower than the text recognition; used for what it did not find.
@@ -258,27 +248,83 @@ def _run(cmd, timeout):
     except subprocess.TimeoutExpired:
         return '', 'no answer in %d s' % timeout
 
-def ocr_scan(fresh=True, everything=False):
-    """Every occurrence of every target's text on the main display now (one screenshot, a second or two).
-    everything: every recognised line instead (for --probe)."""
-    if not fresh and not everything and time.time() - _ocr_cache['t'] < 2: return _ocr_cache['hits']
+TOOLBAR_STRIP = 0.25     # the top quarter of the screen (tabs, panels) is read a second time, enlarged 2x
+
+def _recognise(img):
+    """All text lines macOS recognises in an image: [(text, x0, y0, w, h)] as fractions of the image (top-left
+    origin), and the main screen's size in points."""
+    out, err = _run(['osascript', '-l', 'JavaScript', '-e', OCR_JXA, img], 40)
+    if err or not out:
+        print('  (text recognition failed: %s)' % (err or 'no answer')[:300]); return [], None
+    try: d = json.loads(out)
+    except Exception as ex:
+        print('  (text recognition gave no readable answer: %s)' % ex); return [], None
+    return [(l['t'], l['x'], 1 - l['y'] - l['h'], l['w'], l['h']) for l in d['lines']], (d['W'], d['H'])
+
+def _image_size(img):
+    out, _ = _run(['sips', '-g', 'pixelWidth', '-g', 'pixelHeight', img], 10)
+    v = dict(l.split(':') for l in out.splitlines()[1:] if ':' in l)
+    return int(v['pixelWidth'].strip()), int(v['pixelHeight'].strip())
+
+def _read_screen():
+    """Every recognised line on the main display, in screen points: (text, x, y, w, h) with x, y its centre. The
+    toolbar strip is also read enlarged (small grey labels are recognised much more reliably), and its lines are
+    used where the full picture has none."""
     import tempfile
-    t0 = time.time()
-    img = os.path.join(tempfile.gettempdir(), '_demo_screen.png')
+    tmp = tempfile.gettempdir()
+    img = os.path.join(tmp, '_demo_screen.png')
     _, err = _run(['screencapture', '-x', '-m', img], 15)
     if err or not os.path.exists(img):
         print('  (screenshot failed: %s)' % (err or 'no file')); return []
-    want = [] if everything else [{'text': t, 'case': False} for t in sorted({v['text'] for v in TARGETS.values()})]
-    out, err = _run(['osascript', '-l', 'JavaScript', '-e', OCR_JXA, img, json.dumps(want)], 30)
-    try: hits = json.loads(out or '[]')
-    except Exception: hits = []
-    hits = [h for h in hits if h['y'] > MENU_BAR]
-    if err: print('  (text recognition failed: %s)' % err[:300])
-    elif not everything:
-        print('  (text recognition: %d matches in %.1f s)' % (len(hits), time.time() - t0))
-        if not hits:
-            print('  (nothing recognised: is Terminal allowed under Privacy & Security > Screen Recording?)')
-    if not everything: _ocr_cache.update(t=time.time(), hits=hits)
+    full, scr = _recognise(img)
+    if scr is None: return []
+    W, H = scr
+    lines = [(t, (x + w / 2) * W, (y + h / 2) * H, w * W, h * H) for t, x, y, w, h in full]
+    try:        # the toolbar strip, cut out and enlarged
+        pw, ph = _image_size(img)
+        sh = int(ph * TOOLBAR_STRIP)
+        strip = os.path.join(tmp, '_demo_strip.png')
+        _run(['sips', '--cropToHeightWidth', str(sh), str(pw), '--cropOffset', '0', '0', img, '--out', strip], 15)
+        _run(['sips', '--resampleHeightWidth', str(sh * 2), str(pw * 2), strip], 15)
+        part, _ = _recognise(strip)
+        extra = [(t, (x + w / 2) * W, (y + h / 2) * H * TOOLBAR_STRIP, w * W, h * H * TOOLBAR_STRIP)
+                 for t, x, y, w, h in part]
+        near = lambda a, b: abs(a[1] - b[1]) < 12 and abs(a[2] - b[2]) < 8
+        lines += [e for e in extra if not any(near(e, l) for l in lines)]
+    except Exception as ex:
+        print('  (toolbar strip not read: %s)' % ex)
+    return [l for l in lines if l[2] > MENU_BAR]
+
+def _matches(lines, text):
+    """Where `text` stands as a whole word or words in the recognised lines (any case): a box per occurrence,
+    estimated from its place in its line."""
+    out, ned = [], text.lower()
+    for t, x, y, w, h in lines:
+        hay, k = t.lower(), t.lower().find(ned)
+        while k >= 0:
+            whole = (k == 0 or not hay[k - 1].isalnum()) and (k + len(ned) >= len(hay) or not hay[k + len(ned)].isalnum())
+            if whole:
+                f0, f1 = k / len(t), (k + len(ned)) / len(t)
+                out.append({'text': text, 'm': t[k:k + len(ned)], 'line': t,
+                            'x': x - w / 2 + w * (f0 + f1) / 2, 'y': y, 'w': w * (f1 - f0), 'h': h})
+            k = hay.find(ned, k + 1)
+    return out
+
+def ocr_scan(fresh=True, everything=False):
+    """Every occurrence of every target's text on the main display now (a screenshot, a few seconds).
+    everything: every recognised line instead (for --probe)."""
+    if not fresh and not everything and time.time() - _ocr_cache['t'] < 2: return _ocr_cache['hits']
+    t0 = time.time()
+    lines = _read_screen()
+    if everything:
+        return [{'text': '', 'line': t, 'x': x, 'y': y} for t, x, y, w, h in lines]
+    hits = []
+    for text in sorted({v['text'] for v in TARGETS.values()}):
+        hits += _matches(lines, text)
+    print('  (text recognition: %d lines, %d matches in %.1f s)' % (len(lines), len(hits), time.time() - t0))
+    if not lines:
+        print('  (nothing recognised: is Terminal allowed under Privacy & Security > Screen Recording?)')
+    _ocr_cache.update(t=time.time(), hits=hits)
     return hits
 
 AX_TIMEOUT = 25          # seconds the Accessibility search may take (Fusion has thousands of controls)
