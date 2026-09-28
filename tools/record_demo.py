@@ -292,7 +292,11 @@ def _pick(name, hits, found):
     if ref: c = [h for h in c if h['y'] > ref[1] + 5]
     if not c: return None
     h = {'top': min, 'bottom': max}.get(t['pick'], max)(c, key=lambda h: h['x'] if t['pick'] == 'right' else h['y'])
-    x = h['x'] - h.get('w', 0) / 2 - t['left'] if t.get('left') is not None else h['x']
+    if t.get('left') is not None:
+        w = h.get('w') or len(t['text']) * 6.5            # the label's width; estimated when not reported
+        x = h['x'] - w / 2 - t['left']
+    else:
+        x = h['x']
     return (round(x), round(h['y']))
 
 _found = {}
@@ -564,12 +568,14 @@ def intro():
 def open_advanced(p):
     """Opens the dialog's Advanced options with the arrow left of its label; checks it opened (its options are then
     on screen) and otherwise tries a little further left, then the label itself."""
-    label_x = p[0] + TARGETS['advanced']['left']       # back to the label's left edge
-    for dx in (0, -8, None):
-        xy = (p[0] + dx, p[1]) if dx is not None else (label_x + 40, p[1])
+    for dx in (0, -8, 6):
+        xy = (p[0] + dx, p[1])
+        print('  clicking the Advanced options arrow at %s' % (xy,))
         go(xy, 1.1); wait(1.2)
-        if _pick('linked', ocr_scan(), _found): return True
+        if _pick('linked', ocr_scan(), _found):
+            print('  Advanced options is open'); return True
         print('  (Advanced options did not open with a click at %s)' % (xy,))
+    print('  (could not open Advanced options: its options are skipped)')
     return False
 
 # ---- the add-in's options for the recording: written into its settings.json before the dialog opens (the dialog
@@ -998,7 +1004,18 @@ def safari_part(start=0):
         if k == start and k > 0: prepare(prep)
         fn()
 
+def version():
+    """The script's commit and date, printed at the start (to tell which copy is running)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        out = subprocess.run(['git', '-C', here, 'log', '-1', '--format=%h %ci', '--', os.path.basename(__file__)],
+                             capture_output=True, text=True, timeout=5).stdout.strip()
+    except Exception:
+        out = ''
+    return out or time.strftime('file saved %Y-%m-%d %H:%M', time.localtime(os.path.getmtime(__file__)))
+
 if __name__ == '__main__':
+    print('record_demo.py,', version())
     if '--calibrate' in sys.argv:
         calibrate(); sys.exit()
     if '--probe' in sys.argv:
